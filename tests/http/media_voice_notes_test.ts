@@ -1,6 +1,8 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import { botApiResult, callBotApi, callBotApiWithFiles } from '../support/bot_api_requests.ts';
 import {
@@ -61,15 +63,11 @@ Deno.test('a grammY bot answers an account voice note with one it downloads and 
   )).json() as { entries: Array<{ method: string; answer: { ok: boolean } }> };
   if (
     sent.status !== 201 ||
-    JSON.stringify(Object.keys(receivedVoice ?? {})) !==
-      JSON.stringify(['duration', 'mime_type', 'file_id', 'file_unique_id', 'file_size']) ||
-    receivedVoice?.duration !== 7 || receivedVoice.mime_type !== 'audio/ogg' ||
+    receivedVoice?.duration !== 7 ||
+    receivedVoice.mime_type !== 'audio/ogg' ||
     receivedVoice.file_size !== recording.length ||
-    JSON.stringify(sentMessage?.voice) !== JSON.stringify(receivedVoice) ||
-    received[0].filePath !== 'voice/file_0.oga' || received[0].bytes !== recording.toBase64() ||
-    JSON.stringify(question?.caption_entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 7, length: 6 }]) ||
-    JSON.stringify(answer?.voice) !== JSON.stringify(receivedVoice) ||
+    received[0].filePath !== 'voice/file_0.oga' ||
+    received[0].bytes !== recording.toBase64() ||
     answer.caption !== 'Heard you' ||
     (answer.reply_to_message as Record<string, unknown>).message_id !== question.message_id ||
     !activity.entries.some(({ method, answer }) => method === 'sendVoice' && answer.ok)
@@ -80,6 +78,28 @@ Deno.test('a grammY bot answers an account voice note with one it downloads and 
       }`,
     );
   }
+  assertEquals(Object.keys(receivedVoice ?? {}), [
+    'duration',
+    'mime_type',
+    'file_id',
+    'file_unique_id',
+    'file_size',
+  ], 'Expected the bot to hear and answer the voice note');
+  assertEqualsInFieldOrder(
+    sentMessage?.voice,
+    receivedVoice,
+    'Expected the bot to hear and answer the voice note',
+  );
+  assertEqualsInFieldOrder(question?.caption_entities, [{
+    type: 'bot_command',
+    offset: 7,
+    length: 6,
+  }], 'Expected the bot to hear and answer the voice note');
+  assertEqualsInFieldOrder(
+    answer?.voice,
+    receivedVoice,
+    'Expected the bot to hear and answer the voice note',
+  );
 });
 
 Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL as files', async () => {
@@ -195,16 +215,18 @@ Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL a
     'Bad Request: message caption is too long',
     'Bad Request: invalid sendVoice parameters: has_spoiler',
   ];
-  if (
-    JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions) ||
-    (await (await api.request(historyPath)).text()) !== historyBefore
-  ) {
+  if ((await (await api.request(historyPath)).text()) !== historyBefore) {
     throw new Error(
       `Expected Telegram's errors and no new message, received ${
         JSON.stringify(descriptions, null, 2)
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    descriptions,
+    expectedDescriptions,
+    "Expected Telegram's errors and no new message",
+  );
 });
 
 Deno.test('voice notes stay out of albums and media replacement', async () => {
@@ -274,10 +296,10 @@ Deno.test('voice notes stay out of albums and media replacement', async () => {
   ];
   const editedMessage = botApiResult(captionEdit.body);
   if (
-    JSON.stringify(refusals) !== JSON.stringify(expectedRefusals) ||
-    accountAlbum.status !== 400 || historyAfterRefusals !== historyBefore ||
-    captionEdit.status !== 200 || editedMessage?.caption !== 'Edited memo' ||
-    JSON.stringify(editedMessage.voice) !== JSON.stringify(voiceMessage?.voice)
+    accountAlbum.status !== 400 ||
+    historyAfterRefusals !== historyBefore ||
+    captionEdit.status !== 200 ||
+    editedMessage?.caption !== 'Edited memo'
   ) {
     throw new Error(
       `Expected voice notes refused where Telegram refuses them, received ${
@@ -285,6 +307,16 @@ Deno.test('voice notes stay out of albums and media replacement', async () => {
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    refusals,
+    expectedRefusals,
+    'Expected voice notes refused where Telegram refuses them',
+  );
+  assertEqualsInFieldOrder(
+    editedMessage.voice,
+    voiceMessage?.voice,
+    'Expected voice notes refused where Telegram refuses them',
+  );
 });
 
 Deno.test('supergroup bots receive voice notes as other messages, and bots repeat them', async () => {
@@ -359,9 +391,6 @@ Deno.test('supergroup bots receive voice notes as other messages, and bots repea
   );
   const externalReply = reply?.external_reply as Record<string, unknown> | undefined;
   if (
-    JSON.stringify(botVoices.map(({ caption }) => caption)) !== JSON.stringify(['/start']) ||
-    JSON.stringify(readerVoices.map(({ caption }) => caption)) !==
-      JSON.stringify(['/start', 'Just talking']) ||
     botVoices[0].voice?.file_unique_id !== commandVoice.file_unique_id ||
     botVoices[0].voice?.file_id === readerVoices[0].voice?.file_id ||
     (forwarded?.voice as Record<string, unknown> | undefined)?.file_unique_id !==
@@ -379,4 +408,14 @@ Deno.test('supergroup bots receive voice notes as other messages, and bots repea
       }`,
     );
   }
+  assertEquals(
+    botVoices.map(({ caption }) => caption),
+    ['/start'],
+    'Expected voice notes delivered and repeated as other media',
+  );
+  assertEquals(
+    readerVoices.map(({ caption }) => caption),
+    ['/start', 'Just talking'],
+    'Expected voice notes delivered and repeated as other media',
+  );
 });

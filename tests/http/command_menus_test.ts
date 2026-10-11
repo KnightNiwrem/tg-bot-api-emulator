@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert';
 
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import { callBotApi } from '../support/bot_api_requests.ts';
 import {
@@ -48,23 +49,28 @@ Deno.test('setMyCommands, getMyCommands, and deleteMyCommands follow Telegram ch
     }),
   });
   const setBody: unknown = await setResponse.json();
-  if (
-    setResponse.status !== 200 ||
-    JSON.stringify(setBody) !== JSON.stringify({ ok: true, result: true })
-  ) {
+  if (setResponse.status !== 200) {
     throw new Error(`Expected setMyCommands to succeed, received ${JSON.stringify(setBody)}`);
   }
+  assertEqualsInFieldOrder(
+    setBody,
+    { ok: true, result: true },
+    'Expected setMyCommands to succeed',
+  );
   const englishCommands = [
     { command: 'start', description: 'Start over' },
     { command: 'help', description: 'Show help', is_ephemeral: true },
   ];
-  if (
-    JSON.stringify(await getCommands({ language_code: 'en' })) !==
-      JSON.stringify(englishCommands) ||
-    JSON.stringify(await getCommands({})) !== JSON.stringify([])
-  ) {
-    throw new Error('Expected getMyCommands to return exactly the list of its scope and language');
-  }
+  assertEqualsInFieldOrder(
+    await getCommands({ language_code: 'en' }),
+    englishCommands,
+    'Expected getMyCommands to return exactly the list of its scope and language',
+  );
+  assertEquals(
+    await getCommands({}),
+    [],
+    'Expected getMyCommands to return exactly the list of its scope and language',
+  );
 
   await expectBadRequest('setMyCommands', {
     commands: [{ command: 'Start', description: 'Go' }],
@@ -131,31 +137,29 @@ Deno.test('setMyCommands, getMyCommands, and deleteMyCommands follow Telegram ch
   const commandsPath =
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/commands`;
   const chatCommandsBody: unknown = await (await api.request(commandsPath)).json();
-  if (
-    JSON.stringify(chatCommandsBody) !== JSON.stringify({
-      commands: [{ command: 'order', description: 'Order again', is_ephemeral: false }],
-    })
-  ) {
-    throw new Error(
-      `Expected the account to see its chat's commands, received ${
-        JSON.stringify(chatCommandsBody)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(chatCommandsBody, {
+    commands: [{ command: 'order', description: 'Order again', is_ephemeral: false }],
+  }, "Expected the account to see its chat's commands");
 
   const deleteResult = await callBotApi(api, `${botApiPath}/deleteMyCommands`, {
     scope: chatScope,
   });
   const fallbackBody: unknown = await (await api.request(commandsPath)).json();
-  if (
-    deleteResult.status !== 200 ||
-    JSON.stringify(fallbackBody) !== JSON.stringify({ commands: [] }) ||
-    JSON.stringify(await getCommands({ scope: chatScope })) !== JSON.stringify([])
-  ) {
+  if (deleteResult.status !== 200) {
     throw new Error(
       `Expected the chat's commands to be deleted, received ${JSON.stringify(fallbackBody)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    fallbackBody,
+    { commands: [] },
+    "Expected the chat's commands to be deleted",
+  );
+  assertEquals(
+    await getCommands({ scope: chatScope }),
+    [],
+    "Expected the chat's commands to be deleted",
+  );
   const unknownBotResponse = await api.request(
     `${sessionPath}/accounts/${accountId}/conversations/private/999/commands`,
   );
@@ -177,16 +181,20 @@ Deno.test('bots set and read their descriptions and short descriptions by langua
     expectedResult: unknown,
   ) => {
     const { status, body } = await callBot(methodName, parameters);
-    if (
-      status !== 200 ||
-      JSON.stringify(body) !== JSON.stringify({ ok: true, result: expectedResult })
-    ) {
+    if (status !== 200) {
       throw new Error(
         `Expected ${methodName} ${JSON.stringify(parameters)} to return ${
           JSON.stringify(expectedResult)
         }, received ${status} ${JSON.stringify(body)}`,
       );
     }
+    assertEqualsInFieldOrder(
+      body,
+      { ok: true, result: expectedResult },
+      `Expected ${methodName} ${JSON.stringify(parameters)} to return ${
+        JSON.stringify(expectedResult)
+      }`,
+    );
   };
 
   await expectResult('getMyDescription', {}, { description: '' });
@@ -285,16 +293,20 @@ Deno.test('bots set and read the administrator rights they ask for by default', 
     expectedResult: unknown,
   ) => {
     const { status, body } = await callBot(methodName, parameters);
-    if (
-      status !== 200 ||
-      JSON.stringify(body) !== JSON.stringify({ ok: true, result: expectedResult })
-    ) {
+    if (status !== 200) {
       throw new Error(
         `Expected ${methodName} ${JSON.stringify(parameters)} to return ${
           JSON.stringify(expectedResult)
         }, received ${status} ${JSON.stringify(body)}`,
       );
     }
+    assertEqualsInFieldOrder(
+      body,
+      { ok: true, result: expectedResult },
+      `Expected ${methodName} ${JSON.stringify(parameters)} to return ${
+        JSON.stringify(expectedResult)
+      }`,
+    );
   };
 
   await expectResult('getMyDefaultAdministratorRights', {}, noGroupRights);
@@ -365,16 +377,20 @@ Deno.test('bots choose the menu button accounts see in their private chats', asy
     expectedResult: unknown,
   ) => {
     const { status, body } = await callBot(methodName, parameters);
-    if (
-      status !== 200 ||
-      JSON.stringify(body) !== JSON.stringify({ ok: true, result: expectedResult })
-    ) {
+    if (status !== 200) {
       throw new Error(
         `Expected ${methodName} ${JSON.stringify(parameters)} to return ${
           JSON.stringify(expectedResult)
         }, received ${status} ${JSON.stringify(body)}`,
       );
     }
+    assertEqualsInFieldOrder(
+      body,
+      { ok: true, result: expectedResult },
+      `Expected ${methodName} ${JSON.stringify(parameters)} to return ${
+        JSON.stringify(expectedResult)
+      }`,
+    );
   };
   const accountMenuButton = async () => {
     const response = await api.request(
@@ -392,19 +408,20 @@ Deno.test('bots choose the menu button accounts see in their private chats', asy
   }, true);
   await expectResult('getChatMenuButton', {}, { type: 'commands' });
   await expectResult('getChatMenuButton', { chat_id: accountId }, shopButton);
-  if (JSON.stringify(await accountMenuButton()) !== JSON.stringify({ menu_button: shopButton })) {
-    throw new Error('Expected the account to see the menu button chosen for its chat');
-  }
+  assertEqualsInFieldOrder(
+    await accountMenuButton(),
+    { menu_button: shopButton },
+    'Expected the account to see the menu button chosen for its chat',
+  );
 
   // A missing button is the default one, which removes the chat's own choice.
   await expectResult('setChatMenuButton', { chat_id: accountId }, true);
   await expectResult('getChatMenuButton', { chat_id: accountId }, { type: 'commands' });
-  if (
-    JSON.stringify(await accountMenuButton()) !==
-      JSON.stringify({ menu_button: { type: 'commands' } })
-  ) {
-    throw new Error('Expected the account to see the menu button for all chats');
-  }
+  assertEqualsInFieldOrder(
+    await accountMenuButton(),
+    { menu_button: { type: 'commands' } },
+    'Expected the account to see the menu button for all chats',
+  );
 
   const failures = [
     [
@@ -510,16 +527,16 @@ Deno.test('bots set supergroup command scopes that members see in their menus', 
   });
   const ownerMenu = await menuOf(owner.id);
   const memberMenu = await menuOf(member.id);
-  if (
-    JSON.stringify(ownerMenu.body) !== JSON.stringify(expectedMenu('moderate')) ||
-    JSON.stringify(memberMenu.body) !== JSON.stringify(expectedMenu('mine'))
-  ) {
-    throw new Error(
-      `Expected each member to see its own menu, received ${
-        JSON.stringify([ownerMenu, memberMenu])
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    ownerMenu.body,
+    expectedMenu('moderate'),
+    'Expected each member to see its own menu',
+  );
+  assertEqualsInFieldOrder(
+    memberMenu.body,
+    expectedMenu('mine'),
+    'Expected each member to see its own menu',
+  );
 
   const leaveResult = await callBotApi(api, `${readerBot.botApiPath}/leaveChat`, {
     chat_id: supergroup.id,
@@ -529,17 +546,18 @@ Deno.test('bots set supergroup command scopes that members see in their menus', 
     chat_id: supergroup.id,
   });
   if (
-    leaveResult.status !== 200 || leftBotResult.status !== 403 ||
-    JSON.stringify(leftBotResult.body) !== JSON.stringify({
-        ok: false,
-        error_code: 403,
-        description: 'Forbidden: bot is not a member of the supergroup chat',
-      })
+    leaveResult.status !== 200 ||
+    leftBotResult.status !== 403
   ) {
     throw new Error(
       `Expected a bot that left to be turned away, received ${JSON.stringify(leftBotResult)}`,
     );
   }
+  assertEqualsInFieldOrder(leftBotResult.body, {
+    ok: false,
+    error_code: 403,
+    description: 'Forbidden: bot is not a member of the supergroup chat',
+  }, 'Expected a bot that left to be turned away');
 
   const stranger = await createAccount(api, sessionPath, 'Linus');
   if ((await menuOf(stranger.id)).status !== 403) {

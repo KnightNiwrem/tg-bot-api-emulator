@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import {
@@ -5,6 +6,7 @@ import {
 } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
@@ -42,16 +44,21 @@ Deno.test('an account and a bot exchange albums whose messages arrive in order',
   const updates = updateMessages((await callBotApi(api, `${botApiPath}/getUpdates`, {})).body);
   const [front, back] = updates;
   if (
-    accountAlbumResponse.status !== 201 || accountAlbum.length !== 2 || updates.length !== 2 ||
-    typeof front.media_group_id !== 'string' || back.media_group_id !== front.media_group_id ||
-    JSON.stringify(updates.map((message) => [message.message_id, message.caption])) !==
-      JSON.stringify([[1, 'Front'], [2, 'Back']]) ||
-    JSON.stringify(accountAlbum) !== JSON.stringify(updates)
+    accountAlbumResponse.status !== 201 ||
+    accountAlbum.length !== 2 ||
+    updates.length !== 2 ||
+    typeof front.media_group_id !== 'string' ||
+    back.media_group_id !== front.media_group_id
   ) {
     throw new Error(
       `Expected the bot to receive the album in order, received ${JSON.stringify(updates)}`,
     );
   }
+  assertEquals(updates.map((message) => [message.message_id, message.caption]), [[1, 'Front'], [
+    2,
+    'Back',
+  ]], 'Expected the bot to receive the album in order');
+  assertEqualsInFieldOrder(accountAlbum, updates, 'Expected the bot to receive the album in order');
 
   const reply = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
     chat_id: String(createdAccount.account.id),
@@ -72,29 +79,32 @@ Deno.test('an account and a bot exchange albums whose messages arrive in order',
   const replyMessages = (reply.body as { result?: Record<string, unknown>[] }).result ?? [];
   const [summary, details] = replyMessages;
   if (
-    reply.status !== 200 || replyMessages.length !== 2 ||
-    JSON.stringify(Object.keys(summary)) !== JSON.stringify([
-        'message_id',
-        'from',
-        'chat',
-        'date',
-        'reply_to_message',
-        'media_group_id',
-        'document',
-        'caption',
-        'caption_entities',
-      ]) ||
-    summary.message_id !== 3 || details.message_id !== 4 ||
+    reply.status !== 200 ||
+    replyMessages.length !== 2 ||
+    summary.message_id !== 3 ||
+    details.message_id !== 4 ||
     typeof summary.media_group_id !== 'string' ||
     summary.media_group_id === front.media_group_id ||
     details.media_group_id !== summary.media_group_id ||
     replyMessages.some((message) =>
       (message.reply_to_message as Record<string, unknown>).message_id !== back.message_id
     ) ||
-    summary.caption !== 'Summary' || 'caption' in details
+    summary.caption !== 'Summary' ||
+    'caption' in details
   ) {
     throw new Error(`Expected the bot's album as a reply, received ${JSON.stringify(reply.body)}`);
   }
+  assertEquals(Object.keys(summary), [
+    'message_id',
+    'from',
+    'chat',
+    'date',
+    'reply_to_message',
+    'media_group_id',
+    'document',
+    'caption',
+    'caption_entities',
+  ], "Expected the bot's album as a reply");
   const botUpdates = await callBotApi(api, `${botApiPath}/getUpdates`, { offset: 3 });
   if (updateMessages(botUpdates.body).length !== 0) {
     throw new Error('Expected the bot to receive no update for its own album');
@@ -111,20 +121,13 @@ Deno.test('an account and a bot exchange albums whose messages arrive in order',
       return new TextDecoder().decode(await download.arrayBuffer());
     }),
   );
-  if (
-    JSON.stringify(history.map((message) => [message.message_id, message.media_group_id])) !==
-      JSON.stringify([
-        [1, front.media_group_id],
-        [2, front.media_group_id],
-        [3, summary.media_group_id],
-        [4, summary.media_group_id],
-      ]) ||
-    JSON.stringify(downloads) !== JSON.stringify(['summary', 'details'])
-  ) {
-    throw new Error(
-      `Expected the history to hold both albums, received ${JSON.stringify(history)}`,
-    );
-  }
+  assertEqualsInFieldOrder(history.map((message) => [message.message_id, message.media_group_id]), [
+    [1, front.media_group_id],
+    [2, front.media_group_id],
+    [3, summary.media_group_id],
+    [4, summary.media_group_id],
+  ], 'Expected the history to hold both albums');
+  assertEquals(downloads, ['summary', 'details'], 'Expected the history to hold both albums');
 });
 
 Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses', async () => {
@@ -279,11 +282,7 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
     'Bad Request: message to be replied not found',
     'Bad Request: chat_id is empty',
   ];
-  if (JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions)) {
-    throw new Error(
-      `Expected Telegram's errors, received ${JSON.stringify(descriptions, null, 2)}`,
-    );
-  }
+  assertEqualsInFieldOrder(descriptions, expectedDescriptions, "Expected Telegram's errors");
   if ((await (await api.request(historyPath)).text()) !== historyBefore) {
     throw new Error('Expected refused albums to leave the history as it was');
   }
@@ -360,11 +359,11 @@ Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them
     }, files);
     descriptions.push(status === 400 && isBadRequestResponse(body) ? body.description : status);
   }
-  if (JSON.stringify(descriptions) !== JSON.stringify(cases.map(({ expected }) => expected))) {
-    throw new Error(
-      `Expected TDLib's precedence, received ${JSON.stringify(descriptions, null, 2)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    descriptions,
+    cases.map(({ expected }) => expected),
+    "Expected TDLib's precedence",
+  );
   if ((await (await api.request(historyPath)).text()) !== historyBefore) {
     throw new Error('Expected refused albums to leave the history as it was');
   }
@@ -398,13 +397,9 @@ Deno.test('albums reach supergroup bots as their messages would alone', async ()
     update.message
   ) as Record<string, unknown>[];
   if (
-    albumResponse.status !== 201 || album.length !== 2 ||
-    album[1].media_group_id !== album[0].media_group_id ||
-    JSON.stringify(botMessages.map((message) => message.caption)) !== JSON.stringify(['/start']) ||
-    JSON.stringify(
-        readerMessages.map((message) => [message.message_id, message.media_group_id]),
-      ) !==
-      JSON.stringify(album.map((message) => [message.message_id, message.media_group_id]))
+    albumResponse.status !== 201 ||
+    album.length !== 2 ||
+    album[1].media_group_id !== album[0].media_group_id
   ) {
     throw new Error(
       `Expected a bot in privacy mode to receive only the command, received ${
@@ -412,6 +407,16 @@ Deno.test('albums reach supergroup bots as their messages would alone', async ()
       }`,
     );
   }
+  assertEquals(
+    botMessages.map((message) => message.caption),
+    ['/start'],
+    'Expected a bot in privacy mode to receive only the command',
+  );
+  assertEqualsInFieldOrder(
+    readerMessages.map((message) => [message.message_id, message.media_group_id]),
+    album.map((message) => [message.message_id, message.media_group_id]),
+    'Expected a bot in privacy mode to receive only the command',
+  );
 
   // Each bot reuses the files by the file_id it received them under.
   const botAlbum = await callBotApi(api, `${readerBotApiPath}/sendMediaGroup`, {
@@ -426,14 +431,18 @@ Deno.test('albums reach supergroup bots as their messages would alone', async ()
   const history = (await (await api.request(`${supergroupPath(owner.id)}/messages`)).json())
     .messages as Record<string, unknown>[];
   if (
-    botAlbum.status !== 200 || botAlbumMessages.length !== 2 ||
+    botAlbum.status !== 200 ||
+    botAlbumMessages.length !== 2 ||
     botAlbumMessages.some((message) => message.has_protected_content !== true) ||
-    JSON.stringify(history.slice(-2).map((message) => message.media_group_id)) !==
-      JSON.stringify(botAlbumMessages.map((message) => message.media_group_id)) ||
     (await readUpdates(botApiPath)).length !== 0
   ) {
     throw new Error(`Expected the bot's album in the history, received ${JSON.stringify(history)}`);
   }
+  assertEqualsInFieldOrder(
+    history.slice(-2).map((message) => message.media_group_id),
+    botAlbumMessages.map((message) => message.media_group_id),
+    "Expected the bot's album in the history",
+  );
 });
 
 Deno.test('forwards and copies of albums form new albums as TDLib groups them', async () => {
@@ -501,14 +510,16 @@ Deno.test('forwards and copies of albums form new albums as TDLib groups them', 
   );
   const [forwardedGroup] = forwardedAlbum;
   if (
-    originalGroup === undefined || forwardedGroup === undefined ||
+    originalGroup === undefined ||
+    forwardedGroup === undefined ||
     forwardedGroup === originalGroup ||
-    JSON.stringify(forwardedAlbum) !==
-      JSON.stringify([forwardedGroup, forwardedGroup, forwardedGroup, undefined]) ||
-    copiedPart[0] === undefined || copiedPart[1] !== copiedPart[0] ||
+    copiedPart[0] === undefined ||
+    copiedPart[1] !== copiedPart[0] ||
     new Set([originalGroup, forwardedGroup, copiedPart[0]]).size !== 3 ||
-    loneMembers.length !== 3 || loneMembers.some((group) => group !== undefined) ||
-    separateDocuments[0] === undefined || separateDocuments[1] !== separateDocuments[0] ||
+    loneMembers.length !== 3 ||
+    loneMembers.some((group) => group !== undefined) ||
+    separateDocuments[0] === undefined ||
+    separateDocuments[1] !== separateDocuments[0] ||
     mixedDocuments.some((group) => group !== undefined)
   ) {
     throw new Error(
@@ -517,6 +528,12 @@ Deno.test('forwards and copies of albums form new albums as TDLib groups them', 
       }`,
     );
   }
+  assertEqualsInFieldOrder(forwardedAlbum, [
+    forwardedGroup,
+    forwardedGroup,
+    forwardedGroup,
+    undefined,
+  ], 'Expected repeated albums to form new albums');
 });
 
 Deno.test('a message of an album keeps its kind of media, and its album outlives a deletion', async () => {
@@ -572,15 +589,16 @@ Deno.test('a message of an album keeps its kind of media, and its album outlives
   const { messages } = await (await api.request(
     `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
   )).json() as { messages: Record<string, unknown>[] };
-  if (
-    deletion.status !== 200 ||
-    JSON.stringify(messages.map((message) => [message.message_id, message.media_group_id])) !==
-      JSON.stringify([[1, undefined], [front.message_id, front.media_group_id]])
-  ) {
+  if (deletion.status !== 200) {
     throw new Error(
       `Expected the rest of the album to remain, received ${JSON.stringify(messages)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    messages.map((message) => [message.message_id, message.media_group_id]),
+    [[1, undefined], [front.message_id, front.media_group_id]],
+    'Expected the rest of the album to remain',
+  );
 });
 
 Deno.test('a grammY bot receives an album through its webhook and answers with one', async () => {
@@ -645,11 +663,8 @@ Deno.test('a grammY bot receives an album through its webhook and answers with o
     const [first, second, answer, upload] = history;
     if (
       albumResponse.status !== 201 ||
-      JSON.stringify(
-          receivedAlbum.map(({ messageId, mediaGroupId }) => [messageId, mediaGroupId]),
-        ) !==
-        JSON.stringify([[1, first.media_group_id], [2, first.media_group_id]]) ||
-      typeof answer.media_group_id !== 'string' || answer.media_group_id === first.media_group_id ||
+      typeof answer.media_group_id !== 'string' ||
+      answer.media_group_id === first.media_group_id ||
       upload.media_group_id !== answer.media_group_id ||
       (answer.reply_to_message as Record<string, unknown>).message_id !== second.message_id ||
       photoSizeOf(answer)?.file_unique_id !== photoSizeOf(first)?.file_unique_id ||
@@ -659,6 +674,11 @@ Deno.test('a grammY bot receives an album through its webhook and answers with o
         `Expected the bot's album in reply to the account's, received ${JSON.stringify(history)}`,
       );
     }
+    assertEqualsInFieldOrder(
+      receivedAlbum.map(({ messageId, mediaGroupId }) => [messageId, mediaGroupId]),
+      [[1, first.media_group_id], [2, first.media_group_id]],
+      "Expected the bot's album in reply to the account's",
+    );
     // The call is recorded once its answer is ready, which may follow the history's change.
     const entries = await expectSettlementWithin(
       (async () => {
@@ -682,15 +702,11 @@ Deno.test('a grammY bot receives an album through its webhook and answers with o
         ? [[entry.kind, (entry.uploaded_files as unknown[]).length, entry.chat_id]]
         : []
     );
-    if (
-      JSON.stringify(albumActivity) !== JSON.stringify([
-        ['update_delivered', 'webhook'],
-        ['update_delivered', 'webhook'],
-        ['bot_api_call', 1, createdAccount.account.id],
-      ])
-    ) {
-      throw new Error(`Expected the album's activity, received ${JSON.stringify(albumActivity)}`);
-    }
+    assertEqualsInFieldOrder(albumActivity, [
+      ['update_delivered', 'webhook'],
+      ['update_delivered', 'webhook'],
+      ['bot_api_call', 1, createdAccount.account.id],
+    ], "Expected the album's activity");
   } finally {
     await api.request(sessionPath, { method: 'DELETE' });
     await webhookServer.shutdown();
@@ -753,17 +769,19 @@ Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", 
     }),
   );
   if (
-    accountPhoto.status !== 201 || otherBotFileId === undefined || ownFileId === undefined ||
-    JSON.stringify(refusals) !== JSON.stringify([
-        'Bad Request: wrong file identifier/HTTP URL specified',
-        'Bad Request: wrong file identifier/HTTP URL specified',
-      ]) ||
+    accountPhoto.status !== 201 ||
+    otherBotFileId === undefined ||
+    ownFileId === undefined ||
     (await (await api.request(historyPath)).text()) !== historyBefore
   ) {
     throw new Error(
       `Expected other bots' and sessions' file IDs to fail, received ${JSON.stringify(refusals)}`,
     );
   }
+  assertEquals(refusals, [
+    'Bad Request: wrong file identifier/HTTP URL specified',
+    'Bad Request: wrong file identifier/HTTP URL specified',
+  ], "Expected other bots' and sessions' file IDs to fail");
 
   const album = await callBotApi(api, `${botApiPath}/sendMediaGroup`, {
     chat_id: chatId,
@@ -832,8 +850,8 @@ Deno.test('sendMediaGroup sends photos, videos, documents and audio and names ea
     ['voice_note', 'Bad Request: can\'t parse InputMedia: type "voice_note" is not allowed'],
   ];
   if (
-    JSON.stringify(outcomes) !== JSON.stringify(expectedOutcomes) ||
-    replacement.status !== 400 || !isBadRequestResponse(replacement.body) ||
+    replacement.status !== 400 ||
+    !isBadRequestResponse(replacement.body) ||
     replacement.body.description !== 'Bad Request: InputMedia of type "animation" is not supported'
   ) {
     throw new Error(
@@ -842,6 +860,7 @@ Deno.test('sendMediaGroup sends photos, videos, documents and audio and names ea
       }`,
     );
   }
+  assertEqualsInFieldOrder(outcomes, expectedOutcomes, "Expected each album kind's outcome");
 });
 
 Deno.test('albums hold photos with videos, and documents only among documents', async () => {
@@ -949,12 +968,15 @@ Deno.test('albums hold photos with videos, and documents only among documents', 
   if (
     forwarded.status !== 200 ||
     new Set(forwardedMessages.map((message) => message.media_group_id)).size !== 1 ||
-    forwardedMessages[0].media_group_id === albumMessages[0].media_group_id ||
-    JSON.stringify(forwardedMessages.map((message) => 'video' in message)) !==
-      JSON.stringify([true, true, true, false])
+    forwardedMessages[0].media_group_id === albumMessages[0].media_group_id
   ) {
     throw new Error(`Expected a new forwarded album, received ${JSON.stringify(forwarded)}`);
   }
+  assertEquals(
+    forwardedMessages.map((message) => 'video' in message),
+    [true, true, true, false],
+    'Expected a new forwarded album',
+  );
 
   const refusals = [
     [{ type: 'video', media: receivedVideo.file_id }, {
@@ -1009,7 +1031,6 @@ Deno.test('albums hold photos with videos, and documents only among documents', 
     "Bad Request: can't use file of type Photo as Video",
   ];
   if (
-    JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions) ||
     accountRefusal.status !== 400 ||
     (await (await api.request(historyPath)).text()) !== historyBefore
   ) {
@@ -1019,4 +1040,9 @@ Deno.test('albums hold photos with videos, and documents only among documents', 
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    descriptions,
+    expectedDescriptions,
+    "Expected Telegram's refusals and no new message",
+  );
 });

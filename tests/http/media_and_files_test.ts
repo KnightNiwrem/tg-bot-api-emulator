@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 
@@ -19,6 +20,7 @@ import {
   createPrivateConversationFixture,
   createSupergroupFixture,
 } from '../support/http_fixtures.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow Telegram checks', async () => {
@@ -36,13 +38,19 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
   const photo = botApiResult(uploadedPhoto.body);
   const photoSize = Array.isArray(photo?.photo) ? photo.photo[0] : undefined;
   if (
-    uploadedPhoto.status !== 200 || photo?.caption !== 'Chart' ||
-    JSON.stringify(photo.caption_entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: 5 }]) ||
-    photo.has_media_spoiler !== true || photoSize?.width !== 640 || photoSize.height !== 480
+    uploadedPhoto.status !== 200 ||
+    photo?.caption !== 'Chart' ||
+    photo.has_media_spoiler !== true ||
+    photoSize?.width !== 640 ||
+    photoSize.height !== 480
   ) {
     throw new Error(`Expected an uploaded photo, received ${JSON.stringify(uploadedPhoto.body)}`);
   }
+  assertEqualsInFieldOrder(
+    photo.caption_entities,
+    [{ type: 'bold', offset: 0, length: 5 }],
+    'Expected an uploaded photo',
+  );
 
   const uploadedDocument = await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
     chat_id: String(chatId),
@@ -66,12 +74,10 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
     photo: photoSize.file_id,
   });
   const reusedPhotoSize = (botApiResult(reusedPhoto.body)?.photo as unknown[] | undefined)?.[0];
-  if (
-    reusedPhoto.status !== 200 ||
-    JSON.stringify(reusedPhotoSize) !== JSON.stringify(photoSize)
-  ) {
+  if (reusedPhoto.status !== 200) {
     throw new Error(`Expected the photo to be sent again, received ${JSON.stringify(reusedPhoto)}`);
   }
+  assertEqualsInFieldOrder(reusedPhotoSize, photoSize, 'Expected the photo to be sent again');
 
   const failures: {
     method: string;
@@ -160,11 +166,7 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
     "Bad Request: can't parse entities: Character '.' is reserved and must be escaped with the preceding '\\'",
     'Bad Request: chat_id is empty',
   ];
-  if (JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions)) {
-    throw new Error(
-      `Expected Telegram's errors, received ${JSON.stringify(descriptions, null, 2)}`,
-    );
-  }
+  assertEqualsInFieldOrder(descriptions, expectedDescriptions, "Expected Telegram's errors");
 });
 
 Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no trace', async () => {
@@ -210,12 +212,14 @@ Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no 
     }, { block: oversizedFile }),
   ];
   for (const { status, body } of oversizedAnswers) {
-    if (
-      status !== 413 || JSON.stringify(body) !==
-        JSON.stringify({ ok: false, error_code: 413, description: 'Request Entity Too Large' })
-    ) {
+    if (status !== 413) {
       throw new Error(`Expected 413 Request Entity Too Large, received ${JSON.stringify(body)}`);
     }
+    assertEqualsInFieldOrder(body, {
+      ok: false,
+      error_code: 413,
+      description: 'Request Entity Too Large',
+    }, 'Expected 413 Request Entity Too Large');
   }
 
   const historyResponse = await api.request(
@@ -225,9 +229,11 @@ Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no 
     messages: { document?: { file_name: string } }[];
   };
   const documentNames = history.messages.map((message) => message.document?.file_name ?? null);
-  if (JSON.stringify(documentNames) !== JSON.stringify([null, 'at-limit.bin'])) {
-    throw new Error(`Expected only the document within the limit, received ${documentNames}`);
-  }
+  assertEquals(
+    documentNames,
+    [null, 'at-limit.bin'],
+    'Expected only the document within the limit',
+  );
 
   const activityResponse = await api.request(
     `${sessionPath}/bot-activity?kind=bot_api_call&bot_id=${createdBot.bot.id}`,
@@ -239,19 +245,15 @@ Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no 
     entry.method,
     entry.answer.error_code ?? 200,
   ]);
-  if (
-    JSON.stringify(recordedAnswers) !== JSON.stringify([
-      ['sendDocument', 200],
-      ['sendDocument', 413],
-      ['sendPhoto', 413],
-      ['sendVideo', 413],
-      ['sendVoice', 413],
-      ['editMessageMedia', 413],
-      ['sendRichMessage', 413],
-    ])
-  ) {
-    throw new Error(`Expected the refused calls to be recorded, received ${recordedAnswers}`);
-  }
+  assertEquals(recordedAnswers, [
+    ['sendDocument', 200],
+    ['sendDocument', 413],
+    ['sendPhoto', 413],
+    ['sendVideo', 413],
+    ['sendVoice', 413],
+    ['editMessageMedia', 413],
+    ['sendRichMessage', 413],
+  ], 'Expected the refused calls to be recorded');
 });
 
 Deno.test('a local session lets bots upload documents, videos and voice notes over 50 MB that getFile cannot serve', async () => {
@@ -303,18 +305,17 @@ Deno.test('bots send files by URL, which Telegram downloads from registered web 
     content_base64: pdfContent.toBase64(),
   });
   const pdfResource = await pdfRegistration.json();
-  if (
-    pdfRegistration.status !== 201 || JSON.stringify(pdfResource) !== JSON.stringify({
-        url: 'https://cdn.example.com/docs/report.pdf',
-        status: 200,
-        content_type: 'application/pdf',
-        content_length: pdfContent.length,
-      })
-  ) {
+  if (pdfRegistration.status !== 201) {
     throw new Error(
       `Expected the resource to be registered, received ${JSON.stringify(pdfResource)}`,
     );
   }
+  assertEqualsInFieldOrder(pdfResource, {
+    url: 'https://cdn.example.com/docs/report.pdf',
+    status: 200,
+    content_type: 'application/pdf',
+    content_length: pdfContent.length,
+  }, 'Expected the resource to be registered');
   for (
     const body of [
       {
@@ -424,15 +425,11 @@ Deno.test('bots send files by URL, which Telegram downloads from registered web 
   ].map(({ status, body }) =>
     status === 400 && isBadRequestResponse(body) ? body.description : status
   );
-  if (
-    JSON.stringify(failures) !== JSON.stringify([
-      'Bad Request: failed to get HTTP URL content',
-      'Bad Request: wrong type of the web page content',
-      'Bad Request: invalid file HTTP URL specified: Unsupported URL protocol',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's errors, received ${JSON.stringify(failures)}`);
-  }
+  assertEquals(failures, [
+    'Bad Request: failed to get HTTP URL content',
+    'Bad Request: wrong type of the web page content',
+    'Bad Request: invalid file HTTP URL specified: Unsupported URL protocol',
+  ], "Expected Telegram's errors");
 
   const historyResponse = await api.request(
     `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
@@ -477,18 +474,14 @@ Deno.test('sendDocument keeps every upload a document, whatever its content type
       );
     }
   }
-  if (
-    JSON.stringify(sentKinds) !== JSON.stringify([
-      'image/gif',
-      'image/gif',
-      'image/gif',
-      'video/mp4',
-      'video/mp4',
-      'video/mp4',
-    ])
-  ) {
-    throw new Error(`Expected documents only, received ${JSON.stringify(sentKinds)}`);
-  }
+  assertEquals(sentKinds, [
+    'image/gif',
+    'image/gif',
+    'image/gif',
+    'video/mp4',
+    'video/mp4',
+    'video/mp4',
+  ], 'Expected documents only');
 });
 
 Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see and download', async () => {
@@ -516,21 +509,23 @@ Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see a
   );
   const thumbnail = document.thumbnail as Record<string, unknown> | undefined;
   if (
-    JSON.stringify(Object.keys(document)) !== JSON.stringify([
-        'file_name',
-        'mime_type',
-        'thumbnail',
-        'thumb',
-        'file_id',
-        'file_unique_id',
-        'file_size',
-      ]) ||
-    JSON.stringify(document.thumb) !== JSON.stringify(thumbnail) ||
-    thumbnail?.width !== 90 || thumbnail.height !== 60 ||
-    thumbnail.file_size !== gifImage(90, 60).length || thumbnail.file_id === document.file_id
+    thumbnail?.width !== 90 ||
+    thumbnail.height !== 60 ||
+    thumbnail.file_size !== gifImage(90, 60).length ||
+    thumbnail.file_id === document.file_id
   ) {
     throw new Error(`Expected the document's thumbnail, received ${JSON.stringify(document)}`);
   }
+  assertEquals(Object.keys(document), [
+    'file_name',
+    'mime_type',
+    'thumbnail',
+    'thumb',
+    'file_id',
+    'file_unique_id',
+    'file_size',
+  ], "Expected the document's thumbnail");
+  assertEqualsInFieldOrder(document.thumb, thumbnail, "Expected the document's thumbnail");
 
   const thumbnailFile = await callBotApi(api, `${botApiPath}/getFile`, {
     file_id: thumbnail.file_id,
@@ -540,12 +535,16 @@ Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see a
     `${sessionPath}/bot-api/file/bot${createdBot.token}/${thumbnailPath}`,
   );
   if (
-    thumbnailPath !== 'thumbnails/file_0.gif' || download.status !== 200 ||
-    JSON.stringify([...new Uint8Array(await download.arrayBuffer())]) !==
-      JSON.stringify([...gifImage(90, 60)])
+    thumbnailPath !== 'thumbnails/file_0.gif' ||
+    download.status !== 200
   ) {
     throw new Error(`Expected the thumbnail to be downloadable, received ${thumbnailPath}`);
   }
+  assertEqualsInFieldOrder(
+    [...new Uint8Array(await download.arrayBuffer())],
+    [...gifImage(90, 60)],
+    'Expected the thumbnail to be downloadable',
+  );
 
   const history = await (await api.request(
     `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
@@ -577,12 +576,17 @@ Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see a
     | Record<string, unknown>
     | undefined)?.thumbnail;
   if (
-    JSON.stringify(reusedThumbnail) !== JSON.stringify(thumbnail) ||
     (legacyThumbnail.document.thumbnail as Record<string, unknown> | undefined)?.width !== 40 ||
-    'thumbnail' in withoutThumbnail.document || 'thumb' in withoutThumbnail.document
+    'thumbnail' in withoutThumbnail.document ||
+    'thumb' in withoutThumbnail.document
   ) {
     throw new Error('Expected reuse to keep the thumbnail, thumb to work, and a large one ignored');
   }
+  assertEqualsInFieldOrder(
+    reusedThumbnail,
+    thumbnail,
+    'Expected reuse to keep the thumbnail, thumb to work, and a large one ignored',
+  );
 
   const thumbnailAsPhoto = await callBotApi(api, `${botApiPath}/sendPhoto`, {
     chat_id: chatId,
@@ -629,16 +633,12 @@ Deno.test('a bot downloads the files it knows with getFile, and tests read any b
     file_id: receivedPhoto.file_id,
   });
   const file = botApiResult(fileResponse.body);
-  if (
-    JSON.stringify(file) !== JSON.stringify({
-      file_id: receivedPhoto.file_id,
-      file_unique_id: receivedPhoto.file_unique_id,
-      file_size: image.length,
-      file_path: 'photos/file_0.gif',
-    })
-  ) {
-    throw new Error(`Expected the file with its path, received ${JSON.stringify(fileResponse)}`);
-  }
+  assertEqualsInFieldOrder(file, {
+    file_id: receivedPhoto.file_id,
+    file_unique_id: receivedPhoto.file_unique_id,
+    file_size: image.length,
+    file_path: 'photos/file_0.gif',
+  }, 'Expected the file with its path');
   const download = await api.request(
     `${sessionPath}/bot-api/file/bot${createdBot.token}/photos/file_0.gif`,
   );
@@ -667,8 +667,6 @@ Deno.test('a bot downloads the files it knows with getFile, and tests read any b
   ]);
   const missingSessionDownload = await api.request(`${sessionPath}/files/unknown`);
   if (
-    JSON.stringify(getFileFailures) !==
-      JSON.stringify(['Bad Request: file_id not specified', 'Bad Request: invalid file_id']) ||
     !(await Promise.all(
       missingDownloads.map(async (response) =>
         response.status === 404 && isNotFoundResponse(await response.json(), 'Not Found')
@@ -678,6 +676,10 @@ Deno.test('a bot downloads the files it knows with getFile, and tests read any b
   ) {
     throw new Error('Expected unknown files to be refused as Telegram does');
   }
+  assertEquals(getFileFailures, [
+    'Bad Request: file_id not specified',
+    'Bad Request: invalid file_id',
+  ], 'Expected unknown files to be refused as Telegram does');
 });
 
 Deno.test('editMessageCaption follows Telegram checks', async () => {
@@ -737,17 +739,13 @@ Deno.test('editMessageCaption follows Telegram checks', async () => {
     const { status, body } = await callBotApi(api, `${botApiPath}/${method}`, parameters);
     descriptions.push(status === 400 && isBadRequestResponse(body) ? body.description : status);
   }
-  if (
-    JSON.stringify(descriptions) !== JSON.stringify([
-      'Bad Request: there is no text in the message to edit',
-      'Bad Request: there is no caption in the message to edit',
-      'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message',
-      'Bad Request: message identifier is not specified',
-      'Bad Request: message to edit not found',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's errors, received ${JSON.stringify(descriptions)}`);
-  }
+  assertEquals(descriptions, [
+    'Bad Request: there is no text in the message to edit',
+    'Bad Request: there is no caption in the message to edit',
+    'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message',
+    'Bad Request: message identifier is not specified',
+    'Bad Request: message to edit not found',
+  ], "Expected Telegram's errors");
 });
 
 Deno.test('editMessageMedia replaces the media of a message', async () => {
@@ -798,17 +796,18 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
   });
   const keyboard = { inline_keyboard: [[{ text: 'Open', callback_data: 'open' }]] };
   if (
-    documentEdit.status !== 200 || 'photo' in (editedDocument ?? {}) ||
+    documentEdit.status !== 200 ||
+    'photo' in (editedDocument ?? {}) ||
     (editedDocument?.document as { file_name?: string } | undefined)?.file_name !==
       'report.txt' ||
     editedDocument?.caption !== 'Report' ||
-    JSON.stringify(editedDocument.caption_entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: 6 }]) ||
-    JSON.stringify(editedDocument.reply_markup) !== JSON.stringify(keyboard) ||
     typeof editedDocument.edit_date !== 'number' ||
-    photoEdit.status !== 200 || 'text' in (editedText ?? {}) ||
-    photoSizeOf(editedText)?.file_id !== photoFileId || editedText?.has_media_spoiler !== true ||
-    editedText.show_caption_above_media !== true || editedText.caption !== 'Now a photo' ||
+    photoEdit.status !== 200 ||
+    'text' in (editedText ?? {}) ||
+    photoSizeOf(editedText)?.file_id !== photoFileId ||
+    editedText?.has_media_spoiler !== true ||
+    editedText.show_caption_above_media !== true ||
+    editedText.caption !== 'Now a photo' ||
     !isBadRequestResponse(unchangedEdit.body) ||
     !unchangedEdit.body.description.startsWith('Bad Request: message is not modified')
   ) {
@@ -818,6 +817,16 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
       }`,
     );
   }
+  assertEqualsInFieldOrder(editedDocument.caption_entities, [{
+    type: 'bold',
+    offset: 0,
+    length: 6,
+  }], 'Expected the media to be replaced');
+  assertEqualsInFieldOrder(
+    editedDocument.reply_markup,
+    keyboard,
+    'Expected the media to be replaced',
+  );
   const updatesBody: unknown = await (await api.request(`${botApiPath}/getUpdates`)).json();
   if (
     !isGetUpdatesResponse(updatesBody) ||
@@ -871,11 +880,11 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
     }, {});
     descriptions.push(isBadRequestResponse(body) ? body.description : JSON.stringify(body));
   }
-  if (
-    JSON.stringify(descriptions) !== JSON.stringify(refusals.map(([, description]) => description))
-  ) {
-    throw new Error(`Expected Telegram's errors, received ${JSON.stringify(descriptions)}`);
-  }
+  assertEqualsInFieldOrder(
+    descriptions,
+    refusals.map(([, description]) => description),
+    "Expected Telegram's errors",
+  );
 
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -953,8 +962,6 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
   if (
     !isBadRequestResponse(inlineUpload.body) ||
     inlineUpload.body.description !== 'Bad Request: invalid message content specified' ||
-    JSON.stringify(inlineEdit.body) !== JSON.stringify({ ok: true, result: true }) ||
-    JSON.stringify(inlineUrlEdit.body) !== JSON.stringify({ ok: true, result: true }) ||
     (editedInlineMessage?.photo as { width: number }[] | undefined)?.[0]?.width !== 7
   ) {
     throw new Error(
@@ -963,6 +970,16 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    inlineEdit.body,
+    { ok: true, result: true },
+    "Expected an inline message's media to be replaced by file_id or URL",
+  );
+  assertEqualsInFieldOrder(
+    inlineUrlEdit.body,
+    { ok: true, result: true },
+    "Expected an inline message's media to be replaced by file_id or URL",
+  );
 });
 
 Deno.test('editMessageMedia replaces the media of a supergroup message', async () => {
@@ -1016,9 +1033,9 @@ Deno.test('account message routes send and edit photos and documents', async () 
   ].map(async (body) => (await sendAccountMessage(body)).status));
   const documentMessage = sentDocument.body?.message;
   if (
-    sentDocument.status !== 201 || documentMessage?.document?.mime_type !== 'text/plain' ||
-    'caption' in documentMessage ||
-    JSON.stringify(rejectedStatuses) !== JSON.stringify([400, 400, 400, 400, 400])
+    sentDocument.status !== 201 ||
+    documentMessage?.document?.mime_type !== 'text/plain' ||
+    'caption' in documentMessage
   ) {
     throw new Error(
       `Expected a document and rejected invalid media, received ${
@@ -1026,6 +1043,11 @@ Deno.test('account message routes send and edit photos and documents', async () 
       }`,
     );
   }
+  assertEquals(
+    rejectedStatuses,
+    [400, 400, 400, 400, 400],
+    'Expected a document and rejected invalid media',
+  );
 
   const messagePath =
     `${accountPath}/conversations/private/${createdBot.bot.id}/messages/${documentMessage.message_id}`;
@@ -1035,12 +1057,18 @@ Deno.test('account message routes send and edit photos and documents', async () 
   const updates = await callBotApi(api, `${botApiPath}/getUpdates`, {});
   const lastUpdateMessage = updateMessages(updates.body).at(-1);
   if (
-    textEdit.status !== 400 || captionEdit.status !== 200 || editedDocument.caption !== '/help' ||
-    lastUpdateMessage?.caption !== '/help' ||
-    JSON.stringify(lastUpdateMessage.document) !== JSON.stringify(documentMessage.document)
+    textEdit.status !== 400 ||
+    captionEdit.status !== 200 ||
+    editedDocument.caption !== '/help' ||
+    lastUpdateMessage?.caption !== '/help'
   ) {
     throw new Error(`Expected a caption edit, received ${JSON.stringify(updates.body)}`);
   }
+  assertEqualsInFieldOrder(
+    lastUpdateMessage.document,
+    documentMessage.document,
+    'Expected a caption edit',
+  );
 });
 
 Deno.test('a grammY bot downloads a document from an account and replies with a photo', async () => {
@@ -1084,10 +1112,11 @@ Deno.test('a grammY bot downloads a document from an account and replies with a 
   )).json();
   const reply = historyBody.messages.at(-1);
   if (
-    JSON.stringify(downloadedTexts) !== JSON.stringify([csv]) ||
-    reply?.caption !== 'Chart of a.csv' || reply.photo?.[0]?.width !== 300 ||
+    reply?.caption !== 'Chart of a.csv' ||
+    reply.photo?.[0]?.width !== 300 ||
     reply.reply_to_message?.document?.file_name !== 'a.csv'
   ) {
     throw new Error(`Expected the bot to reply with a chart, received ${JSON.stringify(reply)}`);
   }
+  assertEqualsInFieldOrder(downloadedTexts, [csv], 'Expected the bot to reply with a chart');
 });
