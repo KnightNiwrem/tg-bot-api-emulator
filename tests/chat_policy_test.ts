@@ -364,7 +364,7 @@ function createChatPolicyFixture() {
   const files = new FileRepository();
   const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
-  const events = { publish: () => {} };
+  const events = { emit: () => {} };
   const currentUnixTimeSeconds = () => NOW;
   const privateMessaging = new PrivateMessagingService({
     accounts,

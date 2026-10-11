@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type {
   AudioUpload,
   DocumentUpload,
@@ -24,12 +26,30 @@ const FILE_UNIQUE_ID_BYTE_COUNT = 12;
  * `file_path` each bot downloads it from.
  */
 export class FileRepository {
-  readonly #filesById = new Map<StoredFileId, StoredFile>();
-  readonly #filesByUniqueId = new Map<string, StoredFile>();
-  readonly #observerFileIdsByObserverId = new Map<number, Map<StoredFileId, string>>();
-  readonly #storedFileIdsByObserverFileId = new Map<string, StoredFileId>();
-  readonly #botFilePathsByBotId = new Map<number, Map<StoredFileId, string>>();
-  readonly #storedFileIdsByBotFilePathByBotId = new Map<number, Map<string, StoredFileId>>();
+  readonly #staging: ChangeStaging;
+  readonly #filesById: TransactionalMap<StoredFileId, StoredFile>;
+  readonly #filesByUniqueId: TransactionalMap<string, StoredFile>;
+  readonly #observerFileIdsByObserverId: TransactionalMap<
+    number,
+    TransactionalMap<StoredFileId, string>
+  >;
+  readonly #storedFileIdsByObserverFileId: TransactionalMap<string, StoredFileId>;
+  readonly #botFilePathsByBotId: TransactionalMap<number, TransactionalMap<StoredFileId, string>>;
+  readonly #storedFileIdsByBotFilePathByBotId: TransactionalMap<
+    number,
+    TransactionalMap<string, StoredFileId>
+  >;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#filesById = new TransactionalMap(staging);
+    this.#filesByUniqueId = new TransactionalMap(staging);
+    this.#observerFileIdsByObserverId = new TransactionalMap(staging);
+    this.#storedFileIdsByObserverFileId = new TransactionalMap(staging);
+    this.#botFilePathsByBotId = new TransactionalMap(staging);
+    this.#storedFileIdsByBotFilePathByBotId = new TransactionalMap(staging);
+  }
 
   /**
    * Stores an upload under a new identity. A document's, video's, or audio file's thumbnail is
@@ -84,7 +104,7 @@ export class FileRepository {
   /** Returns the `file_id` the observer knows a stored file by, assigning one on first sight. */
   getOrAssignObserverFileId(observerId: number, fileId: StoredFileId): string {
     const observerFileIds = this.#observerFileIdsByObserverId.get(observerId) ??
-      new Map<StoredFileId, string>();
+      new TransactionalMap<StoredFileId, string>(this.#staging);
     const assignedObserverFileId = observerFileIds.get(fileId);
     if (assignedObserverFileId !== undefined) {
       return assignedObserverFileId;
@@ -120,9 +140,10 @@ export class FileRepository {
 
   /** Gives a stored file a `file_path` for the bot, which must not have one for it yet. */
   addBotFilePath(botId: number, fileId: StoredFileId, filePath: string): void {
-    const filePaths = this.#botFilePathsByBotId.get(botId) ?? new Map<StoredFileId, string>();
+    const filePaths = this.#botFilePathsByBotId.get(botId) ??
+      new TransactionalMap<StoredFileId, string>(this.#staging);
     const fileIdsByPath = this.#storedFileIdsByBotFilePathByBotId.get(botId) ??
-      new Map<string, StoredFileId>();
+      new TransactionalMap<string, StoredFileId>(this.#staging);
     if (filePaths.has(fileId) || fileIdsByPath.has(filePath)) {
       throw new Error(`Bot ${botId} already has file path ${filePath} or one for file ${fileId}`);
     }

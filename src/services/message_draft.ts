@@ -57,15 +57,16 @@ interface MessageDraftStore {
   getDraft(conversation: PrivateConversationKey): MessageDraft | undefined;
 }
 
-interface ChatDomainEventPublisher {
-  publish(event: ChatDomainEvent): void;
+/** Takes each event into the transaction of the command that caused it. */
+interface ChatDomainEventSink {
+  emit(event: ChatDomainEvent): void;
 }
 
 interface MessageDraftServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly drafts: MessageDraftStore;
-  readonly events: ChatDomainEventPublisher;
+  readonly events: ChatDomainEventSink;
 }
 
 /**
@@ -80,7 +81,7 @@ export class MessageDraftService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #drafts: MessageDraftStore;
-  readonly #events: ChatDomainEventPublisher;
+  readonly #events: ChatDomainEventSink;
 
   constructor({ accounts, bots, drafts, events }: MessageDraftServiceDependencies) {
     this.#accounts = accounts;
@@ -152,7 +153,7 @@ export class MessageDraftService {
     } else {
       this.#drafts.removeDraft(target);
     }
-    this.#events.publish({
+    this.#events.emit({
       type: 'message_generation_stopped',
       accountId: target.accountId,
       botId: target.botId,

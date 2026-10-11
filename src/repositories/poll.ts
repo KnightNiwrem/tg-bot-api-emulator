@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { NewPoll, Poll, PollId } from '../types/poll.ts';
 import type { FormattedText } from '../types/virtual_message.ts';
 
@@ -10,7 +12,12 @@ const MAX_POLL_ID = (1n << 63n) - 1n;
  * session ends.
  */
 export class PollRepository {
-  readonly #pollsById = new Map<PollId, Poll>();
+  readonly #pollsById: TransactionalMap<PollId, Poll>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#pollsById = new TransactionalMap(staging);
+  }
 
   /** Stores a new poll without votes under an identifier that no poll of the session had. */
   addPoll(newPoll: NewPoll): Poll {

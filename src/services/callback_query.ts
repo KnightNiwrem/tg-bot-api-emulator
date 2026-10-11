@@ -84,8 +84,9 @@ interface CallbackQueryStore {
   recordAnswer(callbackQueryId: CallbackQueryId, answer: CallbackQueryAnswer): CallbackQuery;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface CallbackQueryServiceDependencies {
@@ -147,7 +148,7 @@ export class CallbackQueryService {
       callbackData: input.callbackData,
       expired: input.expired,
     });
-    this.#events.publish({ type: 'callback_query_created', callbackQuery, message });
+    this.#events.emit({ type: 'callback_query_created', callbackQuery, message });
     return { pressed: true, callbackQuery };
   }
 

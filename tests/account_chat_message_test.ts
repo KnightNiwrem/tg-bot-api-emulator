@@ -140,7 +140,7 @@ function createReaderFixture() {
   const files = new FileRepository();
   const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
-  const events = { publish: () => {} };
+  const events = { emit: () => {} };
   const currentUnixTimeSeconds = () => 1_700_000_000;
   const privateMessaging = new PrivateMessagingService({
     accounts,

@@ -23,6 +23,7 @@ import type { SupergroupMessagingService } from '../services/supergroup_messagin
 import type { VirtualUserService } from '../services/virtual_user.ts';
 import type { WebResourceService } from '../services/web_resource.ts';
 import type { WebhookAttemptScheduler } from '../services/webhook_attempt_scheduler.ts';
+import type { SessionTransactions } from '../transactions/session_transactions.ts';
 import type { UploadProfile } from './upload_profile.ts';
 
 /** Settings chosen when a session is created, which stay fixed for its lifetime. */
@@ -63,6 +64,8 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly webhookAttempts: WebhookAttemptScheduler;
   /** When the session ends, and whether work may still change it. */
   readonly lifetime: SessionLifetime;
+  /** The transactions in which the session's commands change it, and are published. */
+  readonly transactions: SessionTransactions;
   /**
    * Ends the session for good. Its lifetime's signal aborts and its commit gate closes, so Bot API
    * calls still running, webhook replies included, change nothing more: their downloads stop, and

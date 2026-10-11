@@ -1,5 +1,6 @@
 import { type NotificationWaitEnd, waitForNotification } from '../timing/notification_wait.ts';
 import type { Deadline } from '../timing/session_timing.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
 import type { BotActivityEntry, UnpositionedBotActivityEntry } from '../types/bot_activity.ts';
 
 interface FindEntriesInput {
@@ -20,11 +21,19 @@ interface WaitForAppendInput {
 
 /**
  * Owns a session's bot activity log: entries in the order they were recorded, never changed or
- * removed. Positions start at 1, so position 0 comes before every entry.
+ * removed once published. Positions start at 1, so position 0 comes before every entry. An entry
+ * appended in a transaction takes its position there, and waits learn of it once the transaction
+ * is published.
  */
 export class BotActivityLogRepository {
+  readonly #staging: ChangeStaging;
   readonly #entries: BotActivityEntry[] = [];
   readonly #appendWaiters = new Set<() => void>();
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+  }
 
   append(unpositionedEntry: UnpositionedBotActivityEntry): BotActivityEntry {
     const entry: BotActivityEntry = {
@@ -32,9 +41,13 @@ export class BotActivityLogRepository {
       ...unpositionedEntry,
     };
     this.#entries.push(entry);
-    for (const notify of [...this.#appendWaiters]) {
-      notify();
-    }
+    // Every later write of the transaction is reverted first, so the entry is the newest again.
+    this.#staging.recordRevert(() => this.#entries.pop());
+    this.#staging.notifyAfterPublication(() => {
+      for (const notify of [...this.#appendWaiters]) {
+        notify();
+      }
+    });
     return entry;
   }
 

@@ -448,7 +448,7 @@ function createCallbackQueryFixture() {
     },
   };
   const publishedEvents: ChatDomainEvent[] = [];
-  const events = { publish: (event: ChatDomainEvent) => publishedEvents.push(event) };
+  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,

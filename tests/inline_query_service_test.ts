@@ -797,7 +797,7 @@ function createInlineQueryFixture() {
   const sharedChats = new SharedChatRepository();
   const blockedUsers = new BlockedUserRepository();
   const publishedEvents: ChatDomainEvent[] = [];
-  const events = { publish: (event: ChatDomainEvent) => publishedEvents.push(event) };
+  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
   // The uploads the messaging services store with their messages, in order.
   const storedUploads: FileUpload[] = [];
   const messageFiles = {

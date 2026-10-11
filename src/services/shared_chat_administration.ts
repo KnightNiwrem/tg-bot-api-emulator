@@ -776,8 +776,9 @@ type SharedChatStore =
   & OwnerOnlySharedChatStore
   & ChatMembershipStore;
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface SupergroupServiceMessageRecorder {
@@ -1199,7 +1200,7 @@ export class SharedChatAdministrationService {
       : { ...untitledMembership, customTitle: title.customTitle };
 
     this.#storeCustomTitle(chat.id, input.memberId, title.customTitle);
-    this.#events.publish({
+    this.#events.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId: input.actorAccountId,
@@ -2150,7 +2151,7 @@ export class SharedChatAdministrationService {
       );
     }
     this.#storeStatusOfUser(chat.id, memberId, newStatus);
-    this.#events.publish({
+    this.#events.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId,
@@ -2260,7 +2261,7 @@ export class SharedChatAdministrationService {
     if (!update.updated) {
       throw new Error(`Non-member ${memberId} of chat ${chat.id} could not be updated`);
     }
-    this.#events.publish({
+    this.#events.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId: botId,
@@ -2368,7 +2369,7 @@ export class SharedChatAdministrationService {
       );
     }
     const leftAtUnixSeconds = this.#currentUnixTimeSeconds();
-    this.#events.publish({
+    this.#events.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId: actor.kind === 'account' ? actor.accountId : actor.botId,
@@ -2402,7 +2403,7 @@ export class SharedChatAdministrationService {
     },
   ): void {
     const joinedAtUnixSeconds = this.#currentUnixTimeSeconds();
-    this.#events.publish({
+    this.#events.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId,

@@ -31,12 +31,13 @@ export interface BotApiMethodContext {
 /**
  * A bot's call of a Bot API method, whichever way the call arrived: as an HTTP request, or in a
  * webhook's response to an update. Running the call also takes the answers tests queued for it and
- * records it as bot activity, which methods themselves cannot reach.
+ * records it as bot activity, in a transaction of the session, which methods themselves cannot
+ * reach.
  */
 export interface BotApiCallContext extends BotApiMethodContext {
   readonly session:
     & BotApiMethodContext['session']
-    & Pick<EmulationSession, 'botRateLimits' | 'botServerErrors' | 'botActivity'>;
+    & Pick<EmulationSession, 'botRateLimits' | 'botServerErrors' | 'botActivity' | 'transactions'>;
   readonly via: BotApiCallTransport;
 }
 

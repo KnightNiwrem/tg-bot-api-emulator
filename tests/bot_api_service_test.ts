@@ -53,6 +53,7 @@ import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
 import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
 import { createUpdateConsumers } from './support/webhook_delivery.ts';
@@ -474,7 +475,7 @@ function createBotApiFixture() {
     files,
     polls,
   });
-  const events = new BotUpdateDeliveryService({
+  const botUpdateDelivery = new BotUpdateDeliveryService({
     botMessageViews,
     botUpdates,
     updateSubscriptions,
@@ -483,6 +484,8 @@ function createBotApiFixture() {
     messages,
     lastMessageSendingBots: new LastMessageSendingBotRepository(),
   });
+  // The fixture's repositories are not staged, so each event is projected and queued at once.
+  const events = { emit: (event: ChatDomainEvent) => botUpdateDelivery.project(event) };
   const privateConversations = new PrivateConversationRepository();
   const blockedUsers = new BlockedUserRepository();
   const joinRequesterContacts = {

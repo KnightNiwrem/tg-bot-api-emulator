@@ -614,8 +614,9 @@ interface MessageBoxStore {
   getCanonicalMessageId(ownerId: number, messageId: number): CanonicalMessageId | undefined;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface SupergroupMessagingServiceDependencies {
@@ -1145,7 +1146,7 @@ export class SupergroupMessagingService {
       inlineKeyboard,
       contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
     });
-    this.#events.publish({ type: 'poll_closed', poll: stoppedPoll });
+    this.#events.emit({ type: 'poll_closed', poll: stoppedPoll });
     return { stopped: true, message: editedMessage, poll: stoppedPoll };
   }
 
@@ -1190,7 +1191,7 @@ export class SupergroupMessagingService {
       inlineKeyboard: message.inlineKeyboard,
       contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
     });
-    this.#events.publish({ type: 'message_edited', message: editedMessage });
+    this.#events.emit({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
   }
 
@@ -1627,7 +1628,7 @@ export class SupergroupMessagingService {
       ...edit,
       content: storeOutgoingContent(content, this.#files, this.#polls),
     });
-    this.#events.publish({ type: 'message_edited', message: editedMessage });
+    this.#events.emit({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
   }
 
@@ -1690,7 +1691,7 @@ export class SupergroupMessagingService {
     for (const boxOwnerId of supergroupMessagePolicy.getNumberingBoxOwnerIds(message.chat)) {
       this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
     }
-    this.#events.publish({ type: 'message_created', message: storedMessage });
+    this.#events.emit({ type: 'message_created', message: storedMessage });
     this.#updateMemberReplyInterfaces(storedMessage, repliedMessage);
     return storedMessage;
   }

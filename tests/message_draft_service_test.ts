@@ -264,7 +264,7 @@ function createMessageDraftFixture() {
     accounts,
     bots,
     drafts: new MessageDraftRepository(),
-    events: { publish: (event) => publishedEvents.push(event) },
+    events: { emit: (event) => publishedEvents.push(event) },
   });
   const conversation: PrivateConversationKey = {
     accountId: createAccount(virtualUsers, 'Ada'),

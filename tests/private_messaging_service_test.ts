@@ -2758,9 +2758,9 @@ function createPrivateMessagingFixture() {
       },
     },
     events: {
-      publish: (event) => {
+      emit: (event) => {
         publishedEvents.push(event);
-        botUpdateDelivery.publish(event);
+        botUpdateDelivery.project(event);
       },
     },
     // No draft is shown in these chats; a bot's message has none to remove.

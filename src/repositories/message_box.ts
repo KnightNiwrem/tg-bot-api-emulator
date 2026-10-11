@@ -1,9 +1,10 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { CanonicalMessageId } from '../types/virtual_message.ts';
 
 interface MessageBox {
-  nextMessageId: number;
-  readonly messageIdsByCanonicalId: Map<CanonicalMessageId, number>;
-  readonly canonicalIdsByMessageId: Map<number, CanonicalMessageId>;
+  readonly messageIdsByCanonicalId: TransactionalMap<CanonicalMessageId, number>;
+  readonly canonicalIdsByMessageId: TransactionalMap<number, CanonicalMessageId>;
 }
 
 /**
@@ -15,7 +16,17 @@ interface MessageBox {
  * chat ID, which numbers the supergroup's messages once for every member.
  */
 export class MessageBoxRepository {
-  readonly #messageBoxesByOwnerId = new Map<number, MessageBox>();
+  readonly #staging: ChangeStaging;
+  readonly #messageBoxesByOwnerId: TransactionalMap<number, MessageBox>;
+  /** The ID each owner's box gives its next message; a box that numbered none gives 1. */
+  readonly #nextMessageIdsByOwnerId: TransactionalMap<number, number>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#messageBoxesByOwnerId = new TransactionalMap(staging);
+    this.#nextMessageIdsByOwnerId = new TransactionalMap(staging);
+  }
 
   /** Adds a canonical message to the owner's box and returns its Telegram message ID there. */
   assignMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number {
@@ -26,7 +37,8 @@ export class MessageBoxRepository {
       );
     }
 
-    const messageId = messageBox.nextMessageId++;
+    const messageId = this.#nextMessageIdsByOwnerId.get(ownerId) ?? 1;
+    this.#nextMessageIdsByOwnerId.set(ownerId, messageId + 1);
     messageBox.messageIdsByCanonicalId.set(canonicalMessageId, messageId);
     messageBox.canonicalIdsByMessageId.set(messageId, canonicalMessageId);
     return messageId;
@@ -50,9 +62,8 @@ export class MessageBoxRepository {
     }
 
     const messageBox: MessageBox = {
-      nextMessageId: 1,
-      messageIdsByCanonicalId: new Map(),
-      canonicalIdsByMessageId: new Map(),
+      messageIdsByCanonicalId: new TransactionalMap(this.#staging),
+      canonicalIdsByMessageId: new TransactionalMap(this.#staging),
     };
     this.#messageBoxesByOwnerId.set(ownerId, messageBox);
     return messageBox;
