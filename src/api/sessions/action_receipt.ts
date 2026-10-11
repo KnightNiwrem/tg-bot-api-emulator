@@ -9,6 +9,7 @@ import {
   ACTION_RECEIPT_SESSION_ID_HEADER,
 } from '../../../control_contracts/action_receipts.ts';
 import type { EmulationSession } from '../../types/emulation_session.ts';
+import { sessionNotFoundResponse } from '../control_error_response.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
 
 /** A session as a receipt reads it: its ID and the head of its bot activity log. */
@@ -53,6 +54,13 @@ export function writeActionReceiptHeaders(receipt: ActionReceipt): Record<string
  * answers as `act` does, adding the action's receipt to a successful answer. The receipt is
  * captured just before `act` runs, so call this after the route's last wait, such as reading its
  * request's body, and let `act` validate and execute the action. A refusal carries no receipt.
+ *
+ * The action executes as a command of its session, at its commit boundary: in the same
+ * synchronous step as the session's commit gate is checked, so a session that ended while the
+ * request was read refuses it, changes nothing, and answers as one that does not exist. The
+ * action's changes, and the views of them its answer shows, are one transaction, published once
+ * `act` returns. An action that waits, as one that downloads does, executes only up to its first
+ * wait in it, and what it changes after a wait checks the session's gate itself.
  */
 export async function answerWithActionReceipt(
   context: Context<SessionRouteContextTypes>,
@@ -60,7 +68,11 @@ export async function answerWithActionReceipt(
 ): Promise<Response> {
   const session = context.get('emulationSession');
   const receipt = captureActionReceipt(session);
-  const response = await act(session);
+  const action = session.transactions.execute(() => act(session));
+  if (!action.executed) {
+    return sessionNotFoundResponse(context);
+  }
+  const response = await action.result;
   if (response.ok) {
     // `Headers` names each header without regard to letter case, so a receipt header the action
     // happened to give is replaced, not joined.

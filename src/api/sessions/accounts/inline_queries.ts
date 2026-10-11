@@ -21,6 +21,7 @@ import type {
 import {
   controlErrorResponse,
   invalidControlRequestResponse,
+  sessionNotFoundResponse,
 } from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import { answerWithActionReceipt } from '../action_receipt.ts';
@@ -115,11 +116,11 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
         signal: context.req.raw.signal,
       });
       if (!result.chosen) {
-        return controlErrorResponse(
-          context,
-          chosenInlineResultFailureStatus(result.reason),
-          result.reason,
-        );
+        const { reason } = result;
+        // A session that ended during the download answers as one that does not exist.
+        return reason === 'session_ended'
+          ? sessionNotFoundResponse(context)
+          : controlErrorResponse(context, chosenInlineResultFailureStatus(reason), reason);
       }
       return context.json(
         { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
@@ -177,10 +178,13 @@ function refuseInlineQuerySending(
  * a bad gateway, while media it serves that is not of the result's kind cannot be processed.
  */
 function chosenInlineResultFailureStatus(
-  reason: Extract<
-    Awaited<ReturnType<EmulationSession['inlineQueries']['chooseInlineQueryResult']>>,
-    { readonly chosen: false }
-  >['reason'],
+  reason: Exclude<
+    Extract<
+      Awaited<ReturnType<EmulationSession['inlineQueries']['chooseInlineQueryResult']>>,
+      { readonly chosen: false }
+    >['reason'],
+    'session_ended'
+  >,
 ): 400 | 403 | 404 | 409 | 422 | 502 {
   switch (reason) {
     case 'inline_query_not_found':
