@@ -1,4 +1,10 @@
 import { assertEquals } from '@std/assert';
+import {
+  editChatMessageKeyboard,
+  editChatMessageMedia,
+  editChatMessageText,
+  stopPoll,
+} from '../src/api/sessions/bot_api/message_edits.ts';
 import type {
   RestrictChatMemberAsAccountInput,
   SharedChatAdministrationService,
@@ -24,6 +30,7 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
   // Telegram reports both as an unknown chat; where the messaging services tell them apart, the
   // service passes both on for the presenters to word.
   const chatId = strangerAccount.profile.id;
+  const botContext = { session, bot: bot.profile, signal: session.lifetime.endSignal };
   const unknownAccountId = strangerAccount.profile.id + 1000;
 
   const cases = [
@@ -39,7 +46,7 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
     ],
     [
       'editMessageText',
-      botApi.editMessageText(bot.profile, {
+      editChatMessageText(botContext, {
         chatId,
         messageId: 1,
         content: { kind: 'text', text: 'Done' },
@@ -48,12 +55,12 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
     ],
     [
       'editMessageReplyMarkup',
-      botApi.editMessageReplyMarkup(bot.profile, { chatId, messageId: 1 }),
+      editChatMessageKeyboard(botContext, { chatId, messageId: 1 }),
       'conversation_not_started',
     ],
     [
       'stopPoll',
-      botApi.stopPoll(bot.profile, { chatId, messageId: 1 }),
+      stopPoll(botContext, { chatId, messageId: 1 }),
       'conversation_not_started',
     ],
     [
@@ -226,7 +233,8 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
     permissions: new Set(['can_send_messages']),
   });
   // As TDLib's `edit_message_media` does, new media of an edit needs its permission too.
-  const mediaEdit = botApi.editMessageMedia(bot.profile, {
+  const botContext = { session, bot: bot.profile, signal: session.lifetime.endSignal };
+  const mediaEdit = editChatMessageMedia(botContext, {
     chatId,
     messageId: botPhoto.message.message_id,
     media: {

@@ -1,14 +1,12 @@
 import { isParseMode, parseMarkup } from '../../text_entities/parse_mode.ts';
 import { checkLink, getLinkUserId } from '../../text_entities/telegram_link.ts';
 import type { BotApiMessage } from '../../types/bot_api.ts';
-import type { BotApiPoll } from '../../types/bot_api_poll.ts';
 import type { FormerSupergroupMemberFailureReason } from '../../types/chat_membership.ts';
 import { createWrittenContact, type WrittenContact } from '../../types/contact.ts';
 import type { GeoLocation } from '../../types/geo_location.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
   MIN_POLL_OPEN_PERIOD_SECONDS,
-  type Poll,
   type PollClosingTime,
 } from '../../types/poll.ts';
 import {
@@ -28,11 +26,9 @@ import {
   type ReplyKeyboardButton,
 } from '../../types/reply_interface.ts';
 import {
-  listRichMessageFiles,
   mapRichMessageButtons,
   type RichMessage,
   type RichMessageButtonAction,
-  type RichMessageFile,
   type RichMessageFileTypes,
 } from '../../types/rich_message.ts';
 import {
@@ -55,12 +51,7 @@ import {
   type PrivateConversationKey,
   type SupergroupChatAddress,
 } from '../../types/virtual_chat.ts';
-import {
-  type ChatMessage,
-  type FormattedText,
-  type InlineMessageId,
-  type TextEntity,
-} from '../../types/virtual_message.ts';
+import { type FormattedText, type TextEntity } from '../../types/virtual_message.ts';
 import type { PhotoTooBigFailure } from '../domain/media_file.ts';
 import type {
   CaptionNormalization,
@@ -72,10 +63,7 @@ import type {
   SpecifiedCaption,
   SpecifiedQuote,
   TextInvalidFailure,
-  TextMessageReplacement,
 } from '../domain/message_content.ts';
-import type { BotChatMessageTarget, MessageEditingService } from '../domain/message_editing.ts';
-import type { PollStopFailureReason } from '../domain/poll.ts';
 import type { PollLimitFailure } from '../domain/poll_normalization.ts';
 import type { SendPermissionMissingFailure } from '../domain/message_sending.ts';
 
@@ -528,21 +516,6 @@ export type RepeatMessagesResult =
       | 'messages_not_repeatable';
   };
 
-export interface EditMessageTextRequest extends MessageTarget {
-  readonly content: TextMessageReplacementRequest;
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export interface EditMessageCaptionRequest extends MessageTarget {
-  /** Empty text removes the caption. */
-  readonly caption: SpecifiedFormattedText;
-  /** The Bot API `show_caption_above_media`, which only a photo or video honors. */
-  readonly showsCaptionAboveMedia: boolean;
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
 /**
  * New media of a message and its caption, as `editMessageMedia` specifies them: a photo, a
  * document, a video, or an audio file, uploaded with the request, reused by the `file_id` the bot
@@ -605,174 +578,6 @@ export type SendMediaGroupResult =
     readonly memberPosition: number;
     readonly failure: ServerRefusedUploadFailure;
   };
-
-export interface EditMessageMediaRequest extends MessageTarget {
-  readonly media: MediaReplacementRequest;
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export interface EditMessageReplyMarkupRequest extends MessageTarget {
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-/** The message of a poll the bot sent, which `stopPoll` stops. */
-export interface StopPollRequest extends MessageTarget {
-  /** The keyboard the message shows once stopped; omitting it removes the keyboard, as an edit does. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export type StopPollFailureReason =
-  | 'chat_not_found'
-  | BotPrivateChatAccessFailureReason
-  | FormerSupergroupMemberFailureReason
-  | 'message_not_found'
-  | PollStopFailureReason
-  | 'callback_data_invalid'
-  | 'button_type_invalid';
-
-/** The Bot API answers `stopPoll` with the stopped poll rather than its message. */
-export type StopPollResult =
-  | { readonly stopped: true; readonly poll: BotApiPoll }
-  | { readonly stopped: false; readonly reason: StopPollFailureReason };
-
-export type EditMessageReplyMarkupFailureReason =
-  | 'chat_not_found'
-  | BotPrivateChatAccessFailureReason
-  | FormerSupergroupMemberFailureReason
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'callback_data_invalid'
-  | 'button_type_invalid'
-  | 'message_not_modified';
-
-export type EditMessageTextFailureReason =
-  | EditMessageReplyMarkupFailureReason
-  | 'message_text_empty'
-  | 'message_has_no_text'
-  | 'message_text_too_long';
-
-export type EditMessageCaptionFailureReason =
-  | EditMessageReplyMarkupFailureReason
-  | 'message_has_no_caption'
-  | 'caption_too_long';
-
-export type EditMessageMediaFailureReason =
-  | EditMessageReplyMarkupFailureReason
-  /**
-   * The message is a voice note, a poll, a contact, or a location, whose media TDLib's
-   * `can_edit_message_media` refuses to edit.
-   */
-  | 'message_media_not_editable'
-  | 'caption_too_long'
-  /**
-   * The message belongs to an album, and either it or the new media is a document or an audio
-   * file, which an album keeps to its own kind.
-   */
-  | 'album_media_kind_changed';
-
-export type EditMessageResult<FailureReason extends string> =
-  | { readonly edited: true; readonly message: BotApiMessage }
-  | { readonly edited: false; readonly reason: FailureReason };
-
-export type EditMessageTextResult =
-  | EditMessageResult<EditMessageTextFailureReason>
-  | (
-    & { readonly edited: false }
-    & (TextInvalidFailure | FileResolutionFailure | SendPermissionMissingFailure)
-  );
-
-export type EditMessageCaptionResult =
-  | EditMessageResult<EditMessageCaptionFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
-export type EditMessageMediaResult =
-  | EditMessageResult<EditMessageMediaFailureReason>
-  | (
-    & { readonly edited: false }
-    & (TextInvalidFailure | FileResolutionFailure | SendPermissionMissingFailure)
-  );
-
-/** A message sent through the bot's inline mode, as the Bot API addresses it. */
-interface InlineMessageTarget {
-  /** The Bot API `inline_message_id`. */
-  readonly inlineMessageId: InlineMessageId;
-}
-
-export interface EditInlineMessageTextRequest extends InlineMessageTarget {
-  readonly content: TextMessageReplacementRequest;
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export interface EditInlineMessageCaptionRequest extends InlineMessageTarget {
-  /** Empty text removes the caption. */
-  readonly caption: SpecifiedFormattedText;
-  /** The Bot API `show_caption_above_media`, which only a photo or video honors. */
-  readonly showsCaptionAboveMedia: boolean;
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export interface EditInlineMessageMediaRequest extends InlineMessageTarget {
-  readonly media: MediaReplacementRequest;
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export interface EditInlineMessageReplyMarkupRequest extends InlineMessageTarget {
-  /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-/**
- * Why an edit of an inline message can fail, apart from failures about the new content. An
- * identifier of no message, of a deleted one, or of another bot's inline message finds none.
- */
-export type EditInlineMessageReplyMarkupFailureReason =
-  | 'message_not_found'
-  | 'callback_data_invalid'
-  | 'button_type_invalid'
-  | 'message_not_modified';
-
-export type EditInlineMessageTextFailureReason =
-  | EditInlineMessageReplyMarkupFailureReason
-  | 'message_text_empty'
-  | 'message_has_no_text'
-  | 'message_text_too_long'
-  /** A rich message uploads a file, which an inline message cannot receive. */
-  | 'inline_message_upload_unsupported';
-
-export type EditInlineMessageCaptionFailureReason =
-  | EditInlineMessageReplyMarkupFailureReason
-  | 'message_has_no_caption'
-  | 'caption_too_long';
-
-export type EditInlineMessageMediaFailureReason =
-  | EditInlineMessageReplyMarkupFailureReason
-  | 'caption_too_long'
-  /**
-   * The message is a voice note, a contact, or a location, which an inline query result can send
-   * but no edit replaces.
-   */
-  | 'message_media_not_editable'
-  /** The new media is uploaded, which an inline message cannot receive. */
-  | 'inline_message_upload_unsupported';
-
-/** The Bot API answers an edit of an inline message with `true` rather than the message. */
-export type EditInlineMessageResult<FailureReason extends string> =
-  | { readonly edited: true }
-  | { readonly edited: false; readonly reason: FailureReason }
-  | ({ readonly edited: false } & TextInvalidFailure);
-
-export type EditInlineMessageTextResult =
-  | EditInlineMessageResult<EditInlineMessageTextFailureReason>
-  | ({ readonly edited: false } & FileResolutionFailure);
-
-export type EditInlineMessageMediaResult =
-  | EditInlineMessageResult<EditInlineMessageMediaFailureReason>
-  | ({ readonly edited: false } & FileResolutionFailure);
 
 export interface SendChatActionRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
@@ -855,24 +660,6 @@ interface SupergroupBotMessaging {
     };
 }
 
-/**
- * The message editing that the edit methods and `stopPoll` carry out, by the target each addresses:
- * a message of one of the bot's chats, by the chat's address, or an inline message.
- */
-type BotMessageEditing = Pick<
-  MessageEditingService,
-  | 'findBotInlineMessage'
-  | 'editChatMessageText'
-  | 'editInlineMessageText'
-  | 'editChatMessageCaption'
-  | 'editInlineMessageCaption'
-  | 'editChatMessageMedia'
-  | 'editInlineMessageMedia'
-  | 'editChatMessageKeyboard'
-  | 'editInlineMessageKeyboard'
-  | 'stopPoll'
->;
-
 interface BotMessageSending {
   send(botId: number, content: OutgoingMessageContent, options: SendRequestOptions): SendResult;
   sendAlbum(
@@ -909,11 +696,6 @@ interface BotDraftTextNormalizer {
   normalizeBotDraftText(text: FormattedText): MessageTextNormalization;
 }
 
-interface BotMessageViews {
-  viewPollForCreator(poll: Poll): BotApiPoll;
-  viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage;
-}
-
 interface ChatActions {
   recordBotChatAction(input: {
     readonly botId: number;
@@ -931,17 +713,12 @@ interface BotApiServiceDependencies {
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   /**
-   * Edits the bot's messages and the messages sent through its inline mode, and stops its polls.
-   */
-  readonly messageEditing: BotMessageEditing;
-  /**
    * Sends the bot's messages and albums to its chats, as every send method sends them, resolving
    * what they reply to in other chats.
    */
   readonly messageSender: BotMessageSending;
   /** Forwards and copies messages of the bot's chats, one or many at once. */
   readonly messageRepeater: BotMessageRepetition;
-  readonly botMessageViews: BotMessageViews;
   /**
    * Turns the files that requests send, by `file_id`, upload or URL, into the files of the
    * messages they send, without storing any.
@@ -978,10 +755,8 @@ export class BotApiService {
   readonly #bots: BotCredentialLookup;
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
-  readonly #messageEditing: BotMessageEditing;
   readonly #messageSender: BotMessageSending;
   readonly #messageRepeater: BotMessageRepetition;
-  readonly #botMessageViews: BotMessageViews;
   readonly #botMedia: BotMediaResolution;
   readonly #botCaptions: BotCaptionNormalizer;
   readonly #chatActions: ChatActions;
@@ -995,10 +770,8 @@ export class BotApiService {
       bots,
       botMessages,
       supergroupBotMessages,
-      messageEditing,
       messageSender,
       messageRepeater,
-      botMessageViews,
       botMedia,
       botCaptions,
       chatActions,
@@ -1011,10 +784,8 @@ export class BotApiService {
     this.#bots = bots;
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
-    this.#messageEditing = messageEditing;
     this.#messageSender = messageSender;
     this.#messageRepeater = messageRepeater;
-    this.#botMessageViews = botMessageViews;
     this.#botMedia = botMedia;
     this.#botCaptions = botCaptions;
     this.#chatActions = chatActions;
@@ -1578,35 +1349,6 @@ export class BotApiService {
   }
 
   /**
-   * Resolves new content of a text or rich message: the files of a rich message, as
-   * `resolveRichMessageFiles` resolves them.
-   */
-  #resolveTextMessageReplacement(
-    authenticatedBot: VirtualBotProfile,
-    content: TextMessageReplacementRequest,
-  ):
-    | { readonly resolved: true; readonly content: TextMessageReplacement }
-    | { readonly resolved: false; readonly failure: FileResolutionFailure } {
-    if (content.kind === 'text') {
-      return { resolved: true, content };
-    }
-    const resolution = this.#botMedia.resolveRichMessageFiles(
-      authenticatedBot.id,
-      content.richMessage,
-    );
-    return resolution.resolved
-      ? {
-        resolved: true,
-        content: {
-          kind: 'rich_message',
-          richMessage: resolution.richMessage,
-          detectsEntities: content.detectsEntities,
-        },
-      }
-      : resolution;
-  }
-
-  /**
    * Shows a chat action, such as typing, in a private chat or a supergroup, which the chat's
    * accounts see until it expires, is canceled, or the bot sends a message there.
    */
@@ -1692,320 +1434,6 @@ export class BotApiService {
       throw new Error(`Authenticated bot ${botId} does not exist`);
     }
     return { allowed: false, reason: access.reason };
-  }
-
-  /**
-   * Replaces the content and inline keyboard of a text or rich message the bot sent with new text
-   * and its entities, or with a rich message, which may change the message's kind. As for
-   * `sendRichMessage`, the files of a rich message are resolved before the message is found.
-   */
-  editMessageText(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, content, inlineKeyboard }: EditMessageTextRequest,
-  ): EditMessageTextResult {
-    const replacement = this.#resolveTextMessageReplacement(authenticatedBot, content);
-    if (!replacement.resolved) {
-      return { edited: false, ...replacement.failure };
-    }
-    const result = this.#presentChatMessageEdit(
-      authenticatedBot,
-      this.#messageEditing.editChatMessageText({
-        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
-        content: replacement.content,
-        inlineKeyboard,
-      }),
-    );
-    if (result.edited) {
-      return result;
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-      case 'send_permission_missing':
-        return result;
-      default:
-        return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-    }
-  }
-
-  /**
-   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot sent;
-   * empty caption text removes the caption.
-   */
-  editMessageCaption(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, caption, showsCaptionAboveMedia, inlineKeyboard }:
-      EditMessageCaptionRequest,
-  ): EditMessageCaptionResult {
-    const result = this.#presentChatMessageEdit(
-      authenticatedBot,
-      this.#messageEditing.editChatMessageCaption({
-        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
-        caption: caption.text,
-        captionEntities: caption.entities,
-        showsCaptionAboveMedia,
-        inlineKeyboard,
-      }),
-    );
-    if (result.edited) {
-      return result;
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      default:
-        return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-    }
-  }
-
-  /**
-   * Replaces the content, caption and inline keyboard of a message the bot sent with a new photo,
-   * document, video, or audio file, as TDLib's `edit_message_media` does; a photo, document,
-   * video, or audio message changes its media, and a text or rich message becomes media. As for `sendPhoto`, the file is
-   * resolved before the message is found.
-   */
-  editMessageMedia(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, media, inlineKeyboard }: EditMessageMediaRequest,
-  ): EditMessageMediaResult {
-    const mediaResolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, media);
-    if (!mediaResolution.resolved) {
-      return { edited: false, ...mediaResolution.failure };
-    }
-    const result = this.#presentChatMessageEdit(
-      authenticatedBot,
-      this.#messageEditing.editChatMessageMedia({
-        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
-        media: mediaResolution.file,
-        inlineKeyboard,
-      }),
-    );
-    if (result.edited) {
-      return result;
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-      case 'send_permission_missing':
-        return result;
-      default:
-        return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-    }
-  }
-
-  /** Replaces the inline keyboard of a message the bot sent. */
-  editMessageReplyMarkup(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, inlineKeyboard }: EditMessageReplyMarkupRequest,
-  ): EditMessageResult<EditMessageReplyMarkupFailureReason> {
-    const result = this.#presentChatMessageEdit(
-      authenticatedBot,
-      this.#messageEditing.editChatMessageKeyboard({
-        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
-        inlineKeyboard,
-      }),
-    );
-    if (result.edited) {
-      return result;
-    }
-    return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-  }
-
-  /**
-   * Stops a poll the bot sent, as the official Bot API server's `process_stop_poll_query` and
-   * TDLib's `stop_poll` do, and answers with the closed poll. The message is found as an edit finds
-   * it, then the poll as `findStoppablePoll` finds it; stopping a closed poll fails. The message
-   * shows the new keyboard, or none; no bot receives an `edited_message` update for it.
-   */
-  stopPoll(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, inlineKeyboard }: StopPollRequest,
-  ): StopPollResult {
-    const result = this.#messageEditing.stopPoll({
-      ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
-      inlineKeyboard,
-    });
-    if (result.stopped) {
-      return { stopped: true, poll: this.#botMessageViews.viewPollForCreator(result.poll) };
-    }
-    return { stopped: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-  }
-
-  /**
-   * Replaces the content and inline keyboard of a text or rich message sent through the bot, as
-   * `editMessageText` replaces them. As TDLib's `edit_inline_message_text` requires, a rich
-   * message may reuse files by their `file_id` but upload none.
-   */
-  editInlineMessageText(
-    authenticatedBot: VirtualBotProfile,
-    { inlineMessageId, content, inlineKeyboard }: EditInlineMessageTextRequest,
-  ): EditInlineMessageTextResult {
-    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
-      return { edited: false, reason: 'message_not_found' };
-    }
-    if (
-      content.kind === 'rich_message' &&
-      richMessageUploadsFile(content.richMessage)
-    ) {
-      return { edited: false, reason: 'inline_message_upload_unsupported' };
-    }
-    const replacement = this.#resolveTextMessageReplacement(authenticatedBot, content);
-    if (!replacement.resolved) {
-      return { edited: false, ...replacement.failure };
-    }
-    const result = this.#messageEditing.editInlineMessageText({
-      fromBotId: authenticatedBot.id,
-      inlineMessageId,
-      content: replacement.content,
-      inlineKeyboard,
-    });
-    if (result.edited) {
-      return { edited: true };
-    }
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      default:
-        return {
-          edited: false,
-          reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
-        };
-    }
-  }
-
-  /**
-   * Replaces the caption, its entities, and the inline keyboard of captioned media sent through the
-   * bot; empty caption text removes the caption.
-   */
-  editInlineMessageCaption(
-    authenticatedBot: VirtualBotProfile,
-    { inlineMessageId, caption, showsCaptionAboveMedia, inlineKeyboard }:
-      EditInlineMessageCaptionRequest,
-  ): EditInlineMessageResult<EditInlineMessageCaptionFailureReason> {
-    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
-      return { edited: false, reason: 'message_not_found' };
-    }
-    const result = this.#messageEditing.editInlineMessageCaption({
-      fromBotId: authenticatedBot.id,
-      inlineMessageId,
-      caption: caption.text,
-      captionEntities: caption.entities,
-      showsCaptionAboveMedia,
-      inlineKeyboard,
-    });
-    if (result.edited) {
-      return { edited: true };
-    }
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      default:
-        return {
-          edited: false,
-          reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
-        };
-    }
-  }
-
-  /**
-   * Replaces the content, caption and inline keyboard of a message sent through the bot with a
-   * new photo, document, video, or audio file, as `editMessageMedia` replaces them. As TDLib's
-   * `edit_inline_message_media` requires, the media may reuse a file by its `file_id` or name one
-   * by URL but not upload one. A voice note that an inline query result sent keeps its media, as
-   * any voice note does.
-   */
-  editInlineMessageMedia(
-    authenticatedBot: VirtualBotProfile,
-    { inlineMessageId, media, inlineKeyboard }: EditInlineMessageMediaRequest,
-  ): EditInlineMessageMediaResult {
-    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
-      return { edited: false, reason: 'message_not_found' };
-    }
-    if (getMediaReplacementFile(media).kind === 'upload') {
-      return { edited: false, reason: 'inline_message_upload_unsupported' };
-    }
-    const mediaResolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, media);
-    if (!mediaResolution.resolved) {
-      return { edited: false, ...mediaResolution.failure };
-    }
-    const result = this.#messageEditing.editInlineMessageMedia({
-      fromBotId: authenticatedBot.id,
-      inlineMessageId,
-      media: mediaResolution.file,
-      inlineKeyboard,
-    });
-    if (result.edited) {
-      return { edited: true };
-    }
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      case 'album_media_kind_changed':
-        throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
-      default:
-        return {
-          edited: false,
-          reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
-        };
-    }
-  }
-
-  /** Replaces the inline keyboard of a message sent through the bot. */
-  editInlineMessageReplyMarkup(
-    authenticatedBot: VirtualBotProfile,
-    { inlineMessageId, inlineKeyboard }: EditInlineMessageReplyMarkupRequest,
-  ): EditInlineMessageResult<EditInlineMessageReplyMarkupFailureReason> {
-    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
-      return { edited: false, reason: 'message_not_found' };
-    }
-    const result = this.#messageEditing.editInlineMessageKeyboard({
-      fromBotId: authenticatedBot.id,
-      inlineMessageId,
-      inlineKeyboard,
-    });
-    return result.edited ? { edited: true } : {
-      edited: false,
-      reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
-    };
-  }
-
-  /**
-   * Whether an inline message identifier names a message sent through the bot's inline mode, which
-   * an inline edit checks before it reads the new content. Another bot's inline message is not the
-   * bot's own.
-   */
-  #isOwnInlineMessage(
-    authenticatedBot: VirtualBotProfile,
-    inlineMessageId: InlineMessageId,
-  ): boolean {
-    return this.#messageEditing.findBotInlineMessage(authenticatedBot.id, inlineMessageId) !==
-      undefined;
-  }
-
-  /**
-   * The message of one of the bot's chats that a chat message edit addresses, by the chat its
-   * `chat_id` names and the ID by which that chat's messages are addressed.
-   */
-  #chatMessageTarget(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-    messageId: number,
-  ): BotChatMessageTarget {
-    return { fromBotId: authenticatedBot.id, chat: getBotApiChatAddress(chatId), messageId };
-  }
-
-  /** Shows the bot the message its edit of a chat message left, as the bot sees its chat. */
-  #presentChatMessageEdit<Failure extends { readonly edited: false }>(
-    authenticatedBot: VirtualBotProfile,
-    result: { readonly edited: true; readonly message: ChatMessage } | Failure,
-  ): { readonly edited: true; readonly message: BotApiMessage } | Failure {
-    return result.edited
-      ? {
-        edited: true,
-        message: this.#botMessageViews.viewMessageForBot(result.message, authenticatedBot.id),
-      }
-      : result;
   }
 }
 
@@ -2109,83 +1537,4 @@ function readHttpsButtonUrl(
   return linkCheck.valid
     ? { read: true, url: linkCheck.url }
     : { read: false, keyboardError: `${buttonDescription} ${linkCheck.error}` };
-}
-
-/** The file that new media names, as its request specifies it. */
-function getMediaReplacementFile(media: MediaReplacementRequest): BotApiInputFile {
-  switch (media.kind) {
-    case 'photo':
-      return media.photo;
-    case 'document':
-      return media.document;
-    case 'video':
-      return media.video;
-    case 'audio':
-      return media.audio;
-    default: {
-      const unhandledMedia: never = media;
-      throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
-    }
-  }
-}
-
-/** Whether a rich message a request specifies uploads a file for one of its media blocks. */
-function richMessageUploadsFile(richMessage: RichMessage<BotApiRichMessageFileTypes>): boolean {
-  return listRichMessageFiles(richMessage).some((file) =>
-    getRichMessageInputFile(file).kind === 'upload'
-  );
-}
-
-/** The file that a media block of a rich message a request specifies sends, as the request names it. */
-function getRichMessageInputFile(
-  file: RichMessageFile<BotApiRichMessageFileTypes>,
-): BotApiInputFile {
-  switch (file.kind) {
-    case 'photo':
-      return file.file;
-    case 'document':
-      return file.file.document;
-    case 'video':
-      return file.file.video;
-    case 'voice':
-      return file.file.voice;
-    default: {
-      const unhandledFile: never = file;
-      throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
-    }
-  }
-}
-
-/**
- * Narrows why an operation of the authenticated bot failed to the reasons it can meet: the
- * authenticated bot itself always exists. The other reasons stay as precise as the domain reports
- * them, for the Bot API's presenters to word.
- */
-function excludeMissingBotFailure<Reason extends string>(
-  authenticatedBot: VirtualBotProfile,
-  reason: Reason | 'bot_not_found',
-): Reason {
-  if (reason === 'bot_not_found') {
-    throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-  }
-  return reason;
-}
-
-/**
- * Leaves out the failures of an edit of an inline message that cannot occur: the authenticated bot
- * exists, and the bot may edit any message sent through its inline mode, which is neither a
- * forward nor a message with a reply keyboard.
- */
-function excludeInlineMessageEditabilityFailure<Reason extends string>(
-  authenticatedBot: VirtualBotProfile,
-  reason: Reason | 'bot_not_found' | 'message_not_editable',
-): Reason {
-  switch (reason) {
-    case 'bot_not_found':
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    case 'message_not_editable':
-      throw new Error(`Bot ${authenticatedBot.id} may not edit its own inline message`);
-    default:
-      return reason;
-  }
 }

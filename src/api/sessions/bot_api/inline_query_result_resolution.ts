@@ -3,12 +3,12 @@ import { createWrittenContact, type WrittenContact } from '../../../types/contac
 import type { GeoLocation } from '../../../types/geo_location.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../../../types/inline_query.ts';
-import { listRichMessageFiles } from '../../../types/rich_message.ts';
 import type { AudioAttributes, VideoAttributes } from '../../../types/stored_file.ts';
 import type { LocationMessageContent } from '../../../types/virtual_message.ts';
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { SpecifiedFormattedText } from './formatted_text_reading.ts';
 import type { BotApiFamilyContext } from './method_call.ts';
+import { richMessageUploadsFile } from './specified_rich_message.ts';
 
 type BotMediaResolver = EmulationSession['botMediaResolver'];
 
@@ -580,26 +580,6 @@ function describeInlineResultLocation({ latitude, longitude }: GeoLocation): str
   return `${latitude.toFixed(INLINE_RESULT_LOCATION_DECIMAL_PLACES)} ${
     longitude.toFixed(INLINE_RESULT_LOCATION_DECIMAL_PLACES)
   }`;
-}
-
-/** Whether a rich message a request specifies uploads a file for one of its media blocks. */
-function richMessageUploadsFile(richMessage: RequestedRichMessage): boolean {
-  return listRichMessageFiles(richMessage).some((file) => {
-    switch (file.kind) {
-      case 'photo':
-        return file.file.kind === 'upload';
-      case 'document':
-        return file.file.document.kind === 'upload';
-      case 'video':
-        return file.file.video.kind === 'upload';
-      case 'voice':
-        return file.file.voice.kind === 'upload';
-      default: {
-        const unhandledFile: never = file;
-        throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
-      }
-    }
-  });
 }
 
 /** The caption a media result specified, as new content takes it. */
