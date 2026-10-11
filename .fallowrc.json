@@ -114,12 +114,6 @@
         ]
       },
       {
-        "name": "bot-api-service",
-        "patterns": [
-          "src/services/bot_api/**/*.ts"
-        ]
-      },
-      {
         "name": "bot-media-resolution",
         "patterns": [
           "src/services/bot_media_resolution/**/*.ts"
@@ -274,8 +268,9 @@
           "session-transactions",
           "domain",
           "domain-services",
-          "bot-api-service",
           "bot-media-resolution",
+          "bot-message-sending",
+          "bot-message-repetition",
           "bot-message-view",
           "bot-activity",
           "update-consumers",
@@ -366,26 +361,13 @@
         ]
       },
       {
-        "from": "bot-api-service",
-        "allow": [
-          "domain",
-          "text-entity-detection",
-          "media-inspection"
-        ],
-        "allowTypeOnly": [
-          "update-consumers",
-          "domain-services"
-        ]
-      },
-      {
         "from": "bot-media-resolution",
         "allow": [
           "domain",
           "media-inspection"
         ],
         "allowTypeOnly": [
-          "domain-services",
-          "bot-api-service"
+          "domain-services"
         ]
       },
       {
@@ -394,8 +376,7 @@
           "domain"
         ],
         "allowTypeOnly": [
-          "domain-services",
-          "bot-api-service"
+          "domain-services"
         ]
       },
       {
@@ -405,7 +386,6 @@
         ],
         "allowTypeOnly": [
           "domain-services",
-          "bot-api-service",
           "bot-message-sending"
         ]
       },
@@ -442,7 +422,6 @@
           "update-polling",
           "webhook-delivery",
           "update-consumers",
-          "bot-api-service",
           "bot-media-resolution",
           "bot-message-sending",
           "bot-message-repetition",

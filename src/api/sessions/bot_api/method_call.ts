@@ -20,7 +20,6 @@ export interface BotApiMethodContext {
    */
   readonly session: Pick<
     EmulationSession,
-    | 'botApi'
     | 'mediaFiles'
     | 'botUpdateConsumers'
     | 'botCommands'
@@ -31,6 +30,7 @@ export interface BotApiMethodContext {
     | 'inlineQueries'
     | 'botMediaResolver'
     | 'privateMessaging'
+    | 'supergroupMessaging'
     | 'sharedChatAdministration'
     | 'chatAdmission'
     | 'botMessageViews'
@@ -38,6 +38,10 @@ export interface BotApiMethodContext {
     | 'messageDeletion'
     | 'messageReactions'
     | 'messageEditing'
+    | 'botMessageSending'
+    | 'botMessageRepeater'
+    | 'chatActions'
+    | 'messageDrafts'
     | 'lifetime'
   >;
   /** The bot whose token authenticated the call. */

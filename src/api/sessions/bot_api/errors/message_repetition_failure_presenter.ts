@@ -4,16 +4,16 @@ import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
 import { presentMessageSendingFailure } from './message_sending_failure_presenter.ts';
 
-type BotApi = EmulationSession['botApi'];
+type BotMessageRepeater = EmulationSession['botMessageRepeater'];
 
 /** Why `forwardMessage` or `copyMessage` sent no message. */
 type SingleRepetitionFailure =
-  | Extract<ReturnType<BotApi['forwardMessage']>, { readonly sent: false }>
-  | Extract<ReturnType<BotApi['copyMessage']>, { readonly sent: false }>;
+  | Extract<ReturnType<BotMessageRepeater['forwardMessage']>, { readonly sent: false }>
+  | Extract<ReturnType<BotMessageRepeater['copyMessage']>, { readonly sent: false }>;
 
 /** Why `forwardMessages` or `copyMessages` sent no message. */
 type SeveralRepetitionFailure = Extract<
-  ReturnType<BotApi['forwardMessages'] | BotApi['copyMessages']>,
+  ReturnType<BotMessageRepeater['forwardMessages'] | BotMessageRepeater['copyMessages']>,
   { readonly sent: false }
 >;
 

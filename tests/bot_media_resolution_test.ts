@@ -1,10 +1,10 @@
 import { assertEquals } from '@std/assert';
 import { FileRepository } from '../src/repositories/file/file.ts';
-import type {
-  BotApiInputFile,
-  BotApiRichMessageFileTypes,
-} from '../src/services/bot_api/bot_api.ts';
-import { BotMediaResolver } from '../src/services/bot_media_resolution/bot_media_resolution.ts';
+import {
+  type BotApiInputFile,
+  type BotApiRichMessageFileTypes,
+  BotMediaResolver,
+} from '../src/services/bot_media_resolution/bot_media_resolution.ts';
 import { MediaFileService } from '../src/services/domain/media_file.ts';
 import type { RichMessage } from '../src/types/rich_message.ts';
 

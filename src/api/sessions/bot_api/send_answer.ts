@@ -1,8 +1,6 @@
-import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { presentMessageSendingFailure } from './errors/message_sending_failure_presenter.ts';
+import type { SendResult } from './message_sends.ts';
 import { type BotApiMethodAnswer, botApiResult } from './method_call.ts';
-
-type SendResult = ReturnType<EmulationSession['botApi']['sendMessage']>;
 
 /** Why a send method sent no message. */
 type SendFailure = Extract<SendResult, { readonly sent: false }>;

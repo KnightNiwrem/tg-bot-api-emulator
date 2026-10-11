@@ -37,6 +37,13 @@ import {
 } from '../../types/upload_profile.ts';
 import type { WebFileDownload } from './web_file_download.ts';
 
+/** The file a `file_id` identifies is of another type than the method sends. */
+export interface FileTypeMismatchFailure {
+  readonly reason: 'file_type_mismatch';
+  readonly expectedFileType: StoredFile['type'];
+  readonly actualFileType: StoredFile['type'];
+}
+
 /** Telegram rejects a photo whose width and height add up to more than this. */
 const MAX_PHOTO_DIMENSION_SUM = 10_000;
 

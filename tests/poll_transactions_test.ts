@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 
+import { sendPoll } from '../src/api/sessions/bot_api/message_sends.ts';
 import {
   createBotApiCommandSession,
   FAILED_RECORDING_MESSAGE,
@@ -126,7 +127,7 @@ function createPollFixture() {
   if (!start.sent) {
     throw new Error(`Expected Ada to start her chat: ${JSON.stringify(start)}`);
   }
-  const pollMessage = session.botApi.sendPoll(alpha, {
+  const pollMessage = sendPoll({ session, bot: alpha, signal: session.lifetime.endSignal }, {
     chatId: adaId,
     question: { text: 'Lunch?', entities: [] },
     pollOptions: [{ text: 'Yes', entities: [] }, { text: 'No', entities: [] }],

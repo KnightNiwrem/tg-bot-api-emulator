@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-import type { EmulationSession } from '../../../session/emulation_session.ts';
 import {
   createGeoLocation,
   isPointOnEarth,
@@ -33,7 +32,13 @@ import type { RequestedRichMessageFileTypes } from './web_file_parameter.ts';
 
 /** A rich message as a bot specified it, with the files it names. */
 type SpecifiedRichMessage =
-  & Pick<Parameters<EmulationSession['botApi']['sendRichMessage']>[1], 'detectsEntities'>
+  & {
+    /**
+     * Whether Telegram marks the entities it detects in the text; the Bot API's
+     * `skip_entity_detection` turns it off.
+     */
+    readonly detectsEntities: boolean;
+  }
   & { readonly richMessage: RichMessage<SpecifiedRichMessageFileTypes> };
 
 type SpecifiedRichMessageFileTypes = RequestedRichMessageFileTypes;

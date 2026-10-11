@@ -7,6 +7,7 @@ import {
   type BotApiMethodContext,
 } from './method_call.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
+import { readRichMessageButtons } from './reply_markup_reading.ts';
 import { readRichMessageParameter } from './rich_message_parameter.ts';
 import {
   type RequestedRichMessageFileTypes,
@@ -16,10 +17,14 @@ import {
 } from './web_file_parameter.ts';
 
 /** A rich message as the service sends it, with every file it names resolved. */
-type SendableRichMessage = Pick<
-  Parameters<EmulationSession['botApi']['sendRichMessage']>[1],
-  'richMessage' | 'detectsEntities'
->;
+interface SendableRichMessage {
+  readonly richMessage: RequestedRichMessage;
+  /**
+   * Whether Telegram marks the entities it detects in the text; the Bot API's
+   * `skip_entity_detection` turns it off.
+   */
+  readonly detectsEntities: boolean;
+}
 
 /** A rich message as a request specifies it, naming each file it sends. */
 type RequestedRichMessage = Parameters<
@@ -47,7 +52,7 @@ export async function resolveSpecifiedRichMessage(
 
 /**
  * Reads a `rich_message` parameter as `readRichMessageParameter` does, with its buttons as
- * `BotApiService.readRichMessageButtons` reads them, answering Telegram's error for a message it
+ * `readRichMessageButtons` reads them, answering Telegram's error for a message it
  * cannot read.
  */
 export function readSpecifiedRichMessage(
@@ -66,9 +71,7 @@ export function readSpecifiedRichMessage(
   if (!parameterReading.read) {
     return { read: false, errorAnswer: botApiError(400, parameterReading.description) };
   }
-  const buttonReading = context.session.botApi.readRichMessageButtons(
-    parameterReading.richMessage,
-  );
+  const buttonReading = readRichMessageButtons(context, parameterReading.richMessage);
   if (!buttonReading.read) {
     return {
       read: false,
