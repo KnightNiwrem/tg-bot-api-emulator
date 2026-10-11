@@ -37,6 +37,7 @@ export interface BotApiMethodContext {
     | 'messagePinning'
     | 'messageDeletion'
     | 'messageReactions'
+    | 'messageEditing'
     | 'lifetime'
   >;
   /** The bot whose token authenticated the call. */

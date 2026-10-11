@@ -1,5 +1,5 @@
 import type { EmulationSession } from '../../../session/emulation_session.ts';
-import type { RichMessage } from '../../../types/rich_message.ts';
+import { listRichMessageFiles, type RichMessage } from '../../../types/rich_message.ts';
 import {
   badRequestDescription,
   botApiError,
@@ -20,6 +20,11 @@ type SendableRichMessage = Pick<
   Parameters<EmulationSession['botApi']['sendRichMessage']>[1],
   'richMessage' | 'detectsEntities'
 >;
+
+/** A rich message as a request specifies it, naming each file it sends. */
+type RequestedRichMessage = Parameters<
+  EmulationSession['botMediaResolver']['resolveRichMessageFiles']
+>[1];
 
 /** A rich message as a bot specified it, with the files it names by URL not yet downloaded. */
 export type SpecifiedRichMessage = Omit<SendableRichMessage, 'richMessage'> & {
@@ -77,4 +82,24 @@ export function readSpecifiedRichMessage(
       detectsEntities: parameterReading.detectsEntities,
     },
   };
+}
+
+/** Whether a rich message a request specifies uploads a file for one of its media blocks. */
+export function richMessageUploadsFile(richMessage: RequestedRichMessage): boolean {
+  return listRichMessageFiles(richMessage).some((file) => {
+    switch (file.kind) {
+      case 'photo':
+        return file.file.kind === 'upload';
+      case 'document':
+        return file.file.document.kind === 'upload';
+      case 'video':
+        return file.file.video.kind === 'upload';
+      case 'voice':
+        return file.file.voice.kind === 'upload';
+      default: {
+        const unhandledFile: never = file;
+        throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
+      }
+    }
+  });
 }

@@ -1,5 +1,15 @@
-import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
+import type {
+  ChatMessageCaptionEditResult,
+  ChatMessageKeyboardEditResult,
+  ChatMessageMediaEditResult,
+  ChatMessageTextEditResult,
+  InlineMessageCaptionEditResult,
+  InlineMessageKeyboardEditResult,
+  InlineMessageMediaEditResult,
+  InlineMessageTextEditResult,
+  PollStopResult,
+} from '../message_edits.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
@@ -8,26 +18,24 @@ import {
   presentDetailedMessageContentFailure,
 } from './message_content_failure_presenter.ts';
 
-type BotApi = EmulationSession['botApi'];
-
 type Failure<Result> = Extract<Result, { readonly edited: false }>;
 
 /** Why an edit of a message addressed by its chat failed; each edit method fails for a subset. */
 type ChatMessageEditFailure =
-  | Failure<ReturnType<BotApi['editMessageText']>>
-  | Failure<ReturnType<BotApi['editMessageCaption']>>
-  | Failure<ReturnType<BotApi['editMessageMedia']>>
-  | Failure<ReturnType<BotApi['editMessageReplyMarkup']>>;
+  | Failure<ChatMessageTextEditResult>
+  | Failure<ChatMessageCaptionEditResult>
+  | Failure<ChatMessageMediaEditResult>
+  | Failure<ChatMessageKeyboardEditResult>;
 
 /** Why an edit of a message addressed by its inline message identifier failed. */
 type InlineMessageEditFailure =
-  | Failure<ReturnType<BotApi['editInlineMessageText']>>
-  | Failure<ReturnType<BotApi['editInlineMessageCaption']>>
-  | Failure<ReturnType<BotApi['editInlineMessageMedia']>>
-  | Failure<ReturnType<BotApi['editInlineMessageReplyMarkup']>>;
+  | Failure<InlineMessageTextEditResult>
+  | Failure<InlineMessageCaptionEditResult>
+  | Failure<InlineMessageMediaEditResult>
+  | Failure<InlineMessageKeyboardEditResult>;
 
 /** Why `stopPoll` stopped no poll. */
-type PollStopFailure = Extract<ReturnType<BotApi['stopPoll']>, { readonly stopped: false }>;
+type PollStopFailure = Extract<PollStopResult, { readonly stopped: false }>;
 
 /**
  * The operation of the message editing family that failed: an edit of a message addressed by its

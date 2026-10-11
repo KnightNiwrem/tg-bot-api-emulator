@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import type { InlineKeyboard } from '../../../../types/inline_keyboard.ts';
-import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import { requireSpecifiedChatId } from '../chat_access.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentFixedBotApiError } from '../errors/error_template.ts';
@@ -22,6 +21,27 @@ import {
   type UnreadMediaReplacement,
 } from '../input_media_parameter.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
+import {
+  type ChatMessageCaptionEditResult,
+  type ChatMessageKeyboardEditResult,
+  type ChatMessageMediaEditResult,
+  type ChatMessageTextEditResult,
+  editChatMessageCaption,
+  editChatMessageKeyboard,
+  editChatMessageMedia,
+  editChatMessageText,
+  editInlineMessageCaption,
+  editInlineMessageKeyboard,
+  editInlineMessageMedia,
+  editInlineMessageText,
+  type InlineMessageCaptionEditResult,
+  type InlineMessageKeyboardEditResult,
+  type InlineMessageMediaEditResult,
+  type InlineMessageTextEditResult,
+  type MessageEditContext,
+  type SendableTextMessageReplacement,
+  stopPoll,
+} from '../message_edits.ts';
 import { messageIdOrNone, NO_MESSAGE_ID } from '../message_identifiers.ts';
 import {
   type BotApiMethod,
@@ -123,22 +143,17 @@ type EditedMessageTarget =
  * the reasons.
  */
 type ChatMessageEditResult =
-  | ReturnType<EmulationSession['botApi']['editMessageText']>
-  | ReturnType<EmulationSession['botApi']['editMessageCaption']>
-  | ReturnType<EmulationSession['botApi']['editMessageMedia']>
-  | ReturnType<EmulationSession['botApi']['editMessageReplyMarkup']>;
+  | ChatMessageTextEditResult
+  | ChatMessageCaptionEditResult
+  | ChatMessageMediaEditResult
+  | ChatMessageKeyboardEditResult;
 
 /** The outcome of any edit method for an inline message; each fails for a subset of the reasons. */
 type InlineMessageEditResult =
-  | ReturnType<EmulationSession['botApi']['editInlineMessageText']>
-  | ReturnType<EmulationSession['botApi']['editInlineMessageCaption']>
-  | ReturnType<EmulationSession['botApi']['editInlineMessageMedia']>
-  | ReturnType<EmulationSession['botApi']['editInlineMessageReplyMarkup']>;
-
-/** New content of a text or rich message, as the service edits a message with it. */
-type SendableTextMessageReplacement = Parameters<
-  EmulationSession['botApi']['editMessageText']
->[1]['content'];
+  | InlineMessageTextEditResult
+  | InlineMessageCaptionEditResult
+  | InlineMessageMediaEditResult
+  | InlineMessageKeyboardEditResult;
 
 /** New content of a text or rich message, as `editMessageText` specifies it. */
 type TextMessageReplacementRequest =
@@ -162,18 +177,15 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
         .andThen((parameters) => readCaptionReplacement(call, parameters))
         .andThen(readEditedMessageTarget)
         .andThen((edit) => readEditKeyboard(call.context, edit)),
-    execute: (context, { parameters, caption, target, inlineKeyboard }) => {
-      const { botApi } = context.session;
+    execute: (context: MessageEditContext, { parameters, caption, target, inlineKeyboard }) => {
       const edit = {
         caption,
         showsCaptionAboveMedia: parameters.show_caption_above_media,
         inlineKeyboard,
       };
       return target.kind === 'inline_message'
-        ? inlineMessageEditAnswer(
-          botApi.editInlineMessageCaption(context.bot, { ...target, ...edit }),
-        )
-        : chatMessageEditAnswer(botApi.editMessageCaption(context.bot, { ...target, ...edit }));
+        ? inlineMessageEditAnswer(editInlineMessageCaption(context, { ...target, ...edit }))
+        : chatMessageEditAnswer(editChatMessageCaption(context, { ...target, ...edit }));
     },
   }),
   waitingCommandMethodOfSteps({
@@ -199,14 +211,10 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
         edit: { media: toMediaReplacementRequest(media, file, caption), inlineKeyboard },
       }));
     },
-    execute: (context, { target, edit }) => {
-      const { botApi } = context.session;
-      return target.kind === 'inline_message'
-        ? inlineMessageEditAnswer(
-          botApi.editInlineMessageMedia(context.bot, { ...target, ...edit }),
-        )
-        : chatMessageEditAnswer(botApi.editMessageMedia(context.bot, { ...target, ...edit }));
-    },
+    execute: (context: MessageEditContext, { target, edit }) =>
+      target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(editInlineMessageMedia(context, { ...target, ...edit }))
+        : chatMessageEditAnswer(editChatMessageMedia(context, { ...target, ...edit })),
   }),
   commandMethodOfSteps({
     name: 'editMessageReplyMarkup',
@@ -216,16 +224,10 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
       startSteps({ parameters: call.parameters })
         .andThen(readEditedMessageTarget)
         .andThen((edit) => readEditKeyboard(call.context, edit)),
-    execute: (context, { target, inlineKeyboard }) => {
-      const { botApi } = context.session;
-      return target.kind === 'inline_message'
-        ? inlineMessageEditAnswer(
-          botApi.editInlineMessageReplyMarkup(context.bot, { ...target, inlineKeyboard }),
-        )
-        : chatMessageEditAnswer(
-          botApi.editMessageReplyMarkup(context.bot, { ...target, inlineKeyboard }),
-        );
-    },
+    execute: (context: MessageEditContext, { target, inlineKeyboard }) =>
+      target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(editInlineMessageKeyboard(context, { ...target, inlineKeyboard }))
+        : chatMessageEditAnswer(editChatMessageKeyboard(context, { ...target, inlineKeyboard })),
   }),
   waitingCommandMethodOfSteps({
     name: 'editMessageText',
@@ -246,12 +248,10 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
         (resolvedContent) => ({ target, edit: { content: resolvedContent, inlineKeyboard } }),
       );
     },
-    execute: (context, { target, edit }) => {
-      const { botApi } = context.session;
-      return target.kind === 'inline_message'
-        ? inlineMessageEditAnswer(botApi.editInlineMessageText(context.bot, { ...target, ...edit }))
-        : chatMessageEditAnswer(botApi.editMessageText(context.bot, { ...target, ...edit }));
-    },
+    execute: (context: MessageEditContext, { target, edit }) =>
+      target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(editInlineMessageText(context, { ...target, ...edit }))
+        : chatMessageEditAnswer(editChatMessageText(context, { ...target, ...edit })),
   }),
   // As the official server's `process_stop_poll_query` reads them: the new keyboard, then the
   // chat and the message, which must be positive to be found.
@@ -263,8 +263,11 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
       startSteps(call.parameters)
         .andThen((parameters) => readStopPollKeyboard(call.context, parameters))
         .andThen(requireSpecifiedChatId),
-    execute: (context, { chat_id: chatId, message_id: messageId, inlineKeyboard }) => {
-      const result = context.session.botApi.stopPoll(context.bot, {
+    execute: (
+      context: MessageEditContext,
+      { chat_id: chatId, message_id: messageId, inlineKeyboard },
+    ) => {
+      const result = stopPoll(context, {
         chatId,
         messageId: messageIdOrNone(messageId),
         inlineKeyboard,

@@ -1,14 +1,24 @@
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 
 /**
- * A failure of an operation of the bot whose token authenticated the call, without the
- * `bot_not_found` reason its service may report: that bot exists. Its other reasons stay as precise
+ * A failure without the reasons its caller knows it cannot meet. Its other reasons stay as precise
  * as the domain reports them, for the family's presenter to word.
  */
-export type AuthenticatedBotFailure<Failure extends { readonly reason: string }> = Failure extends
-  unknown
-  ? Omit<Failure, 'reason'> & { readonly reason: Exclude<Failure['reason'], 'bot_not_found'> }
+export type FailureWithout<
+  Failure extends { readonly reason: string },
+  ImpossibleReason extends string,
+> = Failure extends unknown
+  ? Omit<Failure, 'reason'> & { readonly reason: Exclude<Failure['reason'], ImpossibleReason> }
   : never;
+
+/**
+ * A failure of an operation of the bot whose token authenticated the call, without the
+ * `bot_not_found` reason its service may report: that bot exists.
+ */
+export type AuthenticatedBotFailure<Failure extends { readonly reason: string }> = FailureWithout<
+  Failure,
+  'bot_not_found'
+>;
 
 /**
  * The error thrown when a service reports that the authenticated bot does not exist, which breaks

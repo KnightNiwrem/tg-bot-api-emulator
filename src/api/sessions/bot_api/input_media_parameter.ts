@@ -13,8 +13,8 @@ import { BAD_REQUEST_PREFIX } from './method_call.ts';
 import { type BotApiUploadedFiles, parseBotApiJsonParameter } from './request_parameters.ts';
 
 type MediaReplacementRequest = Parameters<
-  EmulationSession['botApi']['editMessageMedia']
->[1]['media'];
+  EmulationSession['botMediaResolver']['resolveMediaContent']
+>[1];
 
 type PhotoReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'photo' }>;
 type DocumentReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'document' }>;

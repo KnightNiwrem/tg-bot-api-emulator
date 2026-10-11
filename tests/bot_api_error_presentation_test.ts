@@ -3,6 +3,17 @@ import { BOT_API_ERRORS } from '../src/api/sessions/bot_api/errors/error_catalog
 import type { BotApiErrorProvenance } from '../src/api/sessions/bot_api/errors/error_template.ts';
 import { presentMessageEditingFailure } from '../src/api/sessions/bot_api/errors/message_editing_failure_presenter.ts';
 import { presentMessageSendingFailure } from '../src/api/sessions/bot_api/errors/message_sending_failure_presenter.ts';
+import type {
+  ChatMessageCaptionEditResult,
+  ChatMessageKeyboardEditResult,
+  ChatMessageMediaEditResult,
+  ChatMessageTextEditResult,
+  InlineMessageCaptionEditResult,
+  InlineMessageKeyboardEditResult,
+  InlineMessageMediaEditResult,
+  InlineMessageTextEditResult,
+  PollStopResult,
+} from '../src/api/sessions/bot_api/message_edits.ts';
 import type { BotApiMethodAnswer } from '../src/api/sessions/bot_api/method_call.ts';
 import type { EmulationSession } from '../src/session/emulation_session.ts';
 
@@ -14,17 +25,18 @@ type BotApi = EmulationSession['botApi'];
 type SendFailure = Extract<ReturnType<BotApi['sendMediaGroup']>, { readonly sent: false }>;
 type ChatActionFailure = Extract<ReturnType<BotApi['sendChatAction']>, { readonly sent: false }>;
 type DraftFailure = Extract<ReturnType<BotApi['sendMessageDraft']>, { readonly sent: false }>;
+type Failure<Result> = Extract<Result, { readonly edited: false }>;
 type ChatMessageEditFailure =
-  | Extract<ReturnType<BotApi['editMessageText']>, { readonly edited: false }>
-  | Extract<ReturnType<BotApi['editMessageCaption']>, { readonly edited: false }>
-  | Extract<ReturnType<BotApi['editMessageMedia']>, { readonly edited: false }>
-  | Extract<ReturnType<BotApi['editMessageReplyMarkup']>, { readonly edited: false }>;
+  | Failure<ChatMessageTextEditResult>
+  | Failure<ChatMessageCaptionEditResult>
+  | Failure<ChatMessageMediaEditResult>
+  | Failure<ChatMessageKeyboardEditResult>;
 type InlineMessageEditFailure =
-  | Extract<ReturnType<BotApi['editInlineMessageText']>, { readonly edited: false }>
-  | Extract<ReturnType<BotApi['editInlineMessageCaption']>, { readonly edited: false }>
-  | Extract<ReturnType<BotApi['editInlineMessageMedia']>, { readonly edited: false }>
-  | Extract<ReturnType<BotApi['editInlineMessageReplyMarkup']>, { readonly edited: false }>;
-type PollStopFailure = Extract<ReturnType<BotApi['stopPoll']>, { readonly stopped: false }>;
+  | Failure<InlineMessageTextEditResult>
+  | Failure<InlineMessageCaptionEditResult>
+  | Failure<InlineMessageMediaEditResult>
+  | Failure<InlineMessageKeyboardEditResult>;
+type PollStopFailure = Extract<PollStopResult, { readonly stopped: false }>;
 
 /** A failure without the flag that tells its operation's outcome, which each test adds back. */
 type FailureDetails<Failure> = Failure extends unknown
