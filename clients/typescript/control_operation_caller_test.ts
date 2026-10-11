@@ -2,6 +2,7 @@
  * The contract-driven route registration and typed caller, exercised together on contracts of
  * operations that no control route has yet: a query, bytes, an empty success, and an optional body.
  */
+import { assertEquals } from '@std/assert';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -92,7 +93,7 @@ Deno.test('A path parameter is encoded into its segment and decoded back', async
     query: { language: 'en' },
   });
 
-  assertEqual(note, { id: 'a b/c?d', language: 'en', format: 'plain' }, 'Expected the note');
+  assertEquals(note, { id: 'a b/c?d', language: 'en', format: 'plain' }, 'Expected the note');
 });
 
 Deno.test('A query sends the parameters given and leaves out an omitted optional one', async () => {
@@ -103,7 +104,7 @@ Deno.test('A query sends the parameters given and leaves out an omitted optional
     query: { language: 'de', format: 'rich' },
   });
 
-  assertEqual(rich.format, 'rich', 'Expected the optional parameter sent when given');
+  assertEquals(rich.format, 'rich', 'Expected the optional parameter sent when given');
 });
 
 Deno.test('A repeated or unknown query parameter is an issue of the query', async () => {
@@ -113,8 +114,8 @@ Deno.test('A repeated or unknown query parameter is an issue of the query', asyn
     'http://notes.example/notes/1?language=en&language=de&x=1',
   );
 
-  assertEqual(response.status, 400, 'Expected the query refused');
-  assertEqual(
+  assertEquals(response.status, 400, 'Expected the query refused');
+  assertEquals(
     (await response.json()).issues.map(({ source, path, code }: Record<string, unknown>) => ({
       source,
       path,
@@ -154,8 +155,8 @@ Deno.test('A bytes success is read as bytes, served in its media type', async ()
   });
   const response = await transport.fetch('http://notes.example/notes/7/content');
 
-  assertEqual(new TextDecoder().decode(bytes), 'Note 7', 'Expected the note content');
-  assertEqual(response.headers.get('Content-Type'), 'text/plain', 'Expected its media type');
+  assertEquals(new TextDecoder().decode(bytes), 'Note 7', 'Expected the note content');
+  assertEquals(response.headers.get('Content-Type'), 'text/plain', 'Expected its media type');
 });
 
 Deno.test('An optional body may be left out, and its defaults still apply', async () => {
@@ -167,7 +168,7 @@ Deno.test('An optional body may be left out, and its defaults still apply', asyn
     body: { pinned: true },
   });
 
-  assertEqual(
+  assertEquals(
     writes,
     [{ noteId: '1', pinned: false }, { noteId: '2', pinned: true }],
     'Expected each write decoded with its defaults',
@@ -242,17 +243,9 @@ Deno.test('Every kind of call sends its path parameters, query and body', async 
   await callEmptyOperation(transport, echoEmptyContract, request);
   const bytes = await callBytesOperation(transport, echoBytesContract, request);
 
-  assertEqual(
+  assertEquals(
     [json.echo, emptyEchoes[0], new TextDecoder().decode(bytes)],
     ['e/1 a&b Hi', 'e/1 a&b Hi', 'e/1 a&b Hi'],
     'Expected each kind of call to send every part of its request',
   );
 });
-
-function assertEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}

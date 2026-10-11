@@ -3,10 +3,10 @@
  * call sent by its structure, how a view's patterns combine with a read's, and the patterns the
  * client refuses before it reads anything.
  */
-import { createTestApi } from '../../tests/support/emulation_api.ts';
+import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
-import { TelegramEmulationClient, UnexpectedBotActivityError } from './mod.ts';
+import { UnexpectedBotActivityError } from './mod.ts';
 import type { BotActivityCriteria, JsonStructure } from './mod.ts';
 
 Deno.test('waitFor, cursors and assertNone match a parameter by its JSON structure', async () => {
@@ -202,12 +202,9 @@ async function assertTypeError(action: () => Promise<unknown>, message: string):
 }
 
 async function createFixture() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const client = new TelegramEmulationClient(publicOrigin, { fetch });
-  const session = await client.createSession();
+  const emulator = createTestInProcessEmulator();
+  const { fetch } = emulator;
+  const session = await emulator.client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
   const methodUrl = (method: string) => `${session.botApiRoot}/bot${token}/${method}`;

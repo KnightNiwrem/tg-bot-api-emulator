@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
@@ -27,7 +28,7 @@ Deno.test('the account chat-message reader finds private chat messages by their 
   const find = (accountId: number, chat: AccountChatAddress, messageId: number) =>
     reader.findMessage({ accountId, chat, messageId });
 
-  assertSameReasons(
+  assertEquals(
     [
       find(999, privateChat, adaMessages.botReply.id),
       find(ada.profile.id, { type: 'private', botId: 999 }, adaMessages.botReply.id),
@@ -66,7 +67,7 @@ Deno.test('the account chat-message reader finds messages in a conversation a jo
   }
   // The bot's message box numbers the messages of all its private chats, so Ada's IDs name no
   // message of Grace's.
-  assertSameReasons(
+  assertEquals(
     [describeLookup(reader.findMessage({
       accountId: grace.profile.id,
       chat: privateChat,
@@ -83,7 +84,7 @@ Deno.test('the account chat-message reader finds supergroup messages only for cu
   const find = (accountId: number, chat: AccountChatAddress, messageId: number) =>
     reader.findMessage({ accountId, chat, messageId });
 
-  assertSameReasons(
+  assertEquals(
     [
       find(999, supergroupChat, supergroupMessage.id),
       find(ada.profile.id, { type: 'supergroup', chatId: -1_000_000_009_999 }, 1),
@@ -272,10 +273,4 @@ function createAccount(virtualUsers: VirtualUserService, firstName: string) {
 
 function describeLookup(result: AccountChatMessageLookupResult): string {
   return result.found ? 'found' : result.reason;
-}
-
-function assertSameReasons(actual: readonly string[], expected: readonly string[]): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`);
-  }
 }

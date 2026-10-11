@@ -1,9 +1,12 @@
+import { assertEquals } from '@std/assert';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
+  jsonRequest,
   requestJson,
 } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -21,6 +24,9 @@ interface FixtureAccount {
   readonly id: number;
   readonly first_name: string;
 }
+
+/** The updates the fixture's bots read: messages and membership changes. */
+const MEMBERSHIP_UPDATE_TYPES = ['message', 'chat_member', 'my_chat_member'];
 
 /** A link as `createChatInviteLink` returns it, in the field order Telegram shows. */
 interface CreatedInviteLink {
@@ -41,23 +47,13 @@ const INVITER_RIGHTS = { can_invite_users: true };
  */
 async function createInviteLinkFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const hopper = await createAccount('Hopper');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string): Promise<FixtureBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number; username: string } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const inviterBot = await createBot('inviter_bot');
-  const observerBot = await createBot('observer_bot');
-  const memberBot = await createBot('member_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const hopper = await createAccount(api, sessionPath, 'Hopper');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const inviterBot = await createBot(api, sessionPath, 'inviter_bot');
+  const observerBot = await createBot(api, sessionPath, 'observer_bot');
+  const memberBot = await createBot(api, sessionPath, 'member_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -88,7 +84,10 @@ async function createInviteLinkFixture() {
   await promote(inviterBot.bot.id, INVITER_RIGHTS);
   await promote(observerBot.bot.id, { can_delete_messages: true });
 
-  const readUpdates = createUpdateReader(api);
+  const readBotUpdates = createUpdateReader(api);
+  /** Reads a bot's messages and membership updates since it last read them. */
+  const readUpdates = async (bot: FixtureBot) =>
+    withoutUpdateIds(await readBotUpdates(bot.botApiPath, MEMBERSHIP_UPDATE_TYPES));
   for (const bot of [inviterBot, observerBot, memberBot]) {
     await readUpdates(bot);
   }
@@ -172,40 +171,6 @@ async function createInviteLinkFixture() {
   };
 }
 
-async function createSessionAccount(
-  api: EmulationApi,
-  sessionPath: string,
-  firstName: string,
-): Promise<FixtureAccount> {
-  return (await requestJson<{ account: FixtureAccount }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: firstName },
-  )).body.account;
-}
-
-/** Returns a reader of each bot's updates since the reader last read that bot's. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (bot: FixtureBot): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      {
-        offset: nextOffsetsByBotApiPath.get(bot.botApiPath) ?? 0,
-        allowed_updates: ['message', 'chat_member', 'my_chat_member'],
-      },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Describes membership updates and service messages briefly, as `kind user: old -> new`. */
 function describeUpdates(updates: ReadonlyArray<Record<string, unknown>>): string[] {
   return updates.map((update) => {
@@ -249,10 +214,6 @@ function hiddenInviteLink(inviteLink: string): string {
   return `https://t.me/+${inviteLinkHash(inviteLink).slice(0, 8)}...`;
 }
 
-function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-}
-
 async function expectStatus(
   response: Response | Promise<Response>,
   expectedStatus: number,
@@ -265,25 +226,6 @@ async function expectStatus(
 }
 
 /** Compares JSON values by content: object keys in any order, array items in order. */
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (toCanonicalJson(actual) !== toCanonicalJson(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function toCanonicalJson(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_key, nested: unknown) =>
-      typeof nested === 'object' && nested !== null && !Array.isArray(nested)
-        ? Object.fromEntries(
-          Object.entries(nested).sort(([first], [second]) => first < second ? -1 : 1),
-        )
-        : nested,
-  );
-}
 
 function nowUnixSeconds(): number {
   return Math.floor(Date.now() / 1_000);
@@ -301,19 +243,19 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
   const plainLink = await createLink();
   const longNamedLink = await createLink({ name: 'x'.repeat(40), creates_join_request: true });
 
-  expectEqual(
+  assertEquals(
     [namedLink, plainLink, longNamedLink].map(({ invite_link }) =>
       INVITE_LINK_PATTERN.test(invite_link)
     ),
     [true, true, true],
     'Expected each link to be a t.me link with a hash',
   );
-  expectEqual(
+  assertEquals(
     new Set([namedLink, plainLink, longNamedLink].map(({ invite_link }) => invite_link)).size,
     3,
     'Expected each link to be new',
   );
-  expectEqual(
+  assertEquals(
     Object.keys(namedLink),
     [
       'invite_link',
@@ -327,7 +269,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
     ],
     "Expected the fields in the official server's order",
   );
-  expectEqual(
+  assertEquals(
     namedLink,
     {
       invite_link: namedLink.invite_link,
@@ -341,7 +283,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
     },
     'Expected the name cleaned as Telegram cleans names, and the other settings kept',
   );
-  expectEqual(
+  assertEquals(
     plainLink,
     {
       invite_link: plainLink.invite_link,
@@ -352,12 +294,12 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
     },
     'Expected a link without settings to omit them',
   );
-  expectEqual(
+  assertEquals(
     [longNamedLink.name, longNamedLink.creates_join_request],
     ['x'.repeat(32), true],
     'Expected a name cut to 32 characters, and the join request policy kept',
   );
-  expectEqual(
+  assertEquals(
     await getInviteLinks(ada.id),
     {
       status: 200,
@@ -437,7 +379,7 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
   const inChat = (parameters: object = {}) => ({ chat_id: supergroup.id, ...parameters });
   const invalidParameters = [400, 'Bad Request: invalid createChatInviteLink parameters'];
 
-  expectEqual(
+  assertEquals(
     [
       await create(inviterBot, {}),
       await create(inviterBot, inChat({ member_limit: -1 })),
@@ -479,14 +421,14 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
     ],
     'Expected each refusal in the order Telegram checks',
   );
-  expectEqual(
+  assertEquals(
     await getInviteLinks(ada.id),
     { status: 200, body: { invite_links: [] } },
     'Expected no refused request to create a link',
   );
 
   await callBot(memberBot, 'leaveChat', { chat_id: supergroup.id });
-  expectEqual(
+  assertEquals(
     await create(memberBot, inChat()),
     [403, 'Forbidden: bot is not a member of the supergroup chat'],
     'Expected a bot that left to be turned away',
@@ -497,7 +439,7 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
     'createChatInviteLink',
     inChat({ expire_date: 0, member_limit: 0 }),
   );
-  expectEqual(
+  assertEquals(
     [status, 'expire_date' in (body.result as object), 'member_limit' in (body.result as object)],
     [200, false, false],
     'Expected a zero expiry date and member limit to set none',
@@ -525,12 +467,12 @@ Deno.test('an account joins through an invite link, and bots see the link it use
 
   const joining = await joinByLink(grace, link.invite_link);
 
-  expectEqual(
+  assertEquals(
     joining,
     { status: 200, body: { chat_id: supergroup.id, outcome: 'joined' } },
     'Expected Grace to join',
   );
-  expectEqual(
+  assertEquals(
     [await getMemberStatus(grace.id), await getMemberCount()],
     ['member', (memberCountBefore as number) + 1],
     'Expected Grace to be a member, counted among the members',
@@ -538,12 +480,12 @@ Deno.test('an account joins through an invite link, and bots see the link it use
   const inviterUpdates = await readUpdates(inviterBot);
   const chatMemberUpdate = inviterUpdates.find((update) => 'chat_member' in update)
     ?.chat_member as Record<string, unknown>;
-  expectEqual(
+  assertEquals(
     Object.keys(chatMemberUpdate),
     ['chat', 'from', 'date', 'old_chat_member', 'new_chat_member', 'invite_link'],
     'Expected the invite link after the members, as the official server shows it',
   );
-  expectEqual(
+  assertEquals(
     chatMemberUpdate,
     {
       chat: { id: supergroup.id, title: 'Team', type: 'supergroup' },
@@ -561,7 +503,7 @@ Deno.test('an account joins through an invite link, and bots see the link it use
     },
     'Expected the creator to see the whole link Grace joined through',
   );
-  expectEqual(
+  assertEquals(
     describeUpdates(inviterUpdates),
     [
       `chat_member ${grace.id} by ${grace.id}: left -> member via ${link.invite_link}`,
@@ -569,7 +511,7 @@ Deno.test('an account joins through an invite link, and bots see the link it use
     ],
     "Expected the inviter to see the change and Grace's own service message",
   );
-  expectEqual(
+  assertEquals(
     describeUpdates(await readUpdates(observerBot)),
     [
       `chat_member ${grace.id} by ${grace.id}: left -> member via ${
@@ -579,7 +521,7 @@ Deno.test('an account joins through an invite link, and bots see the link it use
     ],
     'Expected another administrator to see the link with its hash hidden',
   );
-  expectEqual(
+  assertEquals(
     describeUpdates(await readUpdates(memberBot)),
     [`joined ${grace.id} by ${grace.id}`],
     'Expected a bot that is no administrator to see only the service message',
@@ -587,12 +529,12 @@ Deno.test('an account joins through an invite link, and bots see the link it use
   const { body: { messages } } = await requestJson<
     { messages: Array<{ from: { id: number }; new_chat_members?: Array<{ id: number }> }> }
   >(api, 'GET', `${supergroupPath(grace.id)}/messages`);
-  expectEqual(
+  assertEquals(
     [messages.at(-1)?.from.id, messages.at(-1)?.new_chat_members?.map(({ id }) => id)],
     [grace.id, [grace.id]],
     "Expected Grace's history to end with her own joining",
   );
-  expectEqual(
+  assertEquals(
     (await getInviteLinks()).body.invite_links.map(({ member_count }) => member_count),
     [1],
     'Expected the link to count Grace',
@@ -638,12 +580,12 @@ Deno.test('using an invite link has an explicit outcome for each standing and li
   await readUpdates(inviterBot);
   const memberCountBefore = await getMemberCount();
   const otherSessionPath = await createSession(api);
-  const outsider = await createSessionAccount(api, otherSessionPath, 'Outsider');
+  const outsider = await createAccount(api, otherSessionPath, 'Outsider');
   const join = async (accountPath: string, body: unknown) =>
     (await requestJson(api, 'POST', `${accountPath}/chat-joins`, body)).status;
   const accountPath = (account: FixtureAccount) => `${sessionPath}/accounts/${account.id}`;
 
-  expectEqual(
+  assertEquals(
     [
       await join(accountPath(grace), { invite_link: link.invite_link }),
       await join(accountPath(hopper), { invite_link: link.invite_link }),
@@ -657,7 +599,7 @@ Deno.test('using an invite link has an explicit outcome for each standing and li
     [409, 403, 404, 404, 404, 404, 400, 400],
     'Expected a member to conflict, a banned user to be refused, and unknown links not found',
   );
-  expectEqual(
+  assertEquals(
     [await getMemberStatus(hopper.id), await getMemberCount(), await readUpdates(inviterBot)],
     ['kicked', memberCountBefore, []],
     'Expected the refusals to change nothing',
@@ -668,7 +610,7 @@ Deno.test('using an invite link has an explicit outcome for each standing and li
     chat_id: supergroup.id,
     user_id: linus.id,
   })).body.result as { status: string; is_member: boolean; can_send_messages: boolean };
-  expectEqual(
+  assertEquals(
     [linusJoining.status, linusMember.status, linusMember.is_member, linusMember.can_send_messages],
     [200, 'restricted', true, true],
     'Expected a restricted user to join with its restriction',
@@ -717,7 +659,7 @@ Deno.test('a member limit counts members that joined through the link while they
   );
   steps.push(await memberCount());
 
-  expectEqual(
+  assertEquals(
     steps,
     [200, 1, 410, 0, 200, 1, 410, 0, 200, 1, 0],
     'Expected the limit to count the members that joined through the link and still are',
@@ -748,7 +690,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
       `${sessionPath}/supergroups/${chatId}/invite-links/${inviteLinkHash(inviteLink)}/expiry`,
     );
 
-  expectEqual(
+  assertEquals(
     await expire(expiringLink.invite_link),
     {
       status: 200,
@@ -768,7 +710,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
     },
     'Expected the link to expire, keeping the members that joined through it',
   );
-  expectEqual(
+  assertEquals(
     [
       (await joinByLink(hopper, expiringLink.invite_link)).status,
       await getMemberStatus(hopper.id),
@@ -782,7 +724,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
     [410, 'left', 'member', 409, 409, 404, 404, 400],
     'Expected an expired link to admit nobody, and only a pending expiry date to arrive',
   );
-  expectEqual(
+  assertEquals(
     (await getInviteLinks()).body.invite_links.map(({ is_expired }) => is_expired),
     [true, false],
     'Expected only the expired link to show it',
@@ -795,7 +737,7 @@ Deno.test('only the owner inspects the invite links of a supergroup', async () =
   await addMember(grace.id);
   await promote(grace.id, { can_invite_users: true });
 
-  expectEqual(
+  assertEquals(
     [
       (await getInviteLinks(ada.id)).status,
       (await getInviteLinks(grace.id)).status,
@@ -838,7 +780,7 @@ Deno.test('accounts join a public supergroup by themselves, without an invite li
       method: 'PUT',
     })).status;
 
-  expectEqual(
+  assertEquals(
     [
       await joinStatus(grace.id, commons.id),
       await joinStatus(grace.id, commons.id),
@@ -850,7 +792,7 @@ Deno.test('accounts join a public supergroup by themselves, without an invite li
     [204, 204, 403, 403, 404, 204],
     'Expected a public supergroup to admit Grace once, the others to refuse, and the owner of a private one to stay',
   );
-  expectEqual(
+  assertEquals(
     describeUpdates(await readUpdates(inviterBot)),
     [`chat_member ${grace.id} by ${grace.id}: left -> member`, `joined ${grace.id} by ${grace.id}`],
     'Expected one join without an invite link',
@@ -858,7 +800,7 @@ Deno.test('accounts join a public supergroup by themselves, without an invite li
   const status = async (chatId: number, userId: number) =>
     ((await callBot(inviterBot, 'getChatMember', { chat_id: chatId, user_id: userId })).body
       .result as { status?: string } | undefined)?.status;
-  expectEqual(
+  assertEquals(
     [await status(commons.id, grace.id), await status(commons.id, hopper.id)],
     ['member', 'kicked'],
     'Expected Grace to be a member and Hopper to stay banned',
@@ -928,7 +870,7 @@ Deno.test('editChatInviteLink replaces the settings of a link, which its later u
   const raisedLimit = await editLink(link.invite_link, { name: ' Autumn ', member_limit: 2 });
   const hopperJoining = await joinByLink(hopper, link.invite_link);
 
-  expectEqual(
+  assertEquals(
     [whileFull, raisedLimit, Object.keys(raisedLimit.body.result as object), hopperJoining],
     [
       410,
@@ -976,7 +918,7 @@ Deno.test('editChatInviteLink replaces the settings of a link, which its later u
     creates_join_request: true,
   });
 
-  expectEqual(
+  assertEquals(
     [
       whileExpired,
       revival.body.result,
@@ -1065,7 +1007,7 @@ Deno.test('revokeChatInviteLink ends a link for good while its members and pendi
     ) => [status, body.description]),
   ];
 
-  expectEqual(
+  assertEquals(
     revocations,
     [
       {
@@ -1100,7 +1042,7 @@ Deno.test('revokeChatInviteLink ends a link for good while its members and pendi
     ],
     'Expected each revocation to answer the revoked link with its settings',
   );
-  expectEqual(
+  assertEquals(
     afterRevocation,
     [
       410,
@@ -1130,7 +1072,7 @@ Deno.test('revokeChatInviteLink ends a link for good while its members and pendi
       ],
     );
 
-  expectEqual(
+  assertEquals(
     [
       expiry.status,
       approval.body.result,
@@ -1221,7 +1163,7 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
   const unavailable = [400, 'Bad Request: INVITE_HASH_EXPIRED'];
   const othersLink = [400, 'Bad Request: CHAT_ADMIN_REQUIRED'];
 
-  expectEqual(
+  assertEquals(
     [
       await edit({ invite_link: link.invite_link }),
       await edit(ofLink({ member_limit: -1 })),
@@ -1269,7 +1211,7 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
     ],
     'Expected each refused edit in the order Telegram checks',
   );
-  expectEqual(
+  assertEquals(
     [
       await revoke({ invite_link: link.invite_link }),
       await revoke(ofLink({ name: 'Gone' })),
@@ -1297,7 +1239,7 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
   await callBot(inviterBot, 'leaveChat', { chat_id: supergroup.id });
   const afterLeaving = [await edit(ofLink({ name: 'Renamed' })), await revoke(ofLink())];
 
-  expectEqual(
+  assertEquals(
     [afterDemotion, afterLeaving, await getInviteLinks()],
     [
       [noRights, noRights],
@@ -1332,7 +1274,7 @@ Deno.test('a session edits and revokes only its own invite links, primary or add
     { chat_id: first.supergroup.id, invite_link: link.invite_link },
   );
 
-  expectEqual(
+  assertEquals(
     [fromSecondSession, foreignTokenStatus, await first.getInviteLinks()],
     [
       [
@@ -1345,7 +1287,7 @@ Deno.test('a session edits and revokes only its own invite links, primary or add
     ],
     "Expected another session's bot to find no such link, leaving it as it was",
   );
-  expectEqual(
+  assertEquals(
     [await first.getChatInviteLink(), await second.getChatInviteLink()],
     [primaryLink, undefined],
     "Expected getChat to show each session's bot only its own primary link",
@@ -1381,7 +1323,7 @@ Deno.test('exportChatInviteLink replaces the primary link of the bot, whose memb
   const hopperThroughFirst = await joinByLink(hopper, firstLink);
   const hopperThroughSecond = await joinByLink(hopper, secondLink);
 
-  expectEqual(
+  assertEquals(
     [
       beforeExport,
       INVITE_LINK_PATTERN.test(firstLink),
@@ -1394,7 +1336,7 @@ Deno.test('exportChatInviteLink replaces the primary link of the bot, whose memb
   );
   const graceChatMemberUpdate = inviterUpdates.find((update) => 'chat_member' in update)
     ?.chat_member as { invite_link?: Record<string, unknown> } | undefined;
-  expectEqual(
+  assertEquals(
     graceChatMemberUpdate?.invite_link,
     {
       invite_link: firstLink,
@@ -1405,7 +1347,7 @@ Deno.test('exportChatInviteLink replaces the primary link of the bot, whose memb
     },
     'Expected the creator to see the whole primary link Grace joined through',
   );
-  expectEqual(
+  assertEquals(
     [
       describeUpdates(observerUpdates),
       [graceJoining.status, hopperThroughFirst.status, hopperThroughSecond.status],
@@ -1461,12 +1403,12 @@ Deno.test('revoking the primary link answers it revoked and gives the bot a repl
     invite_link: revokedLink,
   });
 
-  expectEqual(
+  assertEquals(
     Object.keys(revocation.body.result as object),
     ['invite_link', 'creator', 'creates_join_request', 'is_primary', 'is_revoked'],
     'Expected a primary link in the field order of the official server, without settings',
   );
-  expectEqual(
+  assertEquals(
     [revocation.status, revocation.body.result],
     [
       200,
@@ -1480,7 +1422,7 @@ Deno.test('revoking the primary link answers it revoked and gives the bot a repl
     ],
     'Expected the revocation to answer the revoked primary link, not its replacement',
   );
-  expectEqual(
+  assertEquals(
     [
       replacement !== undefined && INVITE_LINK_PATTERN.test(replacement),
       replacement === revokedLink,
@@ -1534,7 +1476,7 @@ Deno.test('each administrator bot replaces only its own primary link', async () 
   });
   const graceThroughAdditional = await joinByLink(grace, additionalLink.invite_link);
 
-  expectEqual(
+  assertEquals(
     [
       observerAfterInviterExport,
       inviterAfterObserverRevocation,
@@ -1608,7 +1550,7 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
     { method: 'POST' },
   );
 
-  expectEqual(
+  assertEquals(
     [
       await exportAs(inviterBot, {}),
       await exportAs(inviterBot, { chat_id: supergroup.id, name: 'Main' }),
@@ -1641,7 +1583,7 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
     ],
     'Expected each refused export and primary link edit, and a primary link to have no expiry',
   );
-  expectEqual(
+  assertEquals(
     [
       await getChatInviteLink(),
       await getChatInviteLink(observerBot),
@@ -1662,7 +1604,7 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
   await callBot(inviterBot, 'leaveChat', { chat_id: supergroup.id });
   const afterLeaving = await exportAs(inviterBot, { chat_id: supergroup.id });
 
-  expectEqual(
+  assertEquals(
     [afterDemotion, afterRepromotion, afterLeaving, await getInviteLinks()],
     [
       [noRights, undefined],
@@ -1683,7 +1625,7 @@ Deno.test('concurrent exports leave the bot exactly one primary link that is not
     .filter(({ is_primary, is_revoked }) => is_primary === true && is_revoked === false)
     .map(({ invite_link }) => invite_link);
 
-  expectEqual(
+  assertEquals(
     [
       new Set(exportedLinks).size,
       inspectedLinks.length,

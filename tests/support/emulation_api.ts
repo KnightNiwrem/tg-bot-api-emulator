@@ -1,17 +1,29 @@
 /**
- * The HTTP harness through which tests talk to an in-process emulation API: building the API,
- * creating sessions on it, and exchanging JSON with its routes.
+ * The HTTP harness through which tests talk to an emulator running in the test's own process:
+ * building the emulator, creating sessions on it, and exchanging JSON with its routes.
  */
 import { createEmulationApi } from '../../src/api/mod.ts';
-import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
 import type { UploadProfile } from '../../src/types/upload_profile.ts';
+import {
+  createInProcessEmulatorWithHandler,
+  type InProcessEmulator,
+} from '../../in_process/in_process_emulator.ts';
 import { withOpenApiConformanceCheck } from './openapi_conformance/conformance_middleware.ts';
 
-/** An in-process emulation API that tests send requests to without a network. */
-export type EmulationApi = ReturnType<typeof createEmulationApi>;
-
-/** The public origin a test API names in the absolute URLs it returns. */
+/** The public origin a test emulator names in the absolute URLs it returns. */
 export const TEST_PUBLIC_ORIGIN = 'http://emulator.example:9000';
+
+/** An emulation API that tests send requests to by path, without a network. */
+export interface EmulationApi {
+  /** Sends a request to `path`, an absolute path on the emulation API. */
+  request(path: string, init?: RequestInit): Response | Promise<Response>;
+}
+
+/** The in-process emulator tests use, which they also reach by path. */
+export interface TestInProcessEmulator extends InProcessEmulator, EmulationApi {
+  /** Sends a request to `path`, resolved against the emulator's public origin, through `fetch`. */
+  request(path: string, init?: RequestInit): Promise<Response>;
+}
 
 /** The settings `POST /sessions` accepts. */
 export interface SessionSettings {
@@ -19,16 +31,24 @@ export interface SessionSettings {
 }
 
 /**
- * Creates an in-process emulation API with its own, empty set of sessions, naming `publicOrigin`
- * in the absolute URLs it returns.
- *
- * Every response it gives is checked against `openapi/openapi.yaml`: one that departs from it
- * rejects the request with an `OpenApiConformanceError` instead of reaching the test.
+ * Creates an in-process emulator with its own, empty set of sessions, naming `publicOrigin` in the
+ * absolute URLs it returns. It is the supported entry point's emulator with the OpenAPI conformance
+ * check in front of its HTTP handler: a response that departs from `openapi/openapi.yaml` rejects
+ * the request with an `OpenApiConformanceError` instead of reaching the test.
  */
-export function createTestApi(publicOrigin: string = TEST_PUBLIC_ORIGIN): EmulationApi {
-  return withOpenApiConformanceCheck(
-    createEmulationApi({ sessionLifecycle: createSessionLifecycleService(), publicOrigin }),
+export function createTestInProcessEmulator(
+  publicOrigin: string = TEST_PUBLIC_ORIGIN,
+): TestInProcessEmulator {
+  const emulator = createInProcessEmulatorWithHandler(
+    (dependencies) => withOpenApiConformanceCheck(createEmulationApi(dependencies)).fetch,
+    { publicOrigin },
   );
+  return {
+    client: emulator.client,
+    fetch: emulator.fetch,
+    request: (path, init) => emulator.fetch(new URL(path, publicOrigin), init),
+    [Symbol.asyncDispose]: () => emulator[Symbol.asyncDispose](),
+  };
 }
 
 /**
@@ -54,11 +74,11 @@ export async function createSession(
   return sessionPath;
 }
 
-/** Creates an in-process emulation API holding one session, created with `sessionSettings`. */
+/** Creates an in-process test emulator holding one session, created with `sessionSettings`. */
 export async function createTestSession(
   sessionSettings?: SessionSettings,
-): Promise<{ api: EmulationApi; sessionPath: string }> {
-  const api = createTestApi();
+): Promise<{ api: TestInProcessEmulator; sessionPath: string }> {
+  const api = createTestInProcessEmulator();
   return { api, sessionPath: await createSession(api, sessionSettings) };
 }
 

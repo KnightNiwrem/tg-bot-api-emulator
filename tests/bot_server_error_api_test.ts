@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
@@ -8,7 +10,9 @@ import {
   type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
 } from './support/emulation_api.ts';
+import { createAccount, createBot as createSessionBot } from './support/http_fixtures.ts';
 
 interface BotApiBody {
   readonly ok: boolean;
@@ -39,7 +43,7 @@ Deno.test('queued server errors answer the next matching calls before they run',
     }),
     await requestJson(api, 'POST', serverErrorsPath, { method: 'kickChatMember', error_code: 503 }),
   ];
-  assertJson(
+  assertEquals(
     queuings.map(({ status, body }) => [status, body]),
     [
       [201, { method: 'sendMessage', error_code: 500, remaining_count: 2 }],
@@ -53,7 +57,7 @@ Deno.test('queued server errors answer the next matching calls before they run',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: account.id, text: 'Hello' }),
   });
-  assertJson(
+  assertEqualsInFieldOrder(
     [
       failedResponse.status,
       failedResponse.headers.get('Retry-After'),
@@ -89,7 +93,7 @@ Deno.test('queued server errors answer the next matching calls before they run',
   const kickChatMember = (parameters: Record<string, unknown>) =>
     requestJson<BotApiBody>(api, 'POST', `${botApiPath}/kickChatMember`, parameters);
   const kicks = [await kickChatMember({}), await kickChatMember({})];
-  assertJson(
+  assertEquals(
     [
       delivered.text,
       await readMessageTexts(),
@@ -106,7 +110,7 @@ Deno.test('queued server errors answer the next matching calls before they run',
   );
 
   const activity = await readActivity(api, `${sessionPath}/bot-activity?kind=bot_api_call`);
-  assertJson(
+  assertEquals(
     activity.map(({ method, via, answer }) => [method, via, answer?.error_code ?? answer?.ok]),
     [
       ['sendMessage', 'http', 500],
@@ -154,7 +158,7 @@ Deno.test('rejected server error queue requests leave the queued answers intact'
     await requestJson(api, 'GET', serverErrorsPath),
     await requestJson(api, 'GET', `${sessionPath}/bots/${account.id}/server-error-responses`),
   ];
-  assertJson(
+  assertEquals(
     [
       queued.status,
       refusals.map(({ status }) => status),
@@ -197,7 +201,7 @@ Deno.test('concurrent calls take each queued server error exactly once', async (
     api,
     `${sessionPath}/bot-activity?method=sendMessage&ok=false`,
   );
-  assertJson(
+  assertEquals(
     [
       failedTexts.length,
       deliveredTexts.length,
@@ -222,7 +226,7 @@ Deno.test('queued rate limit answers apply before queued server errors', async (
 
   const getMe = () => requestJson<BotApiBody>(api, 'POST', `${botApiPath}/getMe`, {});
   const answers = [await getMe(), await getMe(), await getMe()];
-  assertJson(
+  assertEquals(
     [
       answers.map(({ status, body }) => [status, body.description ?? body.ok]),
       (await requestJson(api, 'GET', `${botPath}/rate-limit-responses`)).body,
@@ -256,7 +260,7 @@ Deno.test('calls that never reach a method leave queued server errors for later 
   );
   const remaining = await requestJson(api, 'GET', serverErrorsPath);
   const getMe = await requestJson<BotApiBody>(api, 'POST', `${botApiPath}/getMe`, {});
-  assertJson(
+  assertEquals(
     [
       [unknownMethod.status, unknownMethod.body.description],
       undecodable.status,
@@ -288,7 +292,7 @@ Deno.test('a polling bot keeps its updates through a queued getUpdates failure',
   const failed = await getUpdates();
   const recovered = await getUpdates();
   const updates = recovered.body.result as Array<{ message: { text: string } }>;
-  assertJson(
+  assertEquals(
     [failed.status, failed.body.description, updates.map(({ message }) => message.text)],
     [503, 'Service Unavailable', ['/start']],
     'Expected the failed poll to leave the update for the next one',
@@ -325,7 +329,7 @@ Deno.test('a webhook reply takes the queued server error and changes nothing', a
       );
     }
     const replies = await readActivity(api, `${activityPath}?method=sendMessage`);
-    assertJson(
+    assertEquals(
       [
         replies.map(({ via, answer }) => [via, answer?.error_code ?? answer?.ok]),
         await readMessageTexts(),
@@ -365,7 +369,7 @@ Deno.test('queued server errors stay within their session and end with it', asyn
   const getMe = await requestJson(api, 'POST', `${botApiPath}/getMe`, {});
   await api.request(sessionPath, { method: 'DELETE' });
   const endedListing = await api.request(`${sessionPath}/bots/${bot.id}/server-error-responses`);
-  assertJson(
+  assertEquals(
     [otherGetMe.status, otherListing.body, getMe.status, endedListing.status],
     [200, { server_error_responses: [] }, 500, 404],
     "Expected another session's bot unaffected, and the queue gone with its session",
@@ -376,13 +380,7 @@ Deno.test('queued server errors stay within their session and end with it', asyn
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
   const bot = await createBot(api, sessionPath);
-  const createdAccount = await requestJson<{ account: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: 'Ada' },
-  );
-  const account = createdAccount.body.account;
+  const account = await createAccount(api, sessionPath, 'Ada');
   const conversationPath =
     `${sessionPath}/accounts/${account.id}/conversations/private/${bot.id}/messages`;
 
@@ -417,21 +415,17 @@ async function createFixture() {
   };
 }
 
+/** Creates the session's bot `test_bot`, returning its ID and token. */
 async function createBot(
   api: EmulationApi,
   sessionPath: string,
 ): Promise<{ id: number; token: string }> {
-  const created = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  return { id: created.body.bot.id, token: created.body.token };
+  const { bot, token } = await createSessionBot(api, sessionPath, 'test_bot');
+  return { id: bot.id, token };
 }
 
 function createGrammyBot(
-  api: EmulationApi,
+  api: TestInProcessEmulator,
   sessionPath: string,
   token: string,
   clientOptions: { canUseWebhookReply?: (method: string) => boolean } = {},
@@ -439,7 +433,7 @@ function createGrammyBot(
   return new Bot(token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
       ...clientOptions,
     },
   });
@@ -459,12 +453,4 @@ async function readActivity(api: EmulationApi, path: string): Promise<readonly A
     throw new Error(`Expected GET ${path} to succeed, received ${read.status}`);
   }
   return read.body.entries;
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

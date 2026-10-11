@@ -1,12 +1,16 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
-import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
-
-/** What the tests send requests to by path: the emulation API, or an in-process emulator. */
-interface RequestRecipient {
-  request(path: string, init?: RequestInit): Response | Promise<Response>;
-}
+import { callBotApi } from './support/bot_api_requests.ts';
+import {
+  createSession,
+  createTestInProcessEmulator,
+  type EmulationApi,
+  requestJson,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
 
 interface BotActivityReadBody {
   readonly entries: ReadonlyArray<Record<string, unknown>>;
@@ -41,7 +45,7 @@ Deno.test('GET bot-activity records calls with their answers, apart from getUpda
     entry.chat_id,
     (entry.answer as { ok: boolean; error_code?: number }).error_code ?? 200,
   ]);
-  assertJson(summary, [
+  assertEquals(summary, [
     [
       bot.id,
       'sendMessage',
@@ -111,7 +115,7 @@ Deno.test('GET bot-activity records deliveries and confirmations of polled updat
   await callBotApi(api, `${botApiPath}/getUpdates`, { offset: updateId + 1 });
 
   const { entries } = await readActivity(api, activityPath);
-  assertJson(
+  assertEquals(
     entries.map(({ position, kind, bot_id, via, chat_id, user_id }) => [
       position,
       kind,
@@ -158,7 +162,7 @@ Deno.test('GET bot-activity filters entries by query parameters', async () => {
   ];
   for (const { query, expected } of cases) {
     const { entries, head_position } = await readActivity(api, `${activityPath}?${query}`);
-    assertJson(
+    assertEquals(
       entries.map(({ position }) => position),
       expected,
       `Expected ${query} to find ${JSON.stringify(expected)}`,
@@ -183,7 +187,7 @@ Deno.test('GET bot-activity filters by a parameter whose name has a line break',
   });
 
   const { entries } = await readActivity(api, `${activityPath}?parameters[x%0Ay]=match`);
-  assertJson(
+  assertEquals(
     entries.map(({ position }) => position),
     [1],
     'Expected a percent-encoded line break to name the recorded parameter',
@@ -305,7 +309,7 @@ Deno.test('GET bot-activity records a webhook reply after the confirmation of it
     );
 
     const { entries } = await readActivity(api, `${activityPath}?after=${start}`);
-    assertJson(
+    assertEquals(
       entries.map(({ kind, via, method, chat_id }) => [kind, via, method, chat_id]),
       [
         ['update_delivered', 'webhook', undefined, account.id],
@@ -321,28 +325,31 @@ Deno.test('GET bot-activity records a webhook reply after the confirmation of it
 });
 
 /** Creates a session on `api` holding a bot and an account that can message it. */
-async function createFixture(api: RequestRecipient = createTestApi()) {
+async function createFixture(api: EmulationApi = createTestInProcessEmulator()) {
   const sessionPath = await createSession(api);
-  const createdBot = await postJson(api, `${sessionPath}/bots`, {
-    first_name: 'Test Bot',
-    username: 'test_bot',
-  }) as { token: string; bot: { id: number } };
-  const { account } = await postJson(api, `${sessionPath}/accounts`, {
-    first_name: 'Ada',
-  }) as { account: { id: number } };
+  const { botApiPath, ...createdBot } = await createBot(api, sessionPath, 'test_bot');
+  const account = await createAccount(api, sessionPath, 'Ada');
 
   const sendText = async (text: string) => {
-    await postJson(api, `${sessionPath}/accounts/${account.id}/messages`, {
-      to: { type: 'private', botId: createdBot.bot.id },
-      text,
-    });
+    const { status } = await requestJson(
+      api,
+      'POST',
+      `${sessionPath}/accounts/${account.id}/messages`,
+      {
+        to: { type: 'private', botId: createdBot.bot.id },
+        text,
+      },
+    );
+    if (status !== 201) {
+      throw new Error(`Expected "${text}" to be sent, received ${status}`);
+    }
   };
 
   return {
     api,
     sessionPath,
     activityPath: `${sessionPath}/bot-activity`,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}`,
+    botApiPath,
     createdBot,
     bot: createdBot.bot,
     account,
@@ -350,66 +357,10 @@ async function createFixture(api: RequestRecipient = createTestApi()) {
   };
 }
 
-async function createSession(api: RequestRecipient): Promise<string> {
-  const response = await api.request('/sessions', { method: 'POST' });
-  const sessionPath = response.headers.get('Location');
-  if (response.status !== 201 || sessionPath === null) {
-    throw new Error(`Expected POST /sessions to create a session, received ${response.status}`);
-  }
-  return sessionPath;
-}
-
-async function postJson(api: RequestRecipient, path: string, body: unknown): Promise<unknown> {
-  const response = await api.request(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (response.status !== 201) {
-    throw new Error(`Expected POST ${path} to create a resource, received ${response.status}`);
-  }
-  return await response.json();
-}
-
-async function callBotApi(
-  api: RequestRecipient,
-  methodPath: string,
-  parameters: Record<string, unknown>,
-): Promise<{ status: number; body: unknown }> {
-  const response = await api.request(methodPath, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parameters),
-  });
-  return { status: response.status, body: await response.json() };
-}
-
-async function readActivity(api: RequestRecipient, path: string): Promise<BotActivityReadBody> {
+async function readActivity(api: EmulationApi, path: string): Promise<BotActivityReadBody> {
   const response = await api.request(path);
   if (response.status !== 200) {
     throw new Error(`Expected GET ${path} to succeed, received ${response.status}`);
   }
   return await response.json() as BotActivityReadBody;
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
-}
-
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }

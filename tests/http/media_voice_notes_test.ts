@@ -1,7 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import { botApiResult, callBotApi, callBotApiWithFiles } from '../support/bot_api_requests.ts';
 import {
@@ -26,7 +25,7 @@ Deno.test('a grammY bot answers an account voice note with one it downloads and 
   const sentMessage = (await sent.json()).message as Record<string, unknown> | undefined;
 
   const apiRoot = `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`;
-  const fetch = createInProcessFetch(api.fetch);
+  const fetch = api.fetch;
   const grammyBot = new Bot(createdBot.token, { client: { apiRoot, fetch } });
   const received: Array<{ voice: Record<string, unknown>; filePath?: string; bytes: string }> = [];
   const replied = Promise.withResolvers<void>();

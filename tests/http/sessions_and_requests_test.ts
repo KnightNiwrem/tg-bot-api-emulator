@@ -2,13 +2,12 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 
 import {
-  createTestApi,
+  createTestInProcessEmulator,
   createTestSession,
   jsonRequest,
   TEST_PUBLIC_ORIGIN,
 } from '../support/emulation_api.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isCreatedAccountResponse,
   isCreatedBotResponse,
@@ -20,7 +19,7 @@ import { callBotApi } from '../support/bot_api_requests.ts';
 import { createAccount, createPrivateConversationFixture } from '../support/http_fixtures.ts';
 
 Deno.test('POST /sessions creates a session and returns its API locations', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
 
   const response = await api.request('/sessions', { method: 'POST' });
   const body: unknown = await response.json();
@@ -45,7 +44,7 @@ Deno.test('POST /sessions creates a session and returns its API locations', asyn
 });
 
 Deno.test('POST /sessions creates a session with the upload profile it names', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
 
   for (const uploadProfile of ['cloud', 'local']) {
     const response = await api.request('/sessions', {
@@ -64,7 +63,7 @@ Deno.test('POST /sessions creates a session with the upload profile it names', a
 });
 
 Deno.test('POST /sessions rejects unknown or invalid session settings', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
 
   for (const body of ['{"upload_profile":"premium"}', '{"mode":"local"}', '[]', 'local']) {
     const response = await api.request('/sessions', {
@@ -363,7 +362,7 @@ Deno.test('tests queue rate limit answers for the next Bot API calls of a bot', 
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const grammyFailure = await grammyBot.api.sendMessage(createdAccount.account.id, 'Hello')

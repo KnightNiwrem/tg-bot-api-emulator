@@ -5,7 +5,6 @@ import {
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import { botApiResult, callBotApi, createUpdateReader } from '../support/bot_api_requests.ts';
 import {
@@ -373,7 +372,7 @@ Deno.test('a grammY bot runs a vote with an inline keyboard in a supergroup', as
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const votes = new Map<number, string>();
@@ -699,7 +698,7 @@ Deno.test('a grammY bot welcomes new members and learns it was removed', async (
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const handled = {
@@ -1798,7 +1797,7 @@ Deno.test('a grammY bot bans a spammer for an administrator and deletes the spam
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const handledCommands: Array<PromiseWithResolvers<void>> = [

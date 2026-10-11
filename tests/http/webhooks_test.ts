@@ -5,7 +5,6 @@ import {
 
 import { TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isBadRequestResponse,
   isGetUpdatesResponse,
@@ -189,7 +188,7 @@ Deno.test('a grammY bot receives updates through its webhook and replies', async
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const firstReply = Promise.withResolvers<void>();
@@ -328,7 +327,7 @@ Deno.test('a grammY bot replies through its webhook response', async () => {
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
       canUseWebhookReply: (method) => method === 'sendMessage',
     },
   });

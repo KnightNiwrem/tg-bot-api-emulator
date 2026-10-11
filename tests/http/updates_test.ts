@@ -1,7 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
 import { TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isBadRequestResponse,
   isGetUpdatesResponse,
@@ -54,7 +53,7 @@ Deno.test('private account messages are stored and delivered through getUpdates'
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const grammyUpdates = await grammyBot.api.getUpdates();
@@ -275,7 +274,7 @@ Deno.test('a grammY bot starts polling, replies to a command, and resumes after 
     const grammyBot = new Bot(createdBot.token, {
       client: {
         apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-        fetch: createInProcessFetch(api.fetch),
+        fetch: api.fetch,
       },
     });
     const handledCommandTexts: string[] = [];

@@ -6,7 +6,6 @@ import {
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
   botApiResult,
@@ -589,7 +588,7 @@ Deno.test('a grammY bot receives an album through its webhook and answers with o
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const receivedAlbum: Array<{ messageId: number; mediaGroupId?: string; fileId: string }> = [];

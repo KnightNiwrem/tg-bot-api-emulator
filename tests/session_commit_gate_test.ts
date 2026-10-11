@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import type { BotApiCallContext } from '../src/api/sessions/bot_api/method_call.ts';
 import { findBotApiMethod } from '../src/api/sessions/bot_api/method_catalogue.ts';
 import {
@@ -14,7 +16,8 @@ import {
 } from '../src/services/media_file.ts';
 import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
-import { createTestSession, requestJson } from './support/emulation_api.ts';
+import { createTestSession } from './support/emulation_api.ts';
+import { createBot } from './support/http_fixtures.ts';
 
 const DOCUMENT_URL = 'https://files.example/report.pdf';
 const OTHER_DOCUMENT_URL = 'https://files.example/appendix.pdf';
@@ -41,7 +44,7 @@ Deno.test('a webhook reply held in preparation commits nothing once its session 
   fixture.downloads.releaseHeldDownload();
   await endedReply;
 
-  assertJson(
+  assertEquals(
     [liveState, signalAbortedAtEnd, fixture.readState()],
     [
       { messageCount: 2, activityHead: 1 },
@@ -144,7 +147,7 @@ for (const call of DOWNLOADING_CALLS) {
     fixture.session.end();
     fixture.downloads.releaseHeldDownload();
 
-    assertJson(
+    assertEquals(
       [
         await outcome,
         fixture.downloads.startedDownloadCount - startedBeforeEnd,
@@ -177,7 +180,7 @@ Deno.test('getUpdates is answered with no updates at each of its waits the sessi
   );
 
   const noUpdates = { answered: true, answer: { status: 200, body: { ok: true, result: [] } } };
-  assertJson(
+  assertEqualsInFieldOrder(
     [await heldPoll, undecodableOutcome, held.readState(), undecodable.readState()],
     [noUpdates, noUpdates, stateWhileHeld, { messageCount: 1, activityHead: 0 }],
     'Expected each poll to be answered with no updates and to record nothing',
@@ -198,7 +201,7 @@ Deno.test('a Bot API call that starts after its session ended changes nothing', 
     parameters: { description: 'Changed after the end' },
     uploadedFiles: new Map(),
   });
-  assertJson(
+  assertEquals(
     [
       outcome,
       fixture.session.botApi.getMyDescription(fixture.bot, {
@@ -228,7 +231,7 @@ Deno.test('a long poll that starts after its session ended finds no updates and 
     uploadedFiles: new Map(),
   });
   const webhookInfo = fixture.session.botApi.getWebhookInfo(fixture.bot);
-  assertJson(
+  assertEqualsInFieldOrder(
     [outcome, webhookInfo.pending_update_count],
     [{ answered: true, answer: { status: 200, body: { ok: true, result: [] } } }, 1],
     'Expected the poll to be answered at once without reading or confirming its update',
@@ -237,12 +240,7 @@ Deno.test('a long poll that starts after its session ended finds no updates and 
 
 Deno.test('an HTTP Bot API request whose body arrives after its session ended is answered as for an unknown session', async () => {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
+  const createdBot = await createBot(api, sessionPath, 'test_bot');
   const body = new TransformStream<Uint8Array, Uint8Array>();
   const bodyWriter = body.writable.getWriter();
   const pendingResponse = api.request(
@@ -260,7 +258,7 @@ Deno.test('an HTTP Bot API request whose body arrives after its session ended is
   await bodyWriter.close();
   const response = await pendingResponse;
 
-  assertJson(
+  assertEquals(
     [deletion.status, response.status, await response.text()],
     [204, 404, ''],
     'Expected the call to be refused with a bodyless 404',
@@ -269,13 +267,7 @@ Deno.test('an HTTP Bot API request whose body arrives after its session ended is
 
 Deno.test('ending a session answers its held long poll with no updates, and a later poll as an unknown session', async () => {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const { botApiPath } = await createBot(api, sessionPath, 'test_bot');
   const heldPoll = api.request(`${botApiPath}/getUpdates?timeout=50`);
   // The poll is decoded and held well within this wait, which its 50-second timeout outlasts.
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -283,7 +275,7 @@ Deno.test('ending a session answers its held long poll with no updates, and a la
   const deletion = await api.request(sessionPath, { method: 'DELETE' });
   const heldPollResponse = await heldPoll;
   const laterPollResponse = await api.request(`${botApiPath}/getUpdates`);
-  assertJson(
+  assertEqualsInFieldOrder(
     [
       deletion.status,
       heldPollResponse.status,
@@ -442,10 +434,4 @@ function readSessionState(session: EmulationSession, accountId: number, botId: n
     messageCount: history.found ? history.messages.length : undefined,
     activityHead: session.botActivity.getHeadPosition(),
   };
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

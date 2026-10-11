@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type AdministratorMembership,
   type AdministratorTenureId,
@@ -75,14 +76,6 @@ function canEdit(
   });
 }
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 Deno.test('administrators edit those they promoted, directly or indirectly, and the owner edits all', () => {
   const memberships = createDelegationChain();
   const editableBy = (editorId: number) =>
@@ -90,20 +83,20 @@ Deno.test('administrators edit those they promoted, directly or indirectly, and 
       administratorId,
     ) => canEdit(memberships, editorId, administratorId));
 
-  expectEqual(
+  assertEquals(
     editableBy(OWNER_ID),
     [DELEGATING_BOT_ID, DELEGATE_ID, DELEGATES_APPOINTEE_ID, OTHER_BOT_ID],
     'Expected the owner to edit every administrator',
   );
-  expectEqual(
+  assertEquals(
     editableBy(DELEGATING_BOT_ID),
     [DELEGATE_ID, DELEGATES_APPOINTEE_ID],
     'Expected the bot to edit its delegate and the delegate appointee, but neither itself nor its peer',
   );
-  expectEqual(editableBy(DELEGATE_ID), [DELEGATES_APPOINTEE_ID], 'Expected the delegate edits');
-  expectEqual(editableBy(DELEGATES_APPOINTEE_ID), [], 'Expected an appointee without the right');
-  expectEqual(editableBy(OTHER_BOT_ID), [], 'Expected a peer to edit nobody of another chain');
-  expectEqual(editableBy(MEMBER_ID), [], 'Expected a plain member to edit nobody');
+  assertEquals(editableBy(DELEGATE_ID), [DELEGATES_APPOINTEE_ID], 'Expected the delegate edits');
+  assertEquals(editableBy(DELEGATES_APPOINTEE_ID), [], 'Expected an appointee without the right');
+  assertEquals(editableBy(OTHER_BOT_ID), [], 'Expected a peer to edit nobody of another chain');
+  assertEquals(editableBy(MEMBER_ID), [], 'Expected a plain member to edit nobody');
 });
 
 Deno.test('editing an administrator needs the right to promote, though the chain runs through others', () => {
@@ -126,7 +119,7 @@ Deno.test('editing an administrator needs the right to promote, though the chain
     throw new Error('Expected the appointee to be an administrator');
   }
 
-  expectEqual(
+  assertEquals(
     [
       canEdit(memberships, DELEGATE_ID, DELEGATES_APPOINTEE_ID),
       canEdit(memberships, DELEGATING_BOT_ID, DELEGATE_ID),
@@ -144,7 +137,7 @@ Deno.test('a promoter whose tenure ended no longer stands above its appointees, 
   const memberships = createDelegationChain();
   memberships.set(DELEGATE_ID, { status: 'member' });
 
-  expectEqual(
+  assertEquals(
     [
       canEdit(memberships, DELEGATING_BOT_ID, DELEGATES_APPOINTEE_ID),
       canEdit(memberships, OWNER_ID, DELEGATES_APPOINTEE_ID),
@@ -161,7 +154,7 @@ Deno.test('a promoter whose tenure ended no longer stands above its appointees, 
       promoterTenureId: 1,
     }),
   );
-  expectEqual(
+  assertEquals(
     [
       canEdit(memberships, DELEGATE_ID, DELEGATES_APPOINTEE_ID),
       canEdit(memberships, DELEGATING_BOT_ID, DELEGATES_APPOINTEE_ID),
@@ -190,7 +183,7 @@ Deno.test('a demoted promoter promoted back by its own appointee forms no cycle'
     ],
   ]);
 
-  expectEqual(
+  assertEquals(
     [
       canEdit(memberships, DELEGATE_ID, DELEGATING_BOT_ID),
       canEdit(memberships, DELEGATING_BOT_ID, DELEGATE_ID),
@@ -235,7 +228,7 @@ Deno.test('nobody edits itself, and no data shape makes the delegation walk fail
     ],
   ]);
 
-  expectEqual(
+  assertEquals(
     [
       canEdit(memberships, DELEGATING_BOT_ID, DELEGATING_BOT_ID),
       canEdit(memberships, DELEGATE_ID, DELEGATE_ID),

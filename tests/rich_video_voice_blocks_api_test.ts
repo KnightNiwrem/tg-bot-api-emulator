@@ -1,3 +1,10 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 type TestRichBlock = Readonly<Record<string, unknown>> & {
@@ -51,25 +58,16 @@ const LONG_MEMO_BYTES = 1024 * 1024 + 1;
  */
 async function createRichMediaFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      {
-        first_name: 'Clip Bot',
-        username,
-        supports_inline_queries: true,
-        receives_chosen_inline_results: true,
-      },
-    );
-    return { ...body.bot, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
+    const { bot, botApiPath } = await createSessionBot(api, sessionPath, username, {
+      first_name: 'Clip Bot',
+      supports_inline_queries: true,
+      receives_chosen_inline_results: true,
+    });
+    return { ...bot, botApiPath };
   };
   const bot = await createBot('clip_bot');
   const otherBot = await createBot('other_clip_bot');
@@ -124,8 +122,10 @@ async function createRichMediaFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, bot.botApiPath);
-  const readOtherBotUpdates = createUpdateReader(api, otherBot.botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(bot.botApiPath));
+  const readOtherBotUpdates = async () =>
+    withoutUpdateIds(await readBotUpdates(otherBot.botApiPath));
   await readUpdates();
   await readOtherBotUpdates();
 
@@ -169,24 +169,6 @@ async function createRichMediaFixture() {
   };
 }
 
-/** Returns a reader of a bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Calls a Bot API method with multipart form data, which carries uploaded files. */
 async function callBotWithFiles<Result = unknown>(
   api: EmulationApi,
@@ -213,14 +195,6 @@ function gifImage(width: number, height: number): Uint8Array<ArrayBuffer> {
   view.setUint16(6, width, true);
   view.setUint16(8, height, true);
   return image;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
 
 function mediaOf(file: TestMediaFile | undefined): TestMediaFile {
@@ -330,7 +304,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
   const fileKeys = ['file_id', 'file_unique_id', 'file_size'];
   // The official server's `JsonRichBlock`, `JsonVideo` and `JsonVoiceNote` write their fields in
   // these orders.
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       sent.status,
       Object.keys(uploadedVideoBlock ?? {}),
@@ -391,7 +365,11 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
 
   // The account's history shows the private message as the bot sees it.
   const shown = (await getHistory(ada.id, privateChat)).at(-1);
-  expectEqual(shown?.rich_message, message?.rich_message, 'Expected the account to see the blocks');
+  assertEqualsInFieldOrder(
+    shown?.rich_message,
+    message?.rich_message,
+    'Expected the account to see the blocks',
+  );
 
   const memo = mediaOf(memoBlock?.voice_note);
   const filePaths = await Promise.all(
@@ -425,7 +403,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
       ],
     },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       filePaths.map((path) => path?.replace(/\/.*\./, '/*.')),
       reusedVideo.body.result?.video?.file_unique_id,
@@ -529,12 +507,12 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
     }, { clip: new File([CLIP_BYTES], 'clip.mp4') });
     refusals.push(body.description);
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     [refusals, await getHistory(ada.id, privateChat), await readUpdates()],
     [cases.map(([, description]) => description), historyBefore, []],
     'Expected each refused rich message to leave the chat as it was',
   );
-  expectEqual(
+  assertEquals(
     (await otherSession.getHistory(otherSession.ada.id, otherSession.privateChat)).length,
     3,
     'Expected the other session to keep only its own messages',
@@ -566,7 +544,7 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
   const failedEditOfRichMessage = await editTo([
     voiceNote({ type: 'voice_note', media: 'https://cdn.example.com/voice/missing.ogg' }),
   ]);
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       failedEdits.map(({ body }) => body.description),
       afterFailedEdits?.text,
@@ -661,7 +639,7 @@ Deno.test('video and voice note blocks keep observer-specific files through chat
   const ids = (files: readonly TestMediaFile[]) => files.map(({ file_id }) => file_id);
   const uniqueIds = (files: readonly TestMediaFile[]) =>
     files.map(({ file_unique_id }) => file_unique_id);
-  expectEqual(
+  assertEquals(
     [
       sent.body.ok,
       new Set([...ids(botFiles), ...ids(adaFiles), ...ids(graceFiles), ...ids(otherBotFiles)])
@@ -751,7 +729,7 @@ Deno.test('video and voice note blocks need the permissions of their media', asy
     to: supergroupChat,
     forward: { chat: supergroupChat, message_id: voiceNoteOnly.body.result?.message_id },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       withoutVideos,
       historyWithoutVideos,
@@ -891,7 +869,7 @@ Deno.test('inline results send video and voice note blocks the bot knows, but no
   const invalidContent = 'Bad Request: invalid inline message content specified';
   const fileTypes = (message: TestMessage | undefined) =>
     listBlockFiles(message).map(({ type, file }) => [type, file.file_unique_id]);
-  expectEqual(
+  assertEquals(
     [
       refusedAnswers,
       unanswered.answer,

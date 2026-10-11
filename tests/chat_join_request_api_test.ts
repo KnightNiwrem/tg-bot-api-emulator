@@ -1,13 +1,17 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
+  jsonRequest,
   requestJson,
   TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
 } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -44,30 +48,14 @@ const READ_UPDATE_TYPES = ['message', 'chat_member', 'chat_join_request'];
  */
 async function createJoinRequestFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: FixtureAccount }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const hopper = await createAccount('Hopper');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string): Promise<FixtureBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number; username: string } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const inviterBot = await createBot('inviter_bot');
-  const coInviterBot = await createBot('co_inviter_bot');
-  const observerBot = await createBot('observer_bot');
-  const memberBot = await createBot('member_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const hopper = await createAccount(api, sessionPath, 'Hopper');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const inviterBot = await createBot(api, sessionPath, 'inviter_bot');
+  const coInviterBot = await createBot(api, sessionPath, 'co_inviter_bot');
+  const observerBot = await createBot(api, sessionPath, 'observer_bot');
+  const memberBot = await createBot(api, sessionPath, 'member_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -95,7 +83,10 @@ async function createJoinRequestFixture() {
     jsonRequest('PUT', { can_delete_messages: true }),
   );
 
-  const readUpdates = createUpdateReader(api);
+  const readBotUpdates = createUpdateReader(api);
+  /** Reads a bot's updates of `allowedUpdates` since it last read them. */
+  const readUpdates = async (bot: FixtureBot, allowedUpdates = READ_UPDATE_TYPES) =>
+    withoutUpdateIds(await readBotUpdates(bot.botApiPath, allowedUpdates));
   for (const bot of [inviterBot, coInviterBot, observerBot, memberBot]) {
     await readUpdates(bot);
   }
@@ -172,27 +163,6 @@ async function createJoinRequestFixture() {
   };
 }
 
-/** Returns a reader of each bot's updates since the reader last read that bot's. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (
-    bot: FixtureBot,
-    allowedUpdates = READ_UPDATE_TYPES,
-  ): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      { offset: nextOffsetsByBotApiPath.get(bot.botApiPath) ?? 0, allowed_updates: allowedUpdates },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Describes join requests briefly, as `request user via link (pending count)`. */
 function describeJoinRequests(updates: ReadonlyArray<Record<string, unknown>>): string[] {
   return updates.map((update) => {
@@ -213,10 +183,6 @@ function hiddenInviteLink(inviteLink: string): string {
   return `https://t.me/+${inviteLink.slice('https://t.me/+'.length).slice(0, 8)}...`;
 }
 
-function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-}
-
 async function expectStatus(
   response: Response | Promise<Response>,
   expectedStatus: number,
@@ -229,25 +195,6 @@ async function expectStatus(
 }
 
 /** Compares JSON values by content: object keys in any order, array items in order. */
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (toCanonicalJson(actual) !== toCanonicalJson(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function toCanonicalJson(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_key, nested: unknown) =>
-      typeof nested === 'object' && nested !== null && !Array.isArray(nested)
-        ? Object.fromEntries(
-          Object.entries(nested).sort(([first], [second]) => first < second ? -1 : 1),
-        )
-        : nested,
-  );
-}
 
 Deno.test('a request link leaves the account outside and sends its request to eligible bots', async () => {
   const {
@@ -279,7 +226,7 @@ Deno.test('a request link leaves the account outside and sends its request to el
   const inviterUpdates = await readUpdates(inviterBot);
   const hopperRequest = await useLink(hopper, requestLink.invite_link);
 
-  expectEqual(
+  assertEquals(
     [graceRequest, hopperRequest.body],
     [
       { status: 200, body: { chat_id: supergroup.id, outcome: 'join_request_sent' } },
@@ -287,7 +234,7 @@ Deno.test('a request link leaves the account outside and sends its request to el
     ],
     'Expected each account to send a request',
   );
-  expectEqual(
+  assertEquals(
     [
       await getMemberStatus(grace.id),
       await memberCount(),
@@ -300,17 +247,17 @@ Deno.test('a request link leaves the account outside and sends its request to el
   const { body: { join_requests: [storedRequest] } } = await requestJson<
     { join_requests: Array<{ user_id: number; date: number }> }
   >(api, 'GET', `${supergroupPath(ada.id)}/join-requests`);
-  expectEqual(
+  assertEquals(
     Object.keys(request),
     ['chat', 'from', 'user_chat_id', 'date', 'invite_link'],
     "Expected the fields in the official server's order",
   );
-  expectEqual(
+  assertEquals(
     typeof storedRequest?.date === 'number' && storedRequest.date > 1_700_000_000,
     true,
     'Expected the request to be dated when it was sent',
   );
-  expectEqual(
+  assertEquals(
     request,
     {
       chat: { id: supergroup.id, title: 'Team', type: 'supergroup' },
@@ -321,12 +268,12 @@ Deno.test('a request link leaves the account outside and sends its request to el
     },
     "Expected the creator to receive Grace's request with the whole link",
   );
-  expectEqual(
+  assertEquals(
     describeJoinRequests(await readUpdates(inviterBot)),
     [`request ${hopper.id} via ${requestLink.invite_link} (2)`],
     'Expected the count to include every pending request',
   );
-  expectEqual(
+  assertEquals(
     [
       await readUpdates(observerBot),
       await readUpdates(memberBot),
@@ -335,7 +282,7 @@ Deno.test('a request link leaves the account outside and sends its request to el
     [[], [], []],
     'Expected bots without the right, or without the subscription, to receive nothing',
   );
-  expectEqual(
+  assertEquals(
     [await getJoinRequests(), await getPendingCounts()],
     [[[grace.id, requestLink.invite_link], [hopper.id, requestLink.invite_link]], [2]],
     'Expected the owner to see both pending requests',
@@ -348,7 +295,7 @@ Deno.test('another administrator with the right receives requests with the link 
 
   await useLink(grace, requestLink.invite_link);
 
-  expectEqual(
+  assertEquals(
     describeJoinRequests(await readUpdates(coInviterBot)),
     [`request ${grace.id} via ${hiddenInviteLink(requestLink.invite_link)} (1)`],
     'Expected the co-inviter to see the link with half its hash hidden',
@@ -383,7 +330,7 @@ Deno.test('a request link has an explicit outcome for each standing and repeated
   await readUpdates(inviterBot);
   const requestsBefore = await getJoinRequests();
 
-  expectEqual(
+  assertEquals(
     [
       (await useLink(grace, requestLink.invite_link)).status,
       (await useLink(grace, otherRequestLink.invite_link)).status,
@@ -393,7 +340,7 @@ Deno.test('a request link has an explicit outcome for each standing and repeated
     [409, 409, 409, 403],
     'Expected a pending request, a member and a banned user to be refused',
   );
-  expectEqual(
+  assertEquals(
     [await getJoinRequests(), await readUpdates(inviterBot)],
     [requestsBefore, []],
     'Expected the refusals to change nothing and send no update',
@@ -410,7 +357,7 @@ Deno.test('a request link has an explicit outcome for each standing and repeated
     200,
     'Expected the other link to expire',
   );
-  expectEqual(
+  assertEquals(
     [(await useLink(grace, otherRequestLink.invite_link)).status, await getJoinRequests()],
     [410, requestsBefore],
     'Expected an expired link to send no request',
@@ -445,12 +392,12 @@ Deno.test('a pending request ends when its account joins another way or is banne
     jsonRequest('PUT', { permissions: { can_send_messages: true } }),
   );
 
-  expectEqual(
+  assertEquals(
     [await getJoinRequests(), await getPendingCounts()],
     [[[linus.id, requestLink.invite_link]], [1]],
     "Expected only Linus's request to remain, as a restriction still lets him join",
   );
-  expectEqual(
+  assertEquals(
     (await useLink(hopper, requestLink.invite_link)).status,
     403,
     'Expected banned Hopper to send no new request',
@@ -487,7 +434,7 @@ Deno.test('a bot that received a request prompts its requester, who answers befo
   });
 
   const promptMessageId = (prompt.body.result as { message_id: number }).message_id;
-  expectEqual(
+  assertEquals(
     [
       contactsBefore,
       [prompt.status, (prompt.body.result as { chat: { id: number } }).chat.id],
@@ -531,7 +478,7 @@ Deno.test('a bot that received a request prompts its requester, who answers befo
   );
   const updates = await readUpdates(inviterBot, [...READ_UPDATE_TYPES, 'callback_query']);
 
-  expectEqual(
+  assertEquals(
     [
       history.body.messages.map(({ message_id, text }) => [message_id, text]),
       press.status,
@@ -557,7 +504,7 @@ Deno.test('a bot that received a request prompts its requester, who answers befo
     text: 'Welcome',
   });
 
-  expectEqual(
+  assertEquals(
     [welcome.status, [competingWelcome.status, competingWelcome.body.description]],
     [200, [400, 'Bad Request: chat not found']],
     "Expected Grace's answer, not the prompt, to let the bot keep writing after the decision",
@@ -611,7 +558,7 @@ Deno.test('the prompt alone gives no lasting access, which a decision or an expi
     return status === 200 ? status : `${status} ${body.description}`;
   };
 
-  expectEqual(
+  assertEquals(
     [
       expiry.status,
       expiry.body.join_request,
@@ -651,7 +598,7 @@ Deno.test('the prompt alone gives no lasting access, which a decision or an expi
   );
 
   // Ending a window again, or one of no pending request, is refused without a change.
-  expectEqual(
+  assertEquals(
     await Promise.all(
       [
         contactExpiryPath(supergroup.id, linus.id),
@@ -700,7 +647,7 @@ Deno.test('a requester contact excludes unrelated bots, blocked bots and other s
     return `${status} ${body.description ?? ''}`.trim();
   };
 
-  expectEqual(
+  assertEquals(
     [
       await describeSend(observerBot, grace.id),
       await describeSend(memberBot, grace.id),
@@ -768,7 +715,7 @@ Deno.test('competing and repeated contacts keep each grant to its bot and reques
   );
   await useLink(grace, requestLink.invite_link);
 
-  expectEqual(
+  assertEquals(
     [
       repeatedRequest.status,
       ordinaryMessage.status,
@@ -822,7 +769,7 @@ Deno.test('simultaneous prompts of two bots let exactly one claim the contact', 
     ),
   );
 
-  expectEqual(
+  assertEquals(
     [
       prompts.map(({ response }) => response.status).sort(),
       await getRequesterContacts(),
@@ -865,7 +812,7 @@ Deno.test("a link's expiry leaves its pending requests and their contacts in pla
   );
   const prompt = await callBot(inviterBot, 'sendMessage', { chat_id: grace.id, text: 'Hi' });
 
-  expectEqual(
+  assertEquals(
     [prompt.status, await getRequesterContacts()],
     [200, [[grace.id, 'claimed', [inviterBot.bot.id]]]],
     "Expected the link's expiry to cancel neither Grace's request nor the bots' contact",
@@ -878,7 +825,7 @@ Deno.test('a grammY bot receives a join request through its webhook, as the log 
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const requestObserved = Promise.withResolvers<Record<string, unknown>>();
@@ -911,7 +858,7 @@ Deno.test('a grammY bot receives a join request through its webhook, as the log 
       `${sessionPath}/bot-activity?kind=update_delivered&bot_id=${inviterBot.bot.id}`,
     );
 
-    expectEqual(
+    assertEquals(
       [
         (observed.chat as { id: number }).id,
         (observed.from as { id: number }).id,
@@ -921,7 +868,7 @@ Deno.test('a grammY bot receives a join request through its webhook, as the log 
       [supergroup.id, grace.id, grace.id, requestLink.invite_link],
       'Expected the webhook to carry the requester, chat and link',
     );
-    expectEqual(
+    assertEquals(
       activity.body.entries
         .filter(({ update }) => 'chat_join_request' in (update as object))
         .map(({ via, chat_id, user_id }) => [via, chat_id, user_id]),
@@ -994,12 +941,12 @@ Deno.test('a bot approves a request, which lets the account in through the link'
     user_id: grace.id,
   });
 
-  expectEqual(
+  assertEquals(
     [approval.status, approval.body.result],
     [200, true],
     'Expected an administrator with can_invite_users to approve a request it did not receive first',
   );
-  expectEqual(
+  assertEquals(
     [
       await getMemberStatus(grace.id),
       await memberCount(),
@@ -1010,7 +957,7 @@ Deno.test('a bot approves a request, which lets the account in through the link'
     "Expected Grace to join and her request to disappear, leaving Hopper's",
   );
   const inviterUpdates = await readUpdates(inviterBot);
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(inviterUpdates),
     [
       `chat_member ${grace.id} by ${coInviterBot.bot.id}: left -> member via ${requestLink.invite_link}`,
@@ -1018,12 +965,12 @@ Deno.test('a bot approves a request, which lets the account in through the link'
     ],
     "Expected the approval from the co-inviter, with the link, and Grace's own service message",
   );
-  expectEqual(
+  assertEquals(
     (inviterUpdates[0]?.chat_member as { invite_link: unknown }).invite_link,
     { ...requestLink, pending_join_request_count: 1 },
     'Expected the creator to see the whole link with the request still pending',
   );
-  expectEqual(
+  assertEquals(
     [
       describeMembershipUpdates(await readUpdates(observerBot)),
       describeMembershipUpdates(await readUpdates(memberBot)),
@@ -1042,7 +989,7 @@ Deno.test('a bot approves a request, which lets the account in through the link'
   const { body: { messages } } = await requestJson<
     { messages: Array<{ from: { id: number }; new_chat_members?: Array<{ id: number }> }> }
   >(api, 'GET', `${supergroupPath(grace.id)}/messages`);
-  expectEqual(
+  assertEquals(
     [messages.at(-1)?.from.id, messages.at(-1)?.new_chat_members?.map(({ id }) => id)],
     [grace.id, [grace.id]],
     "Expected Grace's history to end with her joining",
@@ -1076,7 +1023,7 @@ Deno.test('a bot declines a request, which leaves the account outside without an
     user_id: grace.id,
   });
 
-  expectEqual(
+  assertEquals(
     [
       [decline.status, decline.body.result],
       await getMemberStatus(grace.id),
@@ -1090,7 +1037,7 @@ Deno.test('a bot declines a request, which leaves the account outside without an
     [[200, true], 'left', [], [0], 403, [], [], []],
     'Expected the request to disappear, Grace to stay outside, and no bot to hear of it',
   );
-  expectEqual(
+  assertEquals(
     [
       (await useLink(grace, requestLink.invite_link)).body.outcome,
       await getJoinRequests(),
@@ -1158,7 +1105,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
     await decide(inviterBot, 'approveChatJoinRequest', inChat(inviterBot.bot.id)),
   ];
 
-  expectEqual(
+  assertEquals(
     refusals,
     [
       [400, 'Bad Request: invalid user_id specified'],
@@ -1174,7 +1121,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
     ],
     'Expected each refusal in the order Telegram checks',
   );
-  expectEqual(
+  assertEquals(
     [await getJoinRequests(), await readUpdates(inviterBot), await readUpdates(coInviterBot)],
     [requestsBefore, [], []],
     'Expected the refusals to change nothing and send no update',
@@ -1189,7 +1136,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
     await decide(inviterBot, 'declineChatJoinRequest', inChat(hopper.id)),
     await decide(coInviterBot, 'approveChatJoinRequest', inChat(hopper.id)),
   ];
-  expectEqual(
+  assertEquals(
     decisions,
     [
       [200, true],
@@ -1203,7 +1150,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
   );
 
   await callBot(inviterBot, 'leaveChat', { chat_id: supergroup.id });
-  expectEqual(
+  assertEquals(
     await decide(inviterBot, 'approveChatJoinRequest', inChat(hopper.id)),
     [403, 'Forbidden: bot is not a member of the supergroup chat'],
     'Expected a bot that left to be turned away',
@@ -1239,18 +1186,18 @@ Deno.test('simultaneous approvals add the member once, as the activity log shows
     `${sessionPath}/bot-activity?method=approveChatJoinRequest`,
   );
 
-  expectEqual(
+  assertEquals(
     approvals.map(({ status, body }) => [status, body.ok ? body.result : body.description])
       .sort(),
     [[200, true], [400, 'Bad Request: USER_ALREADY_PARTICIPANT']].sort(),
     'Expected one approval to succeed and the other to find Grace a member',
   );
-  expectEqual(
+  assertEquals(
     [await memberCount(), describeMembershipUpdates(await readUpdates(observerBot)).length],
     [memberCountBefore + 1, 2],
     'Expected Grace to join once, with one membership update and one service message',
   );
-  expectEqual(
+  assertEquals(
     activity.body.entries.map(({ bot_id, answer }) => [bot_id, (answer as { ok: boolean }).ok])
       .sort(),
     [[inviterBot.bot.id, true], [coInviterBot.bot.id, false]].sort(),
@@ -1298,7 +1245,7 @@ Deno.test('an approved account joins with its restriction, and counts for its li
     'Expected Grace to leave',
   );
 
-  expectEqual(
+  assertEquals(
     [member.status, member.is_member, countWhileMember, await linkMemberCount()],
     ['restricted', true, 1, 0],
     'Expected Grace to join restricted, through the link, until she leaves',
@@ -1311,7 +1258,7 @@ Deno.test('a grammY bot approves join requests through its webhook', async () =>
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const memberObserved = Promise.withResolvers<Record<string, unknown>>();
@@ -1342,7 +1289,7 @@ Deno.test('a grammY bot approves join requests through its webhook', async () =>
       }),
     ]).finally(() => clearTimeout(timeoutId));
 
-    expectEqual(
+    assertEquals(
       [
         (observed.from as { id: number }).id,
         (observed.new_chat_member as { user: { id: number }; status: string }).user.id,
@@ -1382,12 +1329,7 @@ async function createAccountDecisionFixture() {
     useLink,
   } = fixture;
   const createMember = async (firstName: string) => {
-    const { body: { account } } = await requestJson<{ account: FixtureAccount }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    );
+    const account = await createAccount(api, sessionPath, firstName);
     await asOwner(`members/${account.id}`, { method: 'PUT' });
     return account;
   };
@@ -1460,7 +1402,7 @@ Deno.test('an administrator account approves a request, which bots receive from 
   // Kay, who administers with the right but did not create the link, approves Grace.
   const approval = await decideAsAccount(kay, grace.id, 'approve');
 
-  expectEqual(
+  assertEquals(
     [prompt.status, approval],
     [200, 204],
     'Expected the inviter to prompt Grace, and Kay to approve her',
@@ -1468,7 +1410,7 @@ Deno.test('an administrator account approves a request, which bots receive from 
   const linkUsage = await requestJson<
     { invite_links: Array<{ member_count: number; pending_join_request_count: number }> }
   >(api, 'GET', `${supergroupPath(ada.id)}/invite-links`);
-  expectEqual(
+  assertEquals(
     [
       await getMemberStatus(grace.id),
       await memberCount(),
@@ -1495,7 +1437,7 @@ Deno.test('an administrator account approves a request, which bots receive from 
     }`,
     `joined ${grace.id} by ${grace.id}`,
   ];
-  expectEqual(
+  assertEquals(
     [
       describeMembershipUpdates(inviterUpdates),
       describeMembershipUpdates(await readUpdates(coInviterBot)),
@@ -1514,7 +1456,7 @@ Deno.test('an administrator account approves a request, which bots receive from 
     "Expected administrators to receive the change from Kay, and every bot Grace's own join",
   );
   const creatorView = inviterUpdates[0]?.chat_member as Record<string, unknown> | undefined;
-  expectEqual(
+  assertEquals(
     [creatorView?.from, creatorView?.invite_link],
     [
       { id: kay.id, is_bot: false, first_name: 'Kay' },
@@ -1525,14 +1467,14 @@ Deno.test('an administrator account approves a request, which bots receive from 
   const { body: { messages } } = await requestJson<
     { messages: Array<{ from: { id: number }; new_chat_members?: Array<{ id: number }> }> }
   >(api, 'GET', `${supergroupPath(grace.id)}/messages`);
-  expectEqual(
+  assertEquals(
     [messages.at(-1)?.from.id, messages.at(-1)?.new_chat_members?.map(({ id }) => id)],
     [grace.id, [grace.id]],
     "Expected Grace's history to end with her own join",
   );
 
   // The approval ended the inviter's grant, and later decisions find Grace a member.
-  expectEqual(
+  assertEquals(
     [
       await describeBotCall(callBot(inviterBot, 'sendMessage', { chat_id: grace.id, text: 'Hi' })),
       await decideAsAccount(kay, grace.id, 'approve'),
@@ -1580,7 +1522,7 @@ Deno.test('the owner declines a request, which leaves the account outside withou
 
   const decline = await decideAsAccount(ada, hopper.id, 'decline');
 
-  expectEqual(
+  assertEquals(
     [
       decline,
       await getMemberStatus(hopper.id),
@@ -1605,7 +1547,7 @@ Deno.test('the owner declines a request, which leaves the account outside withou
     ],
     "Expected Hopper's request and contact to end, without a membership change or an update",
   );
-  expectEqual(
+  assertEquals(
     [
       await decideAsAccount(kay, hopper.id, 'decline'),
       await decideAsAccount(kay, hopper.id, 'approve'),
@@ -1620,7 +1562,7 @@ Deno.test('the owner declines a request, which leaves the account outside withou
     [404, 404, '400 Bad Request: HIDE_REQUESTER_MISSING', 'left'],
     'Expected later decisions to find no request',
   );
-  expectEqual(
+  assertEquals(
     [(await useLink(hopper, requestLink.invite_link)).body.outcome, await getJoinRequests()],
     [
       'join_request_sent',
@@ -1698,12 +1640,7 @@ Deno.test('deciding as an account has an explicit status for each actor, right, 
   const afterDemotion = await decideAsAccount(kay, grace.id, 'decline');
   // Another session has its own accounts and supergroups, under the same IDs.
   const otherSessionPath = await createSession(api);
-  const otherOwner = (await requestJson<{ account: FixtureAccount }>(
-    api,
-    'POST',
-    `${otherSessionPath}/accounts`,
-    { first_name: 'Ada' },
-  )).body.account;
+  const otherOwner = await createAccount(api, otherSessionPath, 'Ada');
   const { body: { supergroup: otherSessionSupergroup } } = await requestJson<
     { supergroup: { id: number } }
   >(api, 'POST', `${otherSessionPath}/accounts/${otherOwner.id}/supergroups`, { title: 'Team' });
@@ -1712,7 +1649,7 @@ Deno.test('deciding as an account has an explicit status for each actor, right, 
     approval,
   );
 
-  expectEqual(
+  assertEquals(
     [
       malformed,
       refusals,
@@ -1731,7 +1668,7 @@ Deno.test('deciding as an account has an explicit status for each actor, right, 
     ],
     'Expected each refusal in the order TDLib and then Telegram check them, without an update',
   );
-  expectEqual(
+  assertEquals(
     [await getJoinRequests(), await getRequesterContacts()],
     [requestsBefore, contactsBefore],
     'Expected the refusals to keep both requests with their contacts',
@@ -1784,7 +1721,7 @@ Deno.test('competing account and bot decisions let one win, admitting the reques
     `${sessionPath}/bot-activity?method=approveChatJoinRequest`,
   );
 
-  expectEqual(
+  assertEquals(
     [graceDecisions.filter(succeeded).length, hopperDecisions.filter(succeeded).length],
     [1, 1],
     `Expected one decision of each request to succeed, received ${
@@ -1792,7 +1729,7 @@ Deno.test('competing account and bot decisions let one win, admitting the reques
     }`,
   );
   const graceLosers = graceDecisions.filter((outcome) => !succeeded(outcome));
-  expectEqual(
+  assertEquals(
     [graceLosers, hopperDecisions.filter((outcome) => !succeeded(outcome))],
     [
       graceLosers.map((outcome) =>
@@ -1802,7 +1739,7 @@ Deno.test('competing account and bot decisions let one win, admitting the reques
     ],
     'Expected each losing decision to find the request decided',
   );
-  expectEqual(
+  assertEquals(
     [
       await getMemberStatus(grace.id),
       await getMemberStatus(hopper.id),
@@ -1864,7 +1801,7 @@ Deno.test("an account's approval keeps the requester's restriction and the revok
     { invite_links: Array<{ member_count: number; is_revoked: boolean }> }
   >(api, 'GET', `${supergroupPath(ada.id)}/invite-links`);
 
-  expectEqual(
+  assertEquals(
     [
       revocation.status,
       approval,
@@ -1917,7 +1854,7 @@ Deno.test('a requester that started a chat with a bot keeps it after an account 
     await decideAsAccount(kay, hopper.id, 'approve'),
   ];
 
-  expectEqual(
+  assertEquals(
     [
       decisions,
       await send(inviterBot, linus.id),
@@ -1952,7 +1889,7 @@ interface GatekeeperApprovalOutcome {
  */
 async function serveGatekeeperBot(
   { api, sessionPath, inviterBot }: {
-    readonly api: EmulationApi;
+    readonly api: TestInProcessEmulator;
     readonly sessionPath: string;
     readonly inviterBot: FixtureBot;
   },
@@ -1960,7 +1897,7 @@ async function serveGatekeeperBot(
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const requestChatIds = new Map<number, number>();
@@ -2052,7 +1989,7 @@ Deno.test('a grammY bot finds its approval stale once an administrator account d
     const press = await gatekeeper.pressPromptButton(grace, promptMessageId);
     const outcome = await gatekeeper.approvalAttempted();
 
-    expectEqual(
+    assertEquals(
       [
         approval,
         (observed.chat as { id: number }).id,
@@ -2119,7 +2056,7 @@ Deno.test('a grammY bot keeps the chat a requester started after the owner decli
     const press = await gatekeeper.pressPromptButton(grace, promptMessageId);
     const outcome = await gatekeeper.approvalAttempted();
 
-    expectEqual(
+    assertEquals(
       [
         decline,
         press,

@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import { run } from '@grammyjs/runner/runner.ts';
@@ -7,11 +9,14 @@ import {
   type EmulationSessionClient,
   type MessageDraft,
   type PrivateMessageTarget,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
 import { messageDraftResponseSchema } from '../clients/typescript/schemas.ts';
-import { createTestApi, type EmulationApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type EmulationApi,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 /** The most characters of message text Telegram accepts. */
 const MAX_TEXT_LENGTH = 4_096;
@@ -34,14 +39,14 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
       { chat_id: ada.id, draft_id: 8, text: 'x'.repeat(MAX_TEXT_LENGTH) },
     ];
     for (const write of writes) {
-      expectEqual(
+      assertEqualsInFieldOrder(
         await callBot('sendMessageDraft', write),
         { status: 200, body: { ok: true, result: true } },
         `Expected the draft ${JSON.stringify(write)} to be shown`,
       );
       drafts.push(await ada.getMessageDraft({ chat: privateChat }));
     }
-    expectEqual(
+    assertEqualsInFieldOrder(
       drafts.slice(0, -1),
       [
         null,
@@ -56,7 +61,7 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
       ],
       'Expected each write to change or replace the draft, with blank text thinking',
     );
-    expectEqual(
+    assertEquals(
       [drafts.at(-1)?.draft_id, drafts.at(-1)?.text.length],
       ['8', MAX_TEXT_LENGTH],
       'Expected a draft as long as a message to be shown',
@@ -67,7 +72,7 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
       text: 'Ada, one moment',
       entities: [{ type: 'text_mention', offset: 0, length: 3, user: { id: ada.id } }],
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       await ada.getMessageDraft({ chat: privateChat }),
       shownDraft('9', 'Ada, one moment', {
         entities: [{
@@ -87,12 +92,12 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
       'sendMessageDraft',
       `{"chat_id": ${ada.id}, "draft_id": 9007199254740993}`,
     );
-    expectEqual(
+    assertEquals(
       (await ada.getMessageDraft({ chat: privateChat }))?.draft_id,
       '9007199254740993',
       'Expected a 64-bit draft ID sent as a JSON number to stay exact',
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       await ada.getMessages({ chat: privateChat }),
       historyBefore,
       'Expected drafts to leave the chat history unchanged',
@@ -100,7 +105,7 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
 
     const answer = await callBot('sendMessage', { chat_id: ada.id, text: 'Final answer' });
     const historyAfter = await ada.getMessages({ chat: privateChat });
-    expectEqual(
+    assertEquals(
       [
         answer.status,
         await ada.getMessageDraft({ chat: privateChat }),
@@ -194,14 +199,14 @@ Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as
       [{ chat_id: memberSupergroup.id, draft_id: 0 }, 400, 'Bad Request: TEXTDRAFT_PEER_INVALID'],
     ];
     for (const [parameters, status, description] of cases) {
-      expectEqual(
+      assertEqualsInFieldOrder(
         await callBot('sendMessageDraft', parameters),
         { status, body: { ok: false, error_code: status, description } },
         `Expected ${JSON.stringify(parameters)} to be refused`,
       );
     }
 
-    expectEqual(
+    assertEquals(
       await countPendingUpdates(callBot),
       pendingUpdatesBefore,
       'Expected refused drafts to send the bot no updates',
@@ -209,7 +214,7 @@ Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as
 
     await ada.blockBot({ botId: bot.id });
     for (const draftId of [2, 0]) {
-      expectEqual(
+      assertEqualsInFieldOrder(
         await callBot('sendMessageDraft', { chat_id: ada.id, draft_id: draftId, text: 'x' }),
         {
           status: 403,
@@ -224,7 +229,7 @@ Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as
     }
     await ada.unblockBot({ botId: bot.id });
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         await ada.getMessageDraft({ chat: privateChat }),
         await grace.getMessageDraft({ chat: privateChat }),
@@ -271,7 +276,7 @@ Deno.test('a test expires the draft an account sees, which the bot can show agai
     const otherId = await readDraft();
     const unguarded = await expiryOutcome();
 
-    expectEqual(
+    assertEquals(
       [
         withoutDraft,
         mismatch,
@@ -311,7 +316,7 @@ Deno.test('a test expires the draft an account sees, which the bot can show agai
         headers: { 'Content-Type': 'application/json' },
         body,
       })).status;
-    expectEqual(
+    assertEquals(
       [
         await rawExpiryStatus(JSON.stringify({ draft_id: 5 })),
         await rawExpiryStatus(JSON.stringify({ draft_id: '05' })),
@@ -333,7 +338,7 @@ Deno.test('a test expires the draft an account sees, which the bot can show agai
 });
 
 Deno.test('drafts stay within their own chat, bot and session', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, bot, ada, privateChat, callBot } = await createDraftFixture(api);
   const other = await createDraftFixture(api);
   try {
@@ -359,7 +364,7 @@ Deno.test('drafts stay within their own chat, bot and session', async () => {
       graceExpiry = error instanceof EmulationClientError ? error.status : error;
     }
 
-    expectEqual(
+    assertEquals(
       [
         await ada.getMessageDraft({ chat: privateChat }),
         await ada.getMessageDraft({ chat: otherBotChat }),
@@ -403,7 +408,7 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
       return await ada.getMessageDraft({ chat: privateChat });
     };
     const kept = shownDraft('1', 'Thinking');
-    expectEqual(
+    assertEquals(
       [
         await keptAfter(() => ada.sendMessage({ to: privateChat, text: 'Still there?' })),
         await keptAfter(() =>
@@ -442,7 +447,7 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
     );
     photoAlbum.set('first', new File([tinyGif()], 'first.gif', { type: 'image/gif' }));
     photoAlbum.set('second', new File([tinyGif()], 'second.gif', { type: 'image/gif' }));
-    expectEqual(
+    assertEquals(
       [
         await clearedBy('forwardMessage', {
           chat_id: ada.id,
@@ -518,7 +523,7 @@ Deno.test('a grammY bot streams a draft the account watches until the answer arr
       parameters: { text: 'The answer is 42' },
     }, { after: thinking });
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         thinkingDraft,
         partialDraft,
@@ -574,7 +579,7 @@ Deno.test('an account stops a draft and its bot alone receives the stop', async 
       where: (entry) => 'stopped_message_generation' in entry.update,
     }, { after: beforeStop });
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         shownBeforeStop,
         await ada.getMessageDraft({ chat: privateChat }),
@@ -632,7 +637,7 @@ Deno.test('a kept draft stays stopped until it expires or the bot sends the part
     const savedAnswer = await callBot('sendMessage', { chat_id: ada.id, text: 'Partial answer' });
     const historyAfter = await ada.getMessages({ chat: privateChat });
 
-    expectEqual(
+    assertEquals(
       [
         firstStop,
         afterFirstStop,
@@ -667,7 +672,7 @@ Deno.test('a kept draft stays stopped until it expires or the bot sends the part
 });
 
 Deno.test('refused stops leave the draft shown and tell the bot nothing', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, bot, ada, privateChat, callBot } = await createDraftFixture(api);
   const other = await createDraftFixture(api);
   try {
@@ -715,7 +720,7 @@ Deno.test('refused stops leave the draft shown and tell the bot nothing', async 
       );
     }
 
-    expectEqual(
+    assertEquals(
       [
         outcomes,
         await ada.getMessageDraft({ chat: privateChat }),
@@ -750,7 +755,7 @@ Deno.test('a bot receives stops only while it subscribes to them', async () => {
     await subscribe(['STOPPED_MESSAGE_GENERATION']);
     await stopNewDraft(3);
 
-    expectEqual(
+    assertEquals(
       (await pendingStops(callBot)).map(({ draft_id }) => draft_id),
       ['1', '3'],
       'Expected the default subscription and an explicit one, but not others, to receive stops',
@@ -781,7 +786,7 @@ Deno.test('a grammY bot receives a stop through its webhook', async () => {
     const beforeStop = await activity.position();
     await ada.stopMessageDraft({ chat: privateChat, draft_id: '42' });
 
-    expectEqual(
+    assertEquals(
       await received.promise,
       [ada.id, undefined, 'string', '42'],
       "Expected grammY's handler to see the chat, no user, and the draft ID as text",
@@ -872,7 +877,7 @@ Deno.test('a grammY bot aborts its generator when the account stops its draft', 
       { after: beforeStop, before: savedAnswer.position },
     );
 
-    expectEqual(
+    assertEquals(
       [
         streamedDraft,
         generatorStopReason,
@@ -913,7 +918,7 @@ Deno.test('the TypeScript client decodes message drafts strictly', () => {
     { message_draft: { draft_id: '5', text: 'x', can_stop: false, keep_on_stop: false } },
     { message_draft: { ...shownDraft('5', 'x'), stopped_at: 0 } },
   ].map((body) => messageDraftResponseSchema.safeParse(body).success);
-  expectEqual(
+  assertEquals(
     decoded,
     [true, true, false, false, false, false, false],
     'Expected only drafts the emulator writes to decode',
@@ -941,10 +946,11 @@ interface DraftFixture {
 }
 
 /** A session in which Ada started a chat with the bot, which answers Bot API calls. */
-async function createDraftFixture(api = createTestApi()): Promise<DraftFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+async function createDraftFixture(
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
+): Promise<DraftFixture> {
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
@@ -1054,12 +1060,4 @@ function tinyGif(): Uint8Array<ArrayBuffer> {
   content.set(new TextEncoder().encode('GIF89a'));
   content.set([4, 0, 3, 0], 6);
   return content;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

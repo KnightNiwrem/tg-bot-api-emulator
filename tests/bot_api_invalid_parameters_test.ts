@@ -1,4 +1,6 @@
-import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { assertEquals } from '@std/assert';
+import { createTestSession, type EmulationApi } from './support/emulation_api.ts';
+import { createBot } from './support/http_fixtures.ts';
 
 const keyboardWithActionlessButton = JSON.stringify({
   inline_keyboard: [[{ text: 'Yes', callback_data: 'yes' }, { text: 'No' }]],
@@ -48,7 +50,7 @@ Deno.test('the editing methods name the parameter that does not fit their schema
   for (const [method, parameters] of cases) {
     answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
   }
-  assertJson(
+  assertEquals(
     answers,
     cases.map(([, , description]) => [400, description]),
     'Expected each refusal to name the first offending parameter path, without its value',
@@ -84,7 +86,7 @@ Deno.test('the forward and copy methods name the parameter that does not fit the
   for (const [method, parameters] of cases) {
     answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
   }
-  assertJson(
+  assertEquals(
     answers,
     cases.map(([, , description]) => [400, description]),
     'Expected each refusal to name the first offending parameter path, without its value',
@@ -99,7 +101,7 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
     message_id: 1,
     media: JSON.stringify({ type: 'document', media: 'attach://file', has_spoiler: true }),
   });
-  assertJson(
+  assertEquals(
     answer,
     [400, 'Bad Request: invalid editMessageMedia parameters'],
     'Expected the reader to keep its description',
@@ -112,7 +114,7 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
     caption: 'Hi',
     caption_entities: [{ type: 'bold', offset: '0', length: 2 }],
   });
-  assertJson(
+  assertEquals(
     copyAnswer,
     [400, 'Bad Request: invalid copyMessage parameters'],
     'Expected the caption reader to keep its description',
@@ -122,13 +124,8 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  return { api, botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}` };
+  const { botApiPath } = await createBot(api, sessionPath, 'test_bot');
+  return { api, botApiPath };
 }
 
 /** Calls a Bot API method with JSON parameters, answering with the status and description. */
@@ -144,10 +141,4 @@ async function callBotApi(
   });
   const answer = await response.json() as { readonly description?: string };
   return [response.status, answer.description];
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

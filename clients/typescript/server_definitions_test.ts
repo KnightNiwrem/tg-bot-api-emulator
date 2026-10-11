@@ -2,6 +2,7 @@
  * The client keeps its own copies of facts it shares with the emulator, so that it does not depend
  * on the emulator's source. These tests check each copy against the emulator's.
  */
+import { assertEquals } from '@std/assert';
 import { BOT_ACTIVITY_KINDS as SERVER_BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity_kind.ts';
 import { listLegacyBotApiMethodNames } from '../../src/types/bot_api_method_name.ts';
 import { MAX_CUSTOM_TITLE_LENGTH as SERVER_MAX_CUSTOM_TITLE_LENGTH } from '../../src/types/chat_membership.ts';
@@ -17,11 +18,11 @@ import {
 } from './constants.ts';
 
 Deno.test('The client knows the kinds of bot activity entry the emulator records', () => {
-  assertJson(BOT_ACTIVITY_KINDS, SERVER_BOT_ACTIVITY_KINDS, 'Expected the same kinds, in order');
+  assertEquals(BOT_ACTIVITY_KINDS, SERVER_BOT_ACTIVITY_KINDS, 'Expected the same kinds, in order');
 });
 
 Deno.test('The client knows the legacy Bot API method names the emulator reads', () => {
-  assertJson(
+  assertEquals(
     LEGACY_BOT_API_METHOD_NAMES,
     listLegacyBotApiMethodNames(),
     'Expected the same legacy names, with the same current names',
@@ -29,7 +30,7 @@ Deno.test('The client knows the legacy Bot API method names the emulator reads',
 });
 
 Deno.test('The client checks the limits the emulator enforces', () => {
-  assertJson(
+  assertEquals(
     {
       MAX_CUSTOM_TITLE_LENGTH,
       MIN_TELEGRAM_USER_ID,
@@ -47,11 +48,3 @@ Deno.test('The client checks the limits the emulator enforces', () => {
     'Expected the same limits',
   );
 });
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}

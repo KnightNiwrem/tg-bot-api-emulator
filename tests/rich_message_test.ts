@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { projectRichMessage } from '../src/projections/bot_api_rich_message.ts';
 import { normalizeRichMessage } from '../src/services/rich_message_normalization.ts';
 import type { BotApiRichMessage } from '../src/types/bot_api_rich_message.ts';
@@ -7,6 +9,7 @@ import {
   repeatRichMessage,
   type RichBlock,
   type RichMessage,
+  type RichMessageButton,
   richMessageMentionsUser,
   type RichText,
 } from '../src/types/rich_message.ts';
@@ -44,12 +47,6 @@ function normalizeBlock(block: RichBlock, detectsEntities = true): RichBlock {
   return normalization.richMessage.blocks[0];
 }
 
-function expectJson(actual: unknown, expected: unknown, description: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${description}: ${JSON.stringify(actual)}`);
-  }
-}
-
 Deno.test('rich messages link to anchors and references by their raw or URL-decoded names', () => {
   const link = (url: string): RichText => ({ kind: 'link', text: plain('go'), url });
   const richMessage: RichMessage = {
@@ -76,7 +73,7 @@ Deno.test('rich messages link to anchors and references by their raw or URL-deco
     isRightToLeft: false,
   };
 
-  expectJson(project(richMessage).blocks[1], {
+  assertEqualsInFieldOrder(project(richMessage).blocks[1], {
     type: 'paragraph',
     text: [
       { type: 'reference', text: 'Note', name: 'a%20b' },
@@ -88,7 +85,7 @@ Deno.test('rich messages link to anchors and references by their raw or URL-deco
       { type: 'url', text: 'go', url: '#nowhere' },
       { type: 'url', text: 'go', url: 'https://grammy.dev/#top' },
     ],
-  }, 'links resolved in the order TDLib resolves them');
+  }, 'Expected links resolved in the order TDLib resolves them');
 });
 
 /**
@@ -163,14 +160,14 @@ Deno.test('an anchor block shadows a later reference of the same name, nested or
     paragraph(reference('detailed')),
   ], ['top', 'quoted', 'listed', 'detailed']);
 
-  expectJson(
+  assertEqualsInFieldOrder(
     shown,
     ['top', 'quoted', 'listed', 'detailed'].map((name) => ({
       type: 'anchor_link',
       text: 'go',
       anchor_name: name,
     })),
-    'links to the anchor blocks that come first',
+    'Expected links to the anchor blocks that come first',
   );
 });
 
@@ -209,14 +206,14 @@ Deno.test('a reference shadows a later anchor block of the same name, nested or 
     { kind: 'anchor', name: 'tabled' },
   ], ['top', 'summarized', 'quoted', 'tabled']);
 
-  expectJson(
+  assertEqualsInFieldOrder(
     shown,
     ['top', 'summarized', 'quoted', 'tabled'].map((name) => ({
       type: 'reference_link',
       text: 'go',
       reference_name: name,
     })),
-    'links to the references that come first',
+    'Expected links to the references that come first',
   );
 });
 
@@ -255,11 +252,15 @@ Deno.test('rich message list items show the labels TDLib gives them', () => {
   const shownLabels = orderedList.type === 'list'
     ? orderedList.items.map((item) => item.label)
     : [];
-  expectJson(shownLabels, labels.map(([, , label]) => label), 'TDLib ordered list labels');
-  expectJson(unorderedList, {
+  assertEquals(
+    shownLabels,
+    labels.map(([, , label]) => label),
+    'Expected TDLib ordered list labels',
+  );
+  assertEqualsInFieldOrder(unorderedList, {
     type: 'list',
     items: [{ label: '•', blocks: [{ type: 'divider' }], has_checkbox: true }],
-  }, 'an unordered item with an unchecked checkbox');
+  }, 'Expected an unordered item with an unchecked checkbox');
 });
 
 Deno.test('Telegram detects entities in the plain text of rich messages, not in code or buttons', () => {
@@ -280,7 +281,7 @@ Deno.test('Telegram detects entities in the plain text of rich messages, not in 
       ],
     },
   });
-  expectJson(paragraph, {
+  assertEquals(paragraph, {
     kind: 'paragraph',
     text: {
       kind: 'concatenation',
@@ -299,24 +300,24 @@ Deno.test('Telegram detects entities in the plain text of rich messages, not in 
         { kind: 'button', button },
       ],
     },
-  }, 'entities detected only in plain text outside code, links, and buttons');
+  }, 'Expected entities detected only in plain text outside code, links, and buttons');
 
   const preformatted: RichBlock = { kind: 'preformatted', text: plain('/start @ada_writer') };
   const buttonRow: RichBlock = { kind: 'buttons', buttons: [button] };
-  expectJson(
+  assertEquals(
     [normalizeBlock(preformatted), normalizeBlock(buttonRow)],
     [preformatted, buttonRow],
-    'no entities detected in preformatted blocks or rows of buttons',
+    'Expected no entities detected in preformatted blocks or rows of buttons',
   );
-  expectJson(
+  assertEquals(
     normalizeBlock({ kind: 'heading', text: plain('/start'), size: 1 }, false),
     { kind: 'heading', text: plain('/start'), size: 1 },
-    'no entities detected when the bot skips detection',
+    'Expected no entities detected when the bot skips detection',
   );
 });
 
 Deno.test('rich messages clean their strings and mention only known users', () => {
-  expectJson(
+  assertEquals(
     normalizeBlock({
       kind: 'preformatted',
       text: {
@@ -330,7 +331,7 @@ Deno.test('rich messages clean their strings and mention only known users', () =
       kind: 'preformatted',
       text: { kind: 'link', text: plain('a b\nc'), url: 'https://grammy.dev/' },
     },
-    'control characters replaced, removed characters dropped, and an empty language left out',
+    'Expected control characters replaced, removed characters dropped, and an empty language left out',
   );
 
   const failures = [
@@ -347,11 +348,11 @@ Deno.test('rich messages clean their strings and mention only known users', () =
     });
     return normalization.normalized ? undefined : normalization.textError;
   });
-  expectJson(errors, [
+  assertEquals(errors, [
     'Anchor name must be encoded in UTF-8',
     'Mathematical expression must be encoded in UTF-8',
     'User not found',
-  ], "TDLib's errors");
+  ], "Expected TDLib's errors");
 });
 
 Deno.test('rich messages mention users by text mentions and detected usernames', () => {
@@ -401,14 +402,14 @@ Deno.test('repeated rich messages keep URL, copy-text and login buttons and disa
     }],
     isRightToLeft: false,
   };
-  const unchangedButtons = [
+  const unchangedButtons: RichMessageButton[] = [
     { text: plain('Go'), style: 'primary', action: { kind: 'disabled' } },
     { text: plain('Docs'), action: { kind: 'url', url: 'https://grammy.dev/' } },
     { text: plain('Copy'), action: { kind: 'copy_text', copiedText: 'code' } },
     { text: plain('Share'), action: { kind: 'disabled' } },
     { text: plain('Open'), action: { kind: 'disabled' } },
   ];
-  expectJson(repeatRichMessage(richMessage, 'forward').blocks, [{
+  assertEquals(repeatRichMessage(richMessage, 'forward').blocks, [{
     kind: 'buttons',
     buttons: [
       ...unchangedButtons,
@@ -417,12 +418,12 @@ Deno.test('repeated rich messages keep URL, copy-text and login buttons and disa
         action: { kind: 'login_url', url: 'https://grammy.dev/login', requestsWriteAccess: true },
       },
     ],
-  }], 'the buttons of a forward');
-  expectJson(repeatRichMessage(richMessage, 'copy').blocks, [{
+  }], 'Expected the buttons of a forward');
+  assertEquals(repeatRichMessage(richMessage, 'copy').blocks, [{
     kind: 'buttons',
     buttons: [
       ...unchangedButtons,
       { text: plain('Log in'), action: { kind: 'url', url: 'https://grammy.dev/login' } },
     ],
-  }], 'the buttons of a copy');
+  }], 'Expected the buttons of a copy');
 });

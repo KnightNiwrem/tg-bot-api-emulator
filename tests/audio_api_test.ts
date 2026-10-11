@@ -1,3 +1,10 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import {
@@ -64,29 +71,16 @@ const OGG_URL = 'https://cdn.example.com/songs/drive.ogg';
  */
 async function createAudioFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      {
-        first_name: 'Music Bot',
-        username,
-        supports_inline_queries: true,
-        receives_chosen_inline_results: true,
-      },
-    );
-    return {
-      ...body.bot,
-      token: body.token,
-      botApiPath: `${sessionPath}/bot-api/bot${body.token}`,
-    };
+    const { bot, token, botApiPath } = await createSessionBot(api, sessionPath, username, {
+      first_name: 'Music Bot',
+      supports_inline_queries: true,
+      receives_chosen_inline_results: true,
+    });
+    return { ...bot, token, botApiPath };
   };
   const bot = await createBot('music_bot');
   const otherBot = await createBot('other_music_bot');
@@ -143,7 +137,8 @@ async function createAudioFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, bot.botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(bot.botApiPath));
   await readUpdates();
 
   return {
@@ -162,24 +157,6 @@ async function createAudioFixture() {
     callBot,
     getHistory,
     readUpdates,
-  };
-}
-
-/** Returns a reader of the bot's messages since the reader last read its updates. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 
@@ -209,14 +186,6 @@ function gifImage(width: number, height: number): Uint8Array<ArrayBuffer> {
   view.setUint16(6, width, true);
   view.setUint16(8, height, true);
   return image;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
 
 /** The audio of a message, which must have one. */
@@ -254,7 +223,7 @@ Deno.test('an account uploads a track that the bot inspects, downloads, and send
   const received = (update?.message ?? {}) as TestMessage;
   const audio = audioOf(received);
   // The official server's `JsonAudio` writes its fields in this order.
-  expectEqual(
+  assertEqualsInFieldOrder(
     [sent.status, Object.keys(audio), audio, received.caption],
     [
       201,
@@ -289,7 +258,7 @@ Deno.test('an account uploads a track that the bot inspects, downloads, and send
   const download = await api.request(
     `${sessionPath}/bot-api/file/bot${bot.token}/${file.result?.file_path}`,
   );
-  expectEqual(
+  assertEquals(
     [
       file.result?.file_path,
       download.headers.get('Content-Type'),
@@ -311,7 +280,7 @@ Deno.test('an account uploads a track that the bot inspects, downloads, and send
   });
   const resentAudio = audioOf(reply.result);
   const history = await getHistory(ada.id, privateChat);
-  expectEqual(
+  assertEquals(
     [
       resentAudio.file_unique_id,
       resentAudio.duration,
@@ -342,7 +311,7 @@ Deno.test('an account uploads a track that the bot inspects, downloads, and send
     to: privateChat,
     audio: { content_base64: TRACK_BYTES.toBase64(), title: 'Side\tB', performer: '\r' },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [refused.status, cleaned.status, cleaned.body.message.audio, (await readUpdates()).length],
     [
       400,
@@ -382,7 +351,7 @@ Deno.test('a bot uploads a track with a cover and sends one by URL with the meta
   const thumbnailFile = await callBot<{ file_path: string }>(bot.botApiPath, 'getFile', {
     file_id: audio.thumbnail?.file_id,
   });
-  expectEqual(
+  assertEquals(
     [
       audio.duration,
       audio.file_name,
@@ -417,7 +386,7 @@ Deno.test('a bot uploads a track with a cover and sends one by URL with the meta
   });
   const urlAudio = audioOf(fromUrl.result);
   const download = await api.request(`${sessionPath}/files/${urlAudio.file_unique_id}`);
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       urlAudio,
       new TextDecoder().decode(await download.arrayBuffer()),
@@ -449,7 +418,7 @@ Deno.test('a bot uploads a track with a cover and sends one by URL with the meta
     // Audio takes no spoiler, which the emulator rejects as an undocumented parameter.
     callBot(bot.botApiPath, 'sendAudio', { chat_id: ada.id, audio: DRIVE_URL, has_spoiler: true }),
   ]);
-  expectEqual(
+  assertEquals(
     refusals.map(({ body }) => body.description),
     [
       'Bad Request: wrong type of the web page content',
@@ -490,7 +459,7 @@ Deno.test('audio file IDs send only audio files, and only for the user that know
       audio: audioFileId,
     }),
   ]);
-  expectEqual(
+  assertEquals(
     [
       ...refusals.map(({ body }) => body.description),
       (await getHistory(ada.id, privateChat)).length,
@@ -562,7 +531,7 @@ Deno.test('can_send_audios governs the audio files accounts and bots send to a s
       message_id: sentToBot.body.message.message_id,
     }),
   ]);
-  expectEqual(
+  assertEquals(
     [
       permissions.status,
       graceAudio.status,
@@ -585,7 +554,7 @@ Deno.test('can_send_audios governs the audio files accounts and bots send to a s
     to: supergroupChat,
     voice: { content_base64: TRACK_BYTES.toBase64() },
   });
-  expectEqual(graceVoice.status, 201, 'Expected a voice note to need can_send_voice_notes only');
+  assertEquals(graceVoice.status, 201, 'Expected a voice note to need can_send_voice_notes only');
 });
 
 Deno.test('audio albums hold only audio files, and their messages stay audio files', async () => {
@@ -632,7 +601,7 @@ Deno.test('audio albums hold only audio files, and their messages stay audio fil
     { audio: { content_base64: TRACK_BYTES.toBase64() } },
     { video: { content_base64: TRACK_BYTES.toBase64() } },
   ]);
-  expectEqual(
+  assertEquals(
     [
       refusals.map(({ body }) => body.description),
       accountRefusal.status,
@@ -667,7 +636,7 @@ Deno.test('audio albums hold only audio files, and their messages stay audio fil
     { audio: { content_base64: TRACK_BYTES.toBase64(), title: 'Two' } },
   ]);
   const [first, second] = album.result ?? [];
-  expectEqual(
+  assertEquals(
     [
       typeof first?.media_group_id,
       second?.media_group_id === first?.media_group_id,
@@ -710,7 +679,7 @@ Deno.test('audio albums hold only audio files, and their messages stay audio fil
     message_id: first?.message_id,
     caption: 'Side A, remastered',
   });
-  expectEqual(
+  assertEquals(
     [
       edits[0].body.description,
       audioOf(edits[1].body.result).title,
@@ -769,7 +738,7 @@ Deno.test('forwarded and copied audio files of one sender form new albums, and r
       history.find((message) => message.message_id === message_id)?.media_group_id
     );
   const [forwardedAlbum, copiedAlbum, mixedAlbum] = [forwarded, copied, mixed].map(albumsOf);
-  expectEqual(
+  assertEquals(
     [
       typeof forwardedAlbum[0],
       forwardedAlbum[1] === forwardedAlbum[0],
@@ -788,7 +757,7 @@ Deno.test('forwarded and copied audio files of one sender form new albums, and r
     text: 'Great track',
     reply_parameters: { chat_id: ada.id, message_id: firstTrack },
   });
-  expectEqual(
+  assertEquals(
     reply.result?.external_reply?.audio?.title,
     'One',
     'Expected the reply to show the replied audio file',
@@ -863,7 +832,7 @@ Deno.test('inline audio results send cached tracks and tracks downloaded from th
   const historyBefore = await getHistory(ada.id, privateChat);
   const refused = await choose(ada.id, inlineQuery.id, 'ogg');
   const downloadedAudio = audioOf(downloaded.body.message);
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       answered.body.ok,
       listing,
@@ -908,7 +877,7 @@ Deno.test('inline audio results send cached tracks and tracks downloaded from th
       { type: 'audio', id: 'notes', audio_file_id: documentFileId },
     ]),
   ]);
-  expectEqual(
+  assertEquals(
     refusals.map(({ body }) => body.description),
     [
       'Bad Request: invalid answerInlineQuery parameters',
@@ -924,7 +893,7 @@ Deno.test('inline audio results send cached tracks and tracks downloaded from th
   const groupQuery = await sendQuery(grace.id, supergroupChat);
   await answer(groupQuery.id, [urlResult]);
   const groupHistoryBefore = await getHistory(grace.id, supergroupChat);
-  expectEqual(
+  assertEquals(
     [
       (await choose(grace.id, groupQuery.id, 'drive')).status,
       (await getHistory(grace.id, supergroupChat)).length,
@@ -940,7 +909,7 @@ Deno.test('a grammY bot receives a track and replies with its own track and a co
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   await grammyBot.init();
@@ -983,7 +952,7 @@ Deno.test('a grammY bot receives a track and replies with its own track and a co
   }
   const reply = (await getHistory(ada.id, privateChat)).at(-1);
   const audio = audioOf(reply);
-  expectEqual(
+  assertEquals(
     [
       audio.title,
       audio.performer,

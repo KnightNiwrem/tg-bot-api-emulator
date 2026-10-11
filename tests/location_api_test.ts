@@ -1,4 +1,8 @@
-import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createAccount as createSessionAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
+import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface TestLocation {
   readonly latitude: number;
@@ -19,22 +23,13 @@ interface TestMessage {
  */
 async function createLocationFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Location Bot', username: 'location_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const createdBot = await createBot(api, sessionPath, 'location_bot', {
+    first_name: 'Location Bot',
+  });
+  const { botApiPath } = createdBot;
   const privateChat = { type: 'private', botId: createdBot.bot.id } as const;
   const accountPath = (accountId: number) => `${sessionPath}/accounts/${accountId}`;
   const sendAccountMessage = (accountId: number, body: Record<string, unknown>) =>
@@ -81,7 +76,8 @@ async function createLocationFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
   return {
@@ -97,32 +93,6 @@ async function createLocationFixture() {
     getHistory,
     readUpdates,
   };
-}
-
-/** Returns a reader of the bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
 
 Deno.test('a bot sends static locations whose accuracy Telegram keeps in whole meters', async () => {
@@ -145,7 +115,7 @@ Deno.test('a bot sends static locations whose accuracy Telegram keeps in whole m
     longitude: '-1.5E2',
     horizontal_accuracy: '1500',
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [accurate, edges, exponent].map(({ status, body }) => [
       status,
       (body.result as TestMessage).location,
@@ -157,7 +127,7 @@ Deno.test('a bot sends static locations whose accuracy Telegram keeps in whole m
     ],
     'Expected each location as sent, with its accuracy rounded up and 0 meaning unknown',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await getHistory(ada.id, privateChat)).slice(-3).map((message) => message.location),
     [
       { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 13 },
@@ -192,13 +162,13 @@ Deno.test('sendLocation refuses missing, off-Earth and live locations without se
   ] as const;
   for (const [parameters, description] of refusals) {
     const { status, body } = await callBot('sendLocation', parameters);
-    expectEqual(
+    assertEquals(
       [status, body.description],
       [400, description],
       `Expected ${JSON.stringify(parameters)} to be refused`,
     );
   }
-  expectEqual(
+  assertEquals(
     (await getHistory(ada.id, privateChat)).length,
     historyLength,
     'Expected the refused locations to send nothing',
@@ -237,12 +207,12 @@ Deno.test('an account answers a request_location button with the location its cl
       location: { latitude: 1, longitude: 2, live_period: 60 },
     }),
   ]);
-  expectEqual(
+  assertEquals(
     [refusals.map(({ status }) => status), (await getHistory(ada.id, privateChat)).length],
     [[400, 400, 400, 400], historyLength],
     'Expected a location button to need a valid location, which no other button takes',
   );
-  expectEqual(await readUpdates(), [], 'Expected the refused presses to reach no bot');
+  assertEquals(await readUpdates(), [], 'Expected the refused presses to reach no bot');
 
   const press = await pressButton(ada.id, {
     chat: privateChat,
@@ -250,14 +220,14 @@ Deno.test('an account answers a request_location button with the location its cl
     location: { latitude: 48.8584, longitude: 2.2945, horizontal_accuracy: 5 },
   });
   const sharedLocation = { latitude: 48.8584, longitude: 2.2945, horizontal_accuracy: 5 };
-  expectEqual(
+  assertEqualsInFieldOrder(
     [press.status, press.body.message.location, press.body.message.reply_to_message?.message_id],
     [201, sharedLocation, keyboardMessageId],
     'Expected the press to share the location in reply to the keyboard',
   );
   const [update] = await readUpdates();
   const received = (update as { message: TestMessage }).message;
-  expectEqual(
+  assertEqualsInFieldOrder(
     [received.from?.id, received.location, received.reply_to_message?.message_id],
     [ada.id, sharedLocation, keyboardMessageId],
     'Expected the bot to receive the shared location as an ordinary message',
@@ -268,7 +238,7 @@ Deno.test('an account answers a request_location button with the location its cl
     longitude: received.location?.longitude,
     reply_parameters: { message_id: received.message_id },
   });
-  expectEqual(answer.status, 200, 'Expected the bot to answer with a location of its own');
+  assertEquals(answer.status, 200, 'Expected the bot to answer with a location of its own');
 });
 
 Deno.test('accounts share locations in private chats and supergroups', async () => {
@@ -291,7 +261,7 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
     to: supergroupChat,
     location: { latitude: 0, longitude: 0 },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [shared.status, shared.body.message.location, groupShared.status, groupShared.body.message],
     [
       201,
@@ -301,12 +271,12 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
     ],
     'Expected accounts to share static locations',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await getHistory(ada.id, supergroupChat)).at(-1)?.location,
     { latitude: 0, longitude: 0 },
     'Expected the supergroup history to keep the location',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await readUpdates()).map((update) => (update as { message: TestMessage }).message.location),
     [{ latitude: -33.8568, longitude: 151.2153, horizontal_accuracy: 1 }],
     'Expected the privacy-mode bot to receive only the private location',
@@ -325,26 +295,26 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
   const historyLength = (await getHistory(ada.id, privateChat)).length;
   for (const body of refusedBodies) {
     const { status } = await sendAccountMessage(ada.id, body);
-    expectEqual(status, 400, `Expected ${JSON.stringify(body)} to be refused`);
+    assertEquals(status, 400, `Expected ${JSON.stringify(body)} to be refused`);
   }
   const supergroupKeyboard = await callBot('sendMessage', {
     chat_id: supergroupChat.chatId,
     text: 'Ready?',
     reply_markup: { keyboard: [[{ text: 'Yes' }]] },
   });
-  expectEqual(supergroupKeyboard.status, 200, 'Expected the bot to show a supergroup keyboard');
+  assertEquals(supergroupKeyboard.status, 200, 'Expected the bot to show a supergroup keyboard');
   const groupHistoryLength = (await getHistory(grace.id, supergroupChat)).length;
   const supergroupPress = await pressButton(grace.id, {
     chat: supergroupChat,
     text: 'Yes',
     location: { latitude: 0, longitude: 0 },
   });
-  expectEqual(
+  assertEquals(
     [supergroupPress.status, (await getHistory(grace.id, supergroupChat)).length],
     [400, groupHistoryLength],
     'Expected a shown supergroup button to refuse a location and send nothing',
   );
-  expectEqual(
+  assertEquals(
     [(await getHistory(ada.id, privateChat)).length, await readUpdates()],
     [historyLength, []],
     'Expected refused locations to send nothing',
@@ -368,7 +338,7 @@ Deno.test('locations need the permission to send messages in supergroups', async
     `${supergroupPath(ada.id)}/permissions`,
     { permissions: { can_send_polls: true } },
   );
-  expectEqual(restriction.status, 204, 'Expected the owner to withhold sending messages');
+  assertEquals(restriction.status, 204, 'Expected the owner to withhold sending messages');
   const historyLength = (await getHistory(ada.id, supergroupChat)).length;
 
   const location = { latitude: 1, longitude: 2 };
@@ -378,7 +348,7 @@ Deno.test('locations need the permission to send messages in supergroups', async
     ...location,
   });
   const ownerLocation = await sendAccountMessage(ada.id, { to: supergroupChat, location });
-  expectEqual(
+  assertEquals(
     [
       accountLocation.status,
       botLocation.status,
@@ -388,7 +358,7 @@ Deno.test('locations need the permission to send messages in supergroups', async
     [403, 400, 'Bad Request: not enough rights to send locations to the chat', 201],
     'Expected only the owner to send a location without the permission',
   );
-  expectEqual(
+  assertEquals(
     (await getHistory(ada.id, supergroupChat)).length,
     historyLength + 1,
     'Expected the refused locations to be missing from the history',
@@ -425,7 +395,7 @@ Deno.test('a location message keeps its location through edits of its keyboard o
     ...target,
     reply_markup: { inline_keyboard: [[{ text: 'Map', callback_data: 'map' }]] },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       textEdit.body.description,
       captionEdit.body.description,

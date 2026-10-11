@@ -2,7 +2,6 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isBadRequestResponse,
   isGetUpdatesResponse,
@@ -1055,7 +1054,7 @@ Deno.test('a grammY bot downloads a document from an account and replies with a 
   }
 
   const apiRoot = `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`;
-  const fetch = createInProcessFetch(api.fetch);
+  const fetch = api.fetch;
   const grammyBot = new Bot(createdBot.token, { client: { apiRoot, fetch } });
   const downloadedTexts: string[] = [];
   const replied = Promise.withResolvers<void>();

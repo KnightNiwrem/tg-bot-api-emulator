@@ -1,4 +1,6 @@
+import { assertEquals } from '@std/assert';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { createBot } from './support/http_fixtures.ts';
 
 interface BotApiCallActivityEntry {
   readonly kind: string;
@@ -25,7 +27,7 @@ Deno.test('getUpdates calls are not recorded, whatever they are answered', async
     await postBotApi(api, `${botApiPath}/getWebhookInfo`, '{}'),
     await postBotApi(api, `${botApiPath}/getUpdate`, '{}'),
   ];
-  assertJson(
+  assertEquals(
     [statuses, await readRecordedCalls(api, sessionPath)],
     [
       [500, 200, 400, 400, 200, 404],
@@ -54,7 +56,7 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
     await postBotApiForAnswer(api, `${botApiPath}/SendMessage`, '{'),
     await postBotApiForAnswer(api, `${botApiPath}/kickChatMember`, '{'),
   ];
-  assertJson(
+  assertEquals(
     answers.map(({ status, error_code, description }) => [
       status,
       error_code,
@@ -70,7 +72,7 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
     ],
     'Expected each call to be rejected by the first check it fails',
   );
-  assertJson(
+  assertEquals(
     await readRecordedCalls(api, sessionPath),
     [
       ['notAMethod', 'notAMethod', 'http', {}, 404],
@@ -84,18 +86,8 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  return {
-    api,
-    sessionPath,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}`,
-    bot: createdBot.bot,
-  };
+  const { botApiPath, bot } = await createBot(api, sessionPath, 'test_bot');
+  return { api, sessionPath, botApiPath, bot };
 }
 
 async function postBotApi(api: EmulationApi, path: string, body: string): Promise<number> {
@@ -133,10 +125,4 @@ async function readRecordedCalls(api: EmulationApi, sessionPath: string): Promis
     parameters,
     answer.ok ? 200 : answer.error_code,
   ]);
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

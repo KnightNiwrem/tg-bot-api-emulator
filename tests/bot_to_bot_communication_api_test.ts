@@ -1,9 +1,14 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import {
   type EmulationSessionClient,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi, createTestSession, requestJson } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  createTestSession,
+  requestJson,
+} from './support/emulation_api.ts';
 
 interface SentBotMessage {
   readonly message_id: number;
@@ -26,7 +31,7 @@ Deno.test('bot creation accepts a boolean enables_bot_to_bot_communication that 
       username: 'refused_bot',
       enables_bot_to_bot_communication: value,
     });
-    assertJson(
+    assertEquals(
       refused.status,
       400,
       `Expected enables_bot_to_bot_communication ${JSON.stringify(value)} to be refused`,
@@ -40,13 +45,13 @@ Deno.test('bot creation accepts a boolean enables_bot_to_bot_communication that 
       `${sessionPath}/bots`,
       { first_name: 'Relay', username, enables_bot_to_bot_communication: setting },
     );
-    assertJson(created.status, 201, `Expected ${username} to be created`);
+    assertEquals(created.status, 201, `Expected ${username} to be created`);
     const me = await requestJson<{ result: Record<string, unknown> }>(
       api,
       'POST',
       `${sessionPath}/bot-api/bot${created.body.token}/getMe`,
     );
-    assertJson(
+    assertEquals(
       ['enables_bot_to_bot_communication' in created.body.bot, Object.keys(me.body.result)],
       [false, Object.keys(created.body.bot)],
       `Expected ${username}'s profile and getMe to report no bot-to-bot setting`,
@@ -77,7 +82,7 @@ Deno.test('an addressed command and a direct reply reach the other bot when eith
 
       const receivedByB = await fixture.readUpdates(botB);
       const receivedByA = await fixture.readUpdates(botA);
-      assertJson(
+      assertEqualsInFieldOrder(
         [receivedByB.map((update) => update.message), receivedByA.map((update) => update.message)],
         delivered ? [[command], [reply]] : [[], []],
         `Expected the exchange to be ${delivered ? '' : 'un'}delivered with ${name} opted in`,
@@ -86,7 +91,7 @@ Deno.test('an addressed command and a direct reply reach the other bot when eith
         throw new Error('Expected the command to come from a bot');
       }
       const history = await fixture.owner.getMessages({ chat: fixture.chat });
-      assertJson(
+      assertEquals(
         history.slice(-2).map(({ message_id, from }) => [message_id, from.id]),
         [[command.message_id, botA.id], [reply.message_id, botB.id]],
         `Expected the owner to see both bot messages with ${name} opted in`,
@@ -120,7 +125,7 @@ Deno.test('a bot message reaches only the one member bot it addresses', async ()
           received.push(name);
         }
       }
-      assertJson(received, expected, `Expected ${JSON.stringify(text)} to reach ${expected}`);
+      assertEquals(received, expected, `Expected ${JSON.stringify(text)} to reach ${expected}`);
     };
     const sendAndExpect = async (
       sender: CreatedTestBot,
@@ -185,7 +190,7 @@ Deno.test('a bot message reaches only the one member bot it addresses', async ()
       message_id: questionOfA.message_id,
       text: '/ask@b_bot again',
     });
-    assertJson(await fixture.readUpdates(botB), [], 'Expected B to receive no edit of A');
+    assertEquals(await fixture.readUpdates(botB), [], 'Expected B to receive no edit of A');
 
     // Messages addressed in another chat or session stay there.
     const otherSupergroup = await fixture.owner.createSupergroup({ title: 'Elsewhere' });
@@ -196,7 +201,7 @@ Deno.test('a bot message reaches only the one member bot it addresses', async ()
       text: '/ask@b_bot elsewhere',
     });
     await expectRecipients('/ask@b_bot elsewhere', []);
-    assertJson(
+    assertEquals(
       await otherFixture.readUpdates(otherSessionBotB),
       [],
       'Expected the other session to receive nothing',
@@ -218,7 +223,7 @@ Deno.test('bot-to-bot messages keep account privacy routing and service messages
     await fixture.readUpdates(botB);
     // A wrote last, so only A in privacy mode receives the owner's general command.
     await fixture.owner.sendMessage({ to: fixture.chat, text: '/start' });
-    assertJson(
+    assertEquals(
       [(await fixture.readUpdates(botA)).length, (await fixture.readUpdates(botB)).length],
       [1, 0],
       'Expected the general command to reach only the bot that wrote last',
@@ -261,7 +266,7 @@ Deno.test('a recipient that excludes message updates never receives a bot-to-bot
 
     await fixture.send(botA, { text: '/ask@polling_bot excluded' });
     await fixture.send(botA, { text: '/ask@webhook_bot excluded' });
-    assertJson(
+    assertEquals(
       await fixture.readUpdates(pollingBot, ['message']),
       [],
       'Expected the polling bot to have dropped the excluded message',
@@ -276,13 +281,13 @@ Deno.test('a recipient that excludes message updates never receives a bot-to-bot
     const included = await fixture.send(botA, { text: '/ask@webhook_bot included' });
     // Updates are delivered in order, so the first delivery is the first message kept.
     const delivered = await activity.waitFor({ kind: 'update_delivered' }, { after: start });
-    assertJson(
+    assertEqualsInFieldOrder(
       delivered.update,
       { update_id: delivered.update.update_id, message: included },
       'Expected the webhook to receive only the message sent while it accepted messages',
     );
     await activity.waitFor({ kind: 'update_confirmed' }, { after: delivered });
-    assertJson(webhookRequests.length, 1, 'Expected one webhook request');
+    assertEquals(webhookRequests.length, 1, 'Expected one webhook request');
   } finally {
     await fixture.session.end();
     await webhookServer.shutdown();
@@ -295,13 +300,9 @@ interface CreatedTestBot {
 }
 
 async function createFixture() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session: EmulationSessionClient = await new TelegramEmulationClient(publicOrigin, {
-    fetch,
-  }).createSession();
+  const api = createTestInProcessEmulator();
+  const { fetch } = api;
+  const session: EmulationSessionClient = await api.client.createSession();
   const { account: owner }: { account: VirtualAccountClient } = await session.createAccount({
     first_name: 'Ada',
   });
@@ -389,12 +390,4 @@ async function createFixture() {
       }
     },
   };
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

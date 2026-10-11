@@ -1,4 +1,11 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, requestJson } from './support/emulation_api.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -33,20 +40,10 @@ interface CreatedBot {
 async function createPinFixture() {
   const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account.id;
+    (await createSessionAccount(api, sessionPath, firstName)).id;
   const createBot = async (username: string): Promise<CreatedBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { id: body.bot.id, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
+    const { bot, botApiPath } = await createSessionBot(api, sessionPath, username);
+    return { id: bot.id, botApiPath };
   };
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -78,7 +75,7 @@ async function createPinFixture() {
       `${accountPath(accountId)}/messages`,
       { to, text },
     );
-    expectEqual(status, 201, `message ${JSON.stringify(text)} is sent`);
+    assertEquals(status, 201, `message ${JSON.stringify(text)} is sent`);
     return body.message.message_id;
   };
   const callBot = async (bot: CreatedBot, method: string, parameters: object) => {
@@ -90,21 +87,12 @@ async function createPinFixture() {
     );
     return [status, body.ok ? body.result : body.description] as const;
   };
-  const nextOffsets = new Map<number, number>();
+  const readUpdates = createUpdateReader(api);
   /** Reads a bot's message updates since the last read, as the given subscription allows. */
-  const readMessages = async (bot: CreatedBot, allowedUpdates: readonly string[] = ['message']) => {
-    const { body } = await requestJson<{ result: Array<ShownUpdate & { update_id: number }> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      { offset: nextOffsets.get(bot.id) ?? 0, allowed_updates: allowedUpdates },
+  const readMessages = async (bot: CreatedBot, allowedUpdates: readonly string[] = ['message']) =>
+    (await readUpdates(bot.botApiPath, allowedUpdates) as ShownUpdate[]).flatMap(({ message }) =>
+      message === undefined ? [] : [message]
     );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (lastUpdateId !== undefined) {
-      nextOffsets.set(bot.id, lastUpdateId + 1);
-    }
-    return body.result.flatMap(({ message }) => message === undefined ? [] : [message]);
-  };
   const getHistory = async (chatPath: string) =>
     (await requestJson<{ messages: ShownMessage[] }>(api, 'GET', `${chatPath}/messages`)).body
       .messages;
@@ -161,18 +149,18 @@ Deno.test('a bot pins private messages, receives the service messages, and unpin
   const secondId = await sendToPinningBot('second');
   await readMessages(pinningBot);
 
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: secondId }),
     [200, true],
     'the newer is pinned',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: firstId }),
     [200, true],
     'the older is pinned',
   );
   const serviceMessages = await readMessages(pinningBot);
-  expectEqual(
+  assertEquals(
     serviceMessages.map(describePin),
     [
       { from: pinningBot.id, pinned: 'second', pinnedId: secondId, nestedReply: false },
@@ -180,7 +168,7 @@ Deno.test('a bot pins private messages, receives the service messages, and unpin
     ],
     "the bot receives its own pins' service messages",
   );
-  expectEqual(
+  assertEquals(
     (await getNotifications(privatePath)).filter(({ message_id }) =>
       serviceMessages.some((message) => message.message_id === message_id)
     ).map(({ is_silent }) => is_silent),
@@ -188,38 +176,38 @@ Deno.test('a bot pins private messages, receives the service messages, and unpin
     'pins notify the account without sound in a private chat',
   );
   const [, chat] = await callBot(pinningBot, 'getChat', { chat_id: ada });
-  expectEqual(
+  assertEquals(
     (chat as { pinned_message?: ShownMessage }).pinned_message?.text,
     'second',
     'getChat shows the newest pin',
   );
 
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: firstId }),
     [400, 'Bad Request: CHAT_NOT_MODIFIED'],
     'a repeated pin is refused',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: ada }),
     [200, true],
     'an unpin without a target unpins the newest',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: ada, message_id: secondId }),
     [400, 'Bad Request: CHAT_NOT_MODIFIED'],
     'the newest was the one unpinned',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: ada, message_id: 0 }),
     [200, true],
     'a zero message_id is no target either',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: ada }),
     [400, 'Bad Request: message to unpin not found'],
     'nothing is left to unpin',
   );
-  expectEqual(await readMessages(pinningBot), [], 'unpins record no service message');
+  assertEquals(await readMessages(pinningBot), [], 'unpins record no service message');
 });
 
 Deno.test('a bot receives the service message of an account pin in its private chat', async () => {
@@ -230,7 +218,7 @@ Deno.test('a bot receives the service message of an account pin in its private c
 
   await api.request(`${privatePath}/pinned-messages/${messageId}`, { method: 'PUT' });
   const [serviceMessage] = await readMessages(pinningBot);
-  expectEqual(
+  assertEquals(
     serviceMessage === undefined ? undefined : describePin(serviceMessage),
     { from: ada, pinned: 'hello', pinnedId: messageId, nestedReply: false },
     'the account authored the service message',
@@ -253,12 +241,12 @@ Deno.test('supergroup pins need can_pin_messages and reach every bot as a servic
   await readMessages(pinningBot);
   await readMessages(memberBot);
 
-  expectEqual(
+  assertEquals(
     await callBot(memberBot, 'pinChatMessage', { chat_id: chatId, message_id: messageId }),
     [400, 'Bad Request: not enough rights to manage pinned messages in the chat'],
     'a member bot gets no pin right from the default permissions',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'pinChatMessage', {
       chat_id: chatId,
       message_id: messageId,
@@ -268,23 +256,23 @@ Deno.test('supergroup pins need can_pin_messages and reach every bot as a servic
     'an administrator with the right pins',
   );
   for (const bot of [pinningBot, memberBot]) {
-    expectEqual(
+    assertEquals(
       (await readMessages(bot)).map(describePin),
       [{ from: pinningBot.id, pinned: 'rules', pinnedId: messageId, nestedReply: false }],
       `bot ${bot.id} receives the service message despite privacy mode`,
     );
   }
-  expectEqual(
+  assertEquals(
     (await getNotifications(supergroupPath(grace))).at(-1)?.is_silent,
     true,
     'disable_notification makes the pin silent',
   );
-  expectEqual(
+  assertEquals(
     await callBot(memberBot, 'unpinChatMessage', { chat_id: chatId }),
     [400, 'Bad Request: not enough rights to manage pinned messages in the chat'],
     'unpinning needs the right too',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: chatId, message_id: messageId }),
     [200, true],
     'the administrator unpins',
@@ -358,7 +346,7 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
     ],
   ];
   for (const [bot, method, parameters, expected] of cases) {
-    expectEqual(
+    assertEquals(
       await callBot(bot, method, parameters),
       expected,
       `${method} ${JSON.stringify(parameters)}`,
@@ -369,18 +357,18 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
   await api.request(`${sessionPath}/accounts/${ada}/blocked-bots/${pinningBot.id}`, {
     method: 'PUT',
   });
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: privateMessageId }),
     [403, 'Forbidden: bot was blocked by the user'],
     'a blocked bot cannot pin in the private chat',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: ada }),
     [403, 'Forbidden: bot was blocked by the user'],
     'nor unpin',
   );
   await api.request(`${supergroupPath(ada)}/members/${pinningBot.id}`, { method: 'DELETE' });
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: chatId }),
     [403, 'Forbidden: bot was kicked from the supergroup chat'],
     'a removed bot is turned away',
@@ -395,12 +383,12 @@ Deno.test('a pin service message shows a deleted pinned message as inaccessible'
   await api.request(`${supergroupPath(ada)}/messages/${messageId}`, { method: 'DELETE' });
 
   const serviceMessage = (await getHistory(supergroupPath(ada))).at(-1);
-  expectEqual(
+  assertEqualsInFieldOrder(
     serviceMessage?.pinned_message,
     { message_id: messageId, chat: { id: chatId, title: 'Team', type: 'supergroup' }, date: 0 },
     'the pinned message is inaccessible',
   );
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: chatId, message_id: messageId }),
     [400, 'Bad Request: message to unpin not found'],
     'a deleted message cannot be unpinned',
@@ -413,28 +401,20 @@ Deno.test('a bot that excludes message updates still pins, and the call is recor
   // Telegram applies a subscription to updates created after it changes.
   await readMessages(pinningBot, ['callback_query']);
   const messageId = await sendToPinningBot('hello');
-  expectEqual(await readMessages(pinningBot, ['callback_query']), [], 'messages are excluded');
+  assertEquals(await readMessages(pinningBot, ['callback_query']), [], 'messages are excluded');
 
-  expectEqual(
+  assertEquals(
     await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId }),
     [200, true],
     'the pin succeeds',
   );
-  expectEqual(await readMessages(pinningBot, ['message']), [], 'the service message was dropped');
+  assertEquals(await readMessages(pinningBot, ['message']), [], 'the service message was dropped');
   const { body } = await requestJson<{
     entries: Array<{ method: string; chat_id?: number; answer: { ok: boolean } }>;
   }>(api, 'GET', `${sessionPath}/bot-activity?bot_id=${pinningBot.id}&method=pinChatMessage`);
-  expectEqual(
+  assertEquals(
     body.entries.map(({ method, chat_id, answer }) => [method, chat_id, answer.ok]),
     [['pinChatMessage', ada, true]],
     'the activity log records the call with its chat',
   );
 });
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}

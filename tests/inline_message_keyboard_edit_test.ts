@@ -1,3 +1,6 @@
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 // A bot can change only the keyboard of a message an account sent through its inline mode, which
@@ -8,12 +11,12 @@ import { createTestSession, type EmulationApi, requestJson } from './support/emu
 
 type ReceivedMessage = Readonly<Record<string, unknown>>;
 
-interface ReceivedUpdate {
-  readonly update_id: number;
+/** An update as `getUpdates` returns it, with the fields these tests read. */
+type ReceivedUpdate = Readonly<Record<string, unknown>> & {
   readonly message?: ReceivedMessage;
   readonly edited_message?: ReceivedMessage;
   readonly chosen_inline_result?: { readonly inline_message_id?: string };
-}
+};
 
 type InlineQueryChat =
   | { readonly type: 'private'; readonly botId: number }
@@ -30,27 +33,16 @@ const REPLACEMENT_KEYBOARD = { inline_keyboard: [[{ text: 'Less', callback_data:
  */
 async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) {
   const { api, sessionPath } = await createTestSession();
-  const { body: { account: ada } } = await requestJson<{ account: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: 'Ada' },
-  );
-  const { body: { token, bot } } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    {
-      first_name: 'Cats Bot',
-      username: 'cats_bot',
-      supports_inline_queries: true,
-      receives_chosen_inline_results: true,
-    },
-  );
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const { bot, botApiPath } = await createBot(api, sessionPath, 'cats_bot', {
+    first_name: 'Cats Bot',
+    supports_inline_queries: true,
+    receives_chosen_inline_results: true,
+  });
   const accountPath = `${sessionPath}/accounts/${ada.id}`;
-  const botApiPath = `${sessionPath}/bot-api/bot${token}`;
   const chat = await openInlineQueryChat(api, accountPath, bot.id, chatType);
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => await readBotUpdates(botApiPath) as ReceivedUpdate[];
   await readUpdates();
 
   const { body: { inline_query: inlineQuery } } = await requestJson<
@@ -79,7 +71,7 @@ async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) 
   if (sentMessage === undefined || inlineMessageId === undefined) {
     throw new Error(`Expected a message and a chosen result, received ${JSON.stringify(updates)}`);
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     [sentMessage.text, sentMessage.reply_markup, Object.hasOwn(sentMessage, 'edit_date')],
     ['Cats sleep a lot', SENT_KEYBOARD, false],
     'Expected the bot to receive the unedited article',
@@ -113,23 +105,6 @@ async function openInlineQueryChat(
   return { type: 'supergroup', chatId: supergroup.id };
 }
 
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<readonly ReceivedUpdate[]> => {
-    const { body } = await requestJson<{ result: ReceivedUpdate[] }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (lastUpdateId !== undefined) {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result;
-  };
-}
-
 async function expectBotApiResult(
   api: EmulationApi,
   botApiPath: string,
@@ -137,15 +112,7 @@ async function expectBotApiResult(
   parameters: Record<string, unknown>,
 ): Promise<void> {
   const { body } = await requestJson<unknown>(api, 'POST', `${botApiPath}/${method}`, parameters);
-  expectEqual(body, { ok: true, result: true }, `Expected ${method} to succeed`);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
+  assertEqualsInFieldOrder(body, { ok: true, result: true }, `Expected ${method} to succeed`);
 }
 
 for (const chatType of ['private', 'supergroup'] as const) {
@@ -159,7 +126,7 @@ for (const chatType of ['private', 'supergroup'] as const) {
     });
 
     // The serialized message differs from the one sent only in its keyboard: no `edit_date`.
-    expectEqual(
+    assertEqualsInFieldOrder(
       (await readUpdates()).map(({ update_id: _updateId, ...update }) => update),
       [{ edited_message: { ...sentMessage, reply_markup: REPLACEMENT_KEYBOARD } }],
       'Expected the bot to receive the keyboard-only edit',

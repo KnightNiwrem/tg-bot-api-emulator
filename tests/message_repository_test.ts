@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { MessageRepository } from '../src/repositories/message.ts';
 import type { ChatKey, PrivateChatKey, SupergroupChatKey } from '../src/types/virtual_chat.ts';
 import { type ChatMessage, getContentText } from '../src/types/virtual_message.ts';
@@ -450,12 +451,6 @@ function addText(messages: MessageRepository, chat: ChatKey, text: string): Chat
 
 function getTexts(messages: readonly ChatMessage[]): readonly string[] {
   return messages.map((message) => getContentText(message.content).text);
-}
-
-function assertEquals(actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`);
-  }
 }
 
 Deno.test('MessageRepository keeps one log per chat, whatever the chat type', () => {

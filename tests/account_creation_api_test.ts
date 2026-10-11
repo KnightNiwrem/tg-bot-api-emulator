@@ -2,6 +2,7 @@
  * Account and bot creation through the control API: the limits of names and usernames, counted by
  * code point, and the issues a request breaking them reports.
  */
+import { assertEquals } from '@std/assert';
 import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface CreationResponseBody {
@@ -26,11 +27,11 @@ Deno.test('An account name has at most 64 code points, however many UTF-16 units
     last_name: `${'a'.repeat(64)}${ASTRAL_CHARACTER}`,
   });
 
-  assertEqual(created.status, 201, 'Expected names of 64 astral characters to be accepted');
-  assertEqual(created.body.account?.first_name, longestName, 'Expected the first name kept');
-  assertEqual(created.body.account?.last_name, longestName, 'Expected the last name kept');
-  assertEqual(tooLong.status, 400, 'Expected names of 65 characters to be refused');
-  assertEqual(
+  assertEquals(created.status, 201, 'Expected names of 64 astral characters to be accepted');
+  assertEquals(created.body.account?.first_name, longestName, 'Expected the first name kept');
+  assertEquals(created.body.account?.last_name, longestName, 'Expected the last name kept');
+  assertEquals(tooLong.status, 400, 'Expected names of 65 characters to be refused');
+  assertEquals(
     tooLong.body.issues?.map(({ path, code }) => ({ path, code })),
     [
       { path: ['first_name'], code: 'too_big' },
@@ -47,8 +48,8 @@ Deno.test('A name within the limit that is not well-formed Unicode is invalid', 
     first_name: `${'a'.repeat(63)}\uD83D`,
   });
 
-  assertEqual(response.status, 400, 'Expected a name that is not well-formed to be refused');
-  assertEqual(response.body, { reason: 'name_invalid' }, 'Expected the name refused as invalid');
+  assertEquals(response.status, 400, 'Expected a name that is not well-formed to be refused');
+  assertEquals(response.body, { reason: 'name_invalid' }, 'Expected the name refused as invalid');
 });
 
 Deno.test('A username has at most 32 characters of Telegram’s syntax', async () => {
@@ -72,8 +73,8 @@ Deno.test('A username has at most 32 characters of Telegram’s syntax', async (
     username: '',
   });
 
-  assertEqual(longest.status, 201, 'Expected a username of 32 characters to be accepted');
-  assertEqual(
+  assertEquals(longest.status, 201, 'Expected a username of 32 characters to be accepted');
+  assertEquals(
     [tooLong, malformed, empty].map(({ status, body }) => [
       status,
       body.issues?.map(({ path, code }) => ({ path, code })),
@@ -89,11 +90,3 @@ Deno.test('A username has at most 32 characters of Telegram’s syntax', async (
     'Expected each refused username reported by what it breaks',
   );
 });
-
-function assertEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}

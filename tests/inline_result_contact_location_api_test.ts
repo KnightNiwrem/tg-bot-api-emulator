@@ -1,9 +1,12 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createAccount as createSessionAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
 } from './support/emulation_api.ts';
@@ -28,25 +31,16 @@ interface TestInlineQuery {
  */
 async function createInlineContentFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    {
-      first_name: 'Places Bot',
-      username: 'places_bot',
-      supports_inline_queries: true,
-      receives_chosen_inline_results: true,
-    },
-  );
+  const createdBot = await createBot(api, sessionPath, 'places_bot', {
+    first_name: 'Places Bot',
+    supports_inline_queries: true,
+    receives_chosen_inline_results: true,
+  });
   const bot = createdBot.bot;
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const { botApiPath } = createdBot;
   const accountPath = (accountId: number) => `${sessionPath}/accounts/${accountId}`;
   const privateChat = { type: 'private', botId: bot.id } as const;
   await requestJson(api, 'POST', `${accountPath(ada.id)}/messages`, {
@@ -97,7 +91,8 @@ async function createInlineContentFixture() {
       `${accountPath(accountId)}/inline-queries/${inlineQueryId}/chosen-results`,
       { result_id: resultId },
     );
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
   return {
@@ -117,32 +112,6 @@ async function createInlineContentFixture() {
     choose,
     readUpdates,
   };
-}
-
-/** Returns a reader of the bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
 
 const contactResult = {
@@ -184,8 +153,12 @@ Deno.test('an account sends the contacts and locations that inline results list'
     },
     { ...locationResult, id: 'cleaned-title', title: 'Lon\rdon\u2028' },
   ]);
-  expectEqual(answered.body, { ok: true, result: true }, 'Expected the answer to be accepted');
-  expectEqual(
+  assertEqualsInFieldOrder(
+    answered.body,
+    { ok: true, result: true },
+    'Expected the answer to be accepted',
+  );
+  assertEqualsInFieldOrder(
     (await getInlineQuery(ada.id, inlineQuery.id)).answer?.results,
     [
       { type: 'contact', id: 'grace', title: 'Grace Hopper', description: '+1 555 0100' },
@@ -205,7 +178,7 @@ Deno.test('an account sends the contacts and locations that inline results list'
 
   const chosenContact = await choose(ada.id, inlineQuery.id, 'grace');
   const chosenLocation = await choose(ada.id, inlineQuery.id, 'london');
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       chosenContact.status,
       chosenContact.body?.message.contact,
@@ -232,7 +205,7 @@ Deno.test('an account sends the contacts and locations that inline results list'
   const chosenResults = (await readUpdates()).flatMap((update) =>
     update.chosen_inline_result === undefined ? [] : [update.chosen_inline_result]
   ) as Array<{ result_id: string; inline_message_id?: string }>;
-  expectEqual(
+  assertEquals(
     chosenResults.map(({ result_id, inline_message_id }) => [result_id, typeof inline_message_id]),
     [['grace', 'string'], ['london', 'undefined']],
     'Expected both choices, with an inline message ID for the result with a keyboard',
@@ -256,7 +229,7 @@ Deno.test('input_message_content replaces what a result sends with a contact or 
     const { message } = chosen.body ?? {};
     sent.push([chosen.status, message?.contact ?? message?.location ?? message?.text]);
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     [answered.body, sent],
     [
       { ok: true, result: true },
@@ -308,7 +281,7 @@ Deno.test('answerInlineQuery checks contacts and locations and records no part o
   for (const results of refusals) {
     descriptions.push((await answer(inlineQuery.id, results)).body.description);
   }
-  expectEqual(
+  assertEquals(
     descriptions,
     [
       'Bad Request: field "phone_number" must contain a valid phone number',
@@ -331,7 +304,7 @@ Deno.test('answerInlineQuery checks contacts and locations and records no part o
     ],
     "Expected Telegram's and the emulator's errors",
   );
-  expectEqual(
+  assertEquals(
     (await getInlineQuery(ada.id, inlineQuery.id)).status,
     'awaiting_answer',
     'Expected refused answers to leave the query unanswered',
@@ -363,7 +336,7 @@ Deno.test('contact and location results follow chat access and inline edits', as
     await choose(grace.id, groupQuery.id, 'grace'),
     await choose(grace.id, groupQuery.id, 'london'),
   ];
-  expectEqual(
+  assertEquals(
     sentToGroup.map(({ status, body }) => [status, body?.message.via_bot?.id]),
     [[201, bot.id], [201, bot.id]],
     'Expected both results in the supergroup',
@@ -395,7 +368,7 @@ Deno.test('contact and location results follow chat access and inline edits', as
       media: { type: 'photo', media: 'https://cdn.example.com/map.gif' },
     }),
   ].map(({ body }) => body.ok ? body.result : body.description);
-  expectEqual(
+  assertEquals(
     edits,
     [
       true,
@@ -409,7 +382,7 @@ Deno.test('contact and location results follow chat access and inline edits', as
   await requestJson(api, 'PUT', `${accountPath(ada.id)}/blocked-bots/${bot.id}`);
   const privateQuery = await sendQuery(ada.id);
   await answer(privateQuery.id, [contactResult]);
-  expectEqual(
+  assertEquals(
     (await choose(ada.id, privateQuery.id, 'grace')).status,
     409,
     'Expected a blocked bot to refuse the result',
@@ -424,7 +397,7 @@ Deno.test('a grammY bot answers through its webhook with a location an account s
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   grammyBot.on(
@@ -472,7 +445,7 @@ Deno.test('a grammY bot answers through its webhook with a location an account s
         ? Object.keys(update as object).filter((key) => key !== 'update_id')
         : []
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         chosen.status,
         chosen.body?.message.location,
@@ -500,7 +473,7 @@ Deno.test('a grammY bot answers through its webhook with a location an account s
       `${otherSessionPath}/accounts/${ada.id}/inline-queries/${inlineQuery.id}`,
     );
     const ownQuery = await api.request(`${accountPath(ada.id)}/inline-queries/${inlineQuery.id}`);
-    expectEqual(
+    assertEquals(
       [elsewhere.status, ownQuery.status],
       [404, 200],
       'Expected the query to belong to its session only',

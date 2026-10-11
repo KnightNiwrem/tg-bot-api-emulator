@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   endWebhookAttempt,
   endWebhookRetry,
@@ -26,14 +27,14 @@ Deno.test('an attempt in flight ends once, as accepted, failed or cancelled', ()
     FAILURE_END,
   ];
   const endedAttempts = ends.map((end) => endWebhookAttempt(IN_FLIGHT, end));
-  assertJson(
+  assertEquals(
     endedAttempts.map((attempt) =>
       attempt?.status === 'failed' ? [attempt.status, attempt.retry] : attempt?.status
     ),
     ['accepted', 'cancelled', ['failed', { delaySeconds: 2, status: 'waiting' }]],
     'Expected each end to be reached from in flight, a failure with its retry waiting',
   );
-  assertJson(
+  assertEquals(
     endedAttempts.flatMap((endedAttempt) =>
       ends.map((end) =>
         endedAttempt === undefined ? 'missing' : endWebhookAttempt(endedAttempt, end)
@@ -51,7 +52,7 @@ Deno.test("a failed attempt's waiting retry ends once, as released or cancelled"
   }
   const released = endWebhookRetry(failed, 'released');
   const cancelled = endWebhookRetry(failed, 'cancelled');
-  assertJson(
+  assertEquals(
     [
       released?.status === 'failed' && released.retry.status,
       cancelled?.status === 'failed' && cancelled.retry.status,
@@ -63,11 +64,3 @@ Deno.test("a failed attempt's waiting retry ends once, as released or cancelled"
     'Expected only a waiting retry to end, and only once',
   );
 });
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
-}

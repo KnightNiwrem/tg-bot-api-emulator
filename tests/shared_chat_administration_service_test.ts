@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
@@ -713,13 +714,13 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
     message: string,
   ) => {
     const standingsBefore = snapshotStandings();
-    expectEqual(
+    assertEquals(
       attempts.map(([attempt]) => attempt()),
       attempts.map(([, outcome]) => outcome),
       message,
     );
-    expectEqual(describeChanges(), [], `${message}, publishing nothing`);
-    expectEqual(snapshotStandings(), standingsBefore, `${message}, changing no standing`);
+    assertEquals(describeChanges(), [], `${message}, publishing nothing`);
+    assertEquals(snapshotStandings(), standingsBefore, `${message}, changing no standing`);
   };
 
   changeRole(owner.profile.id, grace.profile.id, ['can_promote_members', 'can_delete_messages']);
@@ -728,7 +729,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
   const graceId = grace.profile.id;
 
   // Grace promotes within her rights and becomes the promoter, in her tenure.
-  expectEqual(
+  assertEquals(
     [
       changeRole(graceId, moderatorBot.profile.id, ['can_delete_messages']),
       changeRole(graceId, moderatorBot.profile.id, ['can_delete_messages']),
@@ -737,7 +738,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
     ['changed', 'changed', [graceId, tenureOf(graceId)]],
     'Expected Grace to promote the bot once, linked to her tenure',
   );
-  expectEqual(
+  assertEquals(
     describeChanges(),
     [`${graceId} ${moderatorBot.profile.id}: member -> administrator(can_delete_messages,can_manage_chat)`],
     'Expected the promotion to be published once, from Grace',
@@ -775,7 +776,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
   ], 'Expected refusals for missing rights, excessive grants, and protected targets');
 
   // Grace edits the bot she promoted, and a delegate she lets promote edits its own appointee.
-  expectEqual(
+  assertEquals(
     [
       changeRole(graceId, moderatorBot.profile.id, ['can_promote_members']),
       changeRole(graceId, hopper.profile.id, ['can_promote_members', 'can_delete_messages']),
@@ -786,7 +787,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
     ['changed', 'changed', 'not_a_member', 'changed', 'not_enough_rights'],
     'Expected Grace to edit her appointees, whose rights she bounds',
   );
-  expectEqual(
+  assertEquals(
     describeChanges(),
     [
       `${graceId} ${moderatorBot.profile.id}: administrator(can_delete_messages,can_manage_chat) -> ` +
@@ -800,7 +801,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
   );
 
   // Once the owner sets Hopper's rights, the owner is his promoter, and Grace no longer edits him.
-  expectEqual(
+  assertEquals(
     [
       changeRole(owner.profile.id, hopper.profile.id, ['can_pin_messages']),
       delegationOf(hopper.profile.id),
@@ -815,7 +816,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
   changeRole(owner.profile.id, graceId);
   changeRole(owner.profile.id, graceId, ['can_promote_members', 'can_delete_messages']);
   describeChanges();
-  expectEqual(
+  assertEquals(
     [tenureOf(graceId) === graceTenureBefore, delegationOf(moderatorBot.profile.id)],
     [false, [graceId, graceTenureBefore]],
     'Expected a new tenure, while the bot still names Grace as its promoter',
@@ -824,7 +825,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
     [[() => changeRole(graceId, moderatorBot.profile.id), 'administrator_not_promoted_by_actor']],
     'Expected Grace to edit no appointee of her earlier tenure',
   );
-  expectEqual(
+  assertEquals(
     [changeRole(owner.profile.id, moderatorBot.profile.id), describeChanges()],
     [
       'changed',
@@ -951,7 +952,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts restrict 
     restrict(graceId, moderatorBot.profile.id, ALL_CHAT_PERMISSIONS),
   ];
 
-  expectEqual(
+  assertEquals(
     [...withoutRights, ...withRestrictionRight, ...refusals, ...withPromotionRight],
     [
       'not_enough_rights',
@@ -981,7 +982,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts restrict 
     ],
     'Expected restrictions as the account rights and appointees allow',
   );
-  expectEqual(
+  assertEquals(
     [...changesWithRestrictionRight, ...changesFromRefusals, ...describeChanges()],
     [
       `${graceId} ${hopper.profile.id}: member -> restricted member(can_send_messages)`,
@@ -1425,7 +1426,7 @@ Deno.test('SharedChatAdministrationService lets bots restrict users in TDLib ord
     restrict(moderatorBot.profile.id, ALL_CHAT_PERMISSIONS),
     statusOf(moderatorBot.profile.id),
   ];
-  expectEqual(
+  assertEquals(
     [...withoutRights, ...withRights, withPromotionRight, ...selfDemotion],
     [
       'restricted',
@@ -1444,7 +1445,7 @@ Deno.test('SharedChatAdministrationService lets bots restrict users in TDLib ord
     ],
     'Expected restrictions in TDLib order',
   );
-  expectEqual(
+  assertEquals(
     publishedEvents.map((event) =>
       event.type === 'chat_member_status_changed'
         ? `${event.memberId}: ${describeStatus(event.oldStatus)} -> ${
@@ -1609,12 +1610,4 @@ function createBot(virtualUsers: VirtualUserService, firstName: string, username
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

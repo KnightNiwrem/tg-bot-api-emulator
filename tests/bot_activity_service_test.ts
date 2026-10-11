@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import {
   BotActivityService,
@@ -7,6 +8,7 @@ import {
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
 
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
@@ -28,7 +30,7 @@ Deno.test('BotActivityService positions entries in the order it records them', a
   botActivity.recordBotApiCall(sendMessageCall());
 
   const entries = await readAll(botActivity);
-  assertJson(
+  assertEquals(
     entries.map((entry) => [entry.position, entry.kind, entry.chatId]),
     [
       [1, 'update_confirmed', ADA_ID],
@@ -70,7 +72,7 @@ Deno.test('BotActivityService describes the chat and user of each update', async
   ], 'polling');
 
   const entries = await readAll(botActivity);
-  assertJson(
+  assertEquals(
     entries.map((entry) => entry.kind === 'update_delivered' && [entry.chatId, entry.userId]),
     [[ADA_ID, ADA_ID], [undefined, ADA_ID], [undefined, ADA_ID]],
     'Expected chats only for updates that happen in one, and the acting user for every update',
@@ -114,7 +116,7 @@ Deno.test('BotActivityService filters entries by every criterion given', async (
   ];
   for (const { filter, expected } of cases) {
     const entries = await readAll(botActivity, filter);
-    assertJson(
+    assertEquals(
       entries.map((entry) => entry.position),
       expected,
       `Expected ${JSON.stringify(filter)} to find ${JSON.stringify(expected)}`,
@@ -140,7 +142,7 @@ Deno.test('BotActivityService reads ranges after and before positions', async ()
     const result = expectRead(
       await botActivity.readEntries({ after, before, filter: {}, limit, waitMilliseconds: 0 }),
     );
-    assertJson(
+    assertEquals(
       result.entries.map((entry) => entry.position),
       expected,
       `Expected entries after ${after} and before ${before} limited to ${limit}`,
@@ -160,7 +162,7 @@ Deno.test('BotActivityService rejects positions beyond the head of the log', asy
     botActivity.readEntries({ after: 0, before: 3, filter: {}, limit: 100, waitMilliseconds: 0 }),
     botActivity.readEntries({ after: 1, before: 2, filter: {}, limit: 100, waitMilliseconds: 0 }),
   ]);
-  assertJson(
+  assertEquals(
     results.map((result) => result.read ? 'read' : result.reason),
     ['after_beyond_head', 'before_beyond_head', 'read'],
     'Expected only positions up to the head, and ranges ending just after it, to be read',
@@ -180,7 +182,7 @@ Deno.test('BotActivityService holds a read until a matching entry is recorded', 
   botActivity.recordBotApiCall(sendMessageCall());
 
   const result = expectRead(await heldRead);
-  assertJson(
+  assertEquals(
     result.entries.map((entry) => entry.position),
     [2],
     'Expected the held read to skip the unmatched entry and answer with the matching one',
@@ -319,26 +321,4 @@ function supergroupMessageUpdate(updateId: number): BotApiUpdate {
       text: 'Hi',
     },
   };
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
-}
-
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }

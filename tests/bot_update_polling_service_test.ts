@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
@@ -17,6 +18,7 @@ import {
   DEFAULT_ALLOWED_UPDATE_TYPES,
 } from '../src/types/bot_api.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
 
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
@@ -192,7 +194,7 @@ Deno.test('BotUpdatePollingService ends held long polls and changes nothing once
     timeoutSeconds: 50,
     allowedUpdates: ['callback_query'],
   });
-  assertJsonEqual(
+  assertEquals(
     [
       results,
       laterResult,
@@ -234,7 +236,7 @@ Deno.test('BotUpdatePollingService answers a terminated long poll the session en
   });
   endSession();
 
-  assertJsonEqual(
+  assertEquals(
     await Promise.all([pollTerminatedByWebhook, pollTerminatedByOtherPoll, terminatingPoll]),
     [
       { retrieved: false, reason: 'session_ended' },
@@ -353,23 +355,6 @@ function expectRetrievedUpdates(result: GetUpdatesResult): readonly BotApiUpdate
   return result.updates;
 }
 
-/** Returns what `pending` settles to, failing if it is still pending after `milliseconds`. */
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 function assertAllowedUpdateTypes(
   actual: ReadonlySet<BotApiUpdateType>,
   expected: readonly BotApiUpdateType[],
@@ -385,10 +370,4 @@ function assertAllowedUpdateTypes(
 
 function messageFromUpdate(update: BotApiUpdate | undefined): BotApiMessage | undefined {
   return update !== undefined && 'message' in update ? update.message : undefined;
-}
-
-function assertJsonEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

@@ -1,11 +1,13 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-import {
-  createTestSession,
-  type EmulationApi,
-  requestJson,
-  TEST_PUBLIC_ORIGIN,
-} from './support/emulation_api.ts';
+import { createTestSession, requestJson, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
 
 interface TestPollOption {
   readonly persistent_id: string;
@@ -50,25 +52,12 @@ interface PollAnswerResponse {
  */
 async function createPollFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const linus = await createAccount('Linus');
-  const createBot = async (username: string, settings: Record<string, unknown> = {}) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Poll Bot', username, ...settings },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
+  const createBot = (username: string, settings: { can_read_all_group_messages?: boolean } = {}) =>
+    createSessionBot(api, sessionPath, username, { first_name: 'Poll Bot', ...settings });
   const createdBot = await createBot('poll_bot');
   const otherBot = await createBot('other_bot', { can_read_all_group_messages: true });
   const botApiPath = createdBot.botApiPath;
@@ -146,6 +135,7 @@ async function createPollFixture() {
         : `${sessionPath}/accounts/${accountId}/conversations/supergroup/${chat.chatId}/messages`,
     )).body.messages;
 
+  const readBotUpdates = createUpdateReader(api);
   return {
     api,
     sessionPath,
@@ -166,25 +156,7 @@ async function createPollFixture() {
     pollAnswerPath,
     answerPoll,
     getHistory,
-    readUpdates: createUpdateReader(api),
-  };
-}
-
-/** Returns a reader of each bot's updates since the reader last read that bot's updates. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffsetsByBotApiPath.get(botApiPath) ?? 0 },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
+    readUpdates: async (botApiPath: string) => withoutUpdateIds(await readBotUpdates(botApiPath)),
   };
 }
 
@@ -194,14 +166,6 @@ function voterCounts(poll: TestPoll | undefined): string {
     poll?.options.map(({ voter_count }) => voter_count),
     poll?.total_voter_count,
   ]);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
 
 Deno.test('a bot sends a poll that an account inspects, votes in, changes and retracts', async () => {
@@ -222,7 +186,7 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
     options: JSON.stringify(['Pizza', { text: 'Pasta' }]),
     is_anonymous: false,
   });
-  expectEqual(sent.poll, {
+  assertEqualsInFieldOrder(sent.poll, {
     id: sent.poll.id,
     question: 'Lunch?',
     options: [
@@ -243,7 +207,7 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
 
   const answerPath = pollAnswerPath(ada.id, privateChat, sent.message_id);
   const noAnswer = await requestJson<PollAnswerResponse>(api, 'GET', answerPath);
-  expectEqual(
+  assertEqualsInFieldOrder(
     noAnswer,
     {
       status: 200,
@@ -256,19 +220,19 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
   );
 
   const vote = await answerPoll(ada.id, privateChat, sent.message_id, [1]);
-  expectEqual(
+  assertEqualsInFieldOrder(
     [vote.status, vote.body.poll_answer, voterCounts(vote.body.message.poll)],
     [200, { poll_id: sent.poll.id, option_ids: [1], option_persistent_ids: ['1'] }, '[[0,1],1]'],
     'Expected the vote to count',
   );
   const repeatedVote = await answerPoll(ada.id, privateChat, sent.message_id, [1, 1]);
   const changedVote = await answerPoll(ada.id, privateChat, sent.message_id, [0]);
-  expectEqual(
+  assertEquals(
     [repeatedVote.status, voterCounts(repeatedVote.body.message.poll)],
     [200, '[[0,1],1]'],
     'Expected repeating the vote to change nothing',
   );
-  expectEqual(
+  assertEquals(
     [changedVote.body.poll_answer.option_ids, voterCounts(changedVote.body.message.poll)],
     [[0], '[[1,0],1]'],
     'Expected the changed vote to move the count',
@@ -284,12 +248,12 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
     requestJson(api, 'PUT', answerPath, { option_ids: [-1] }),
     requestJson(api, 'PUT', answerPath, { options: [0] }),
   ]);
-  expectEqual(
+  assertEquals(
     refusals.map(({ status }) => status),
     [400, 400, 404, 404, 404, 400, 400, 400],
     'Expected invalid answers and unknown polls to be refused',
   );
-  expectEqual(
+  assertEquals(
     voterCounts((await getHistory(ada.id, privateChat)).at(-1)?.poll),
     '[[1,0],1]',
     'Expected refused answers to leave the counts as they were',
@@ -298,7 +262,7 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
   const retraction = await api.request(answerPath, { method: 'DELETE' });
   const repeatedRetraction = await api.request(answerPath, { method: 'DELETE' });
   const afterRetraction = await requestJson<PollAnswerResponse>(api, 'GET', answerPath);
-  expectEqual(
+  assertEquals(
     [
       retraction.status,
       repeatedRetraction.status,
@@ -336,12 +300,12 @@ Deno.test('supergroup members vote in a poll whose answers cannot change', async
 
   const adaVote = await answerPoll(ada.id, supergroupChat, sent.message_id, [2, 0, 2]);
   const graceVote = await answerPoll(grace.id, supergroupChat, sent.message_id, [2]);
-  expectEqual(
+  assertEquals(
     [adaVote.body.poll_answer.option_ids, graceVote.body.poll_answer.option_persistent_ids],
     [[0, 2], ['2']],
     'Expected each member to choose the options it named',
   );
-  expectEqual(
+  assertEquals(
     voterCounts(graceVote.body.message.poll),
     '[[1,0,2],2]',
     'Expected both members to count',
@@ -365,7 +329,7 @@ Deno.test('supergroup members vote in a poll whose answers cannot change', async
       method: 'DELETE',
     })).status,
   ];
-  expectEqual(
+  assertEquals(
     refusals,
     [403, 204, 409, 409, 409, 409],
     'Expected outsiders and changed answers to be refused',
@@ -377,12 +341,12 @@ Deno.test('supergroup members vote in a poll whose answers cannot change', async
     );
   const adaView = await findPollMessage(ada.id);
   const graceView = await findPollMessage(grace.id);
-  expectEqual(
+  assertEqualsInFieldOrder(
     [voterCounts(adaView?.poll), adaView?.poll, adaView?.message_id],
     [voterCounts(graceView?.poll), graceView?.poll, sent.message_id],
     'Expected every member to see the same counts',
   );
-  expectEqual(voterCounts(adaView?.poll), '[[1,0,2],2]', 'Expected refusals to change nothing');
+  assertEquals(voterCounts(adaView?.poll), '[[1,0,2],2]', 'Expected refusals to change nothing');
 });
 
 Deno.test('sendPoll refuses polls as Telegram does and stores none of them', async () => {
@@ -495,7 +459,7 @@ Deno.test('sendPoll refuses polls as Telegram does and stores none of them', asy
       );
     }
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     await getHistory(ada.id, privateChat),
     historyBefore,
     'Expected refused polls to store nothing',
@@ -525,7 +489,7 @@ Deno.test('poll questions and options keep only their custom emoji', async () =>
     ],
   });
   const { question, question_entities, options } = sent.poll;
-  expectEqual(
+  assertEqualsInFieldOrder(
     [question, question_entities, options.map(({ text_entities }) => text_entities)],
     [
       '🍕 Lunch?',
@@ -571,7 +535,7 @@ Deno.test('forwards share the poll they repeat, while copies create new polls', 
     message_id: original.message_id,
   });
   const forwardedPoll = (botForward.result as TestMessage).poll;
-  expectEqual(
+  assertEquals(
     [accountForward.poll?.id, forwardedPoll?.id, voterCounts(accountForward.poll)],
     [original.poll.id, original.poll.id, '[[1,0],1]'],
     'Expected forwards to show the original poll and its votes',
@@ -585,7 +549,7 @@ Deno.test('forwards share the poll they repeat, while copies create new polls', 
     accountForward.message_id,
     [1],
   );
-  expectEqual(
+  assertEquals(
     [
       graceVote.status,
       adaVoteThroughForward.body.poll_answer.option_ids,
@@ -621,7 +585,7 @@ Deno.test('forwards share the poll they repeat, while copies create new polls', 
   ) {
     throw new Error(`Expected copies to show new polls without votes: ${JSON.stringify(copies)}`);
   }
-  expectEqual(
+  assertEquals(
     copiedPolls.map((poll) => [poll?.question, poll?.options.map(({ text }) => text)]),
     [['Lunch?', ['Pizza', 'Pasta']], ['Lunch?', ['Pizza', 'Pasta']]],
     "Expected copies to repeat the original's question and options",
@@ -632,7 +596,7 @@ Deno.test('forwards share the poll they repeat, while copies create new polls', 
     text: 'Vote here too',
     reply_parameters: { chat_id: ada.id, message_id: original.message_id },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     (externalReply.result as TestMessage).external_reply?.poll,
     (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
       message_id === original.message_id
@@ -661,7 +625,7 @@ Deno.test('bots edit only the reply markup of a poll message', async () => {
       media: { type: 'document', media: documentMessage.result.document.file_id },
     }),
   ];
-  expectEqual(
+  assertEquals(
     refusals.map(({ body }) => body.description),
     [
       'Bad Request: there is no text in the message to edit',
@@ -676,7 +640,7 @@ Deno.test('bots edit only the reply markup of a poll message', async () => {
     reply_markup: keyboard,
   });
   const editedMessage = edited.result as TestMessage;
-  expectEqual(
+  assertEqualsInFieldOrder(
     [editedMessage.reply_markup, editedMessage.poll],
     [keyboard, sent.poll],
     'Expected the keyboard to change and the poll to stay',
@@ -691,7 +655,7 @@ Deno.test('ending a session discards its polls', async () => {
 
   const ended = await api.request(sessionPath, { method: 'DELETE' });
   const afterEnd = await api.request(pollAnswerPath(ada.id, privateChat, sent.message_id));
-  expectEqual(
+  assertEquals(
     [ended.status, afterEnd.status],
     [204, 404],
     'Expected the ended session to be gone',
@@ -704,7 +668,7 @@ Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const pollSent = Promise.withResolvers<{ message_id: number; poll: TestPoll }>();
@@ -731,7 +695,7 @@ Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in
   }
 
   const vote = await answerPoll(ada.id, privateChat, sent.message_id, [0, 1]);
-  expectEqual(
+  assertEquals(
     [sent.poll.question, sent.poll.is_anonymous, voterCounts(vote.body.message.poll)],
     ['Lunch?', false, '[[1,1],1]'],
     'Expected the account to vote for both options of the bot poll',
@@ -774,7 +738,7 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
     }),
     await callBot('stopPoll', { chat_id: ada.id, message_id: sent.message_id, open_period: 5 }),
   ];
-  expectEqual(
+  assertEquals(
     refusals.map(({ body }) => body.description),
     [
       'Bad Request: message with poll to stop not found',
@@ -790,7 +754,7 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
   const stillOpen = (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
     message_id === sent.message_id
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     [stillOpen?.poll?.is_closed, stillOpen?.reply_markup],
     [false, keyboard],
     'Expected refused stops to leave the poll and its keyboard',
@@ -811,11 +775,11 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
     total_voter_count: 1,
     is_closed: true,
   };
-  expectEqual([status, body.result], [200, expectedPoll], 'Expected the closed poll');
+  assertEqualsInFieldOrder([status, body.result], [200, expectedPoll], 'Expected the closed poll');
   const stoppedMessage = (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
     message_id === sent.message_id
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     [stoppedMessage?.poll, stoppedMessage?.reply_markup],
     [expectedPoll, newKeyboard],
     'Expected the message to show the closed poll and its new keyboard',
@@ -829,12 +793,12 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
     (await callBot('stopPoll', { chat_id: ada.id, message_id: sent.message_id })).body
       .description,
   ];
-  expectEqual(
+  assertEquals(
     afterStop,
     [409, 409, 'Bad Request: poll has already been closed'],
     'Expected a closed poll to refuse answers and a second stop',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await requestJson<PollAnswerResponse>(
       api,
       'GET',
@@ -860,7 +824,7 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
   const copied = (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
     message_id === copiedMessageId
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       (forward.result as TestMessage).poll,
       (await callBot('stopPoll', { chat_id: supergroupChat.chatId, message_id: forwardMessageId }))
@@ -891,7 +855,7 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
   const otherPollMessage = (await getHistory(grace.id, supergroupChat)).find(({ message_id }) =>
     message_id === otherPoll.message_id
   );
-  expectEqual(
+  assertEquals(
     [webAppStop.body.description, plainStop.status, otherPollMessage?.reply_markup],
     ['Bad Request: BUTTON_TYPE_INVALID', 200, undefined],
     'Expected a stop without a keyboard to remove it',
@@ -908,7 +872,7 @@ Deno.test('sendPoll sends a closed poll as a preview, which accepts no answers',
   });
   const vote = await answerPoll(ada.id, privateChat, preview.message_id, [0]);
   const stop = await callBot('stopPoll', { chat_id: ada.id, message_id: preview.message_id });
-  expectEqual(
+  assertEquals(
     [preview.poll.is_closed, vote.status, stop.body.description],
     [true, 409, 'Bad Request: poll has already been closed'],
     'Expected the preview to be closed from the start',
@@ -968,7 +932,7 @@ Deno.test('only the bot that sent a poll receives its poll and poll_answer updat
   await api.request(pollAnswerPath(ada.id, privateChat, publicPoll.message_id), {
     method: 'DELETE',
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     await readUpdates(botApiPath),
     [
       pollAnswer([0]),
@@ -1003,7 +967,7 @@ Deno.test('only the bot that sent a poll receives its poll and poll_answer updat
     message_id: anonymousPoll.message_id,
   });
   const updates = await readUpdates(botApiPath);
-  expectEqual(
+  assertEquals(
     updates.map((update) => (update.poll as TestPoll | undefined)?.total_voter_count),
     [1, 2, 2],
     'Expected only poll updates for the anonymous poll, the last one closed',
@@ -1015,7 +979,7 @@ Deno.test('only the bot that sent a poll receives its poll and poll_answer updat
   ) {
     throw new Error(`Expected no voter of an anonymous poll, received ${JSON.stringify(updates)}`);
   }
-  expectEqual(
+  assertEquals(
     (await readUpdates(otherBot.botApiPath)).map((update) => Object.keys(update)),
     [['message']],
     'Expected the other bot to receive the forward but no poll updates',
@@ -1026,7 +990,7 @@ Deno.test('only the bot that sent a poll receives its poll and poll_answer updat
   await answerPoll(ada.id, privateChat, publicPoll.message_id, [0]);
   await callBot('getUpdates', { allowed_updates: ['message'] });
   await answerPoll(ada.id, privateChat, publicPoll.message_id, [1]);
-  expectEqual(
+  assertEqualsInFieldOrder(
     await readUpdates(botApiPath),
     [pollAnswer([0])],
     'Expected only subscribed updates to be created',
@@ -1048,7 +1012,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const thanked = Promise.withResolvers<void>();
@@ -1100,7 +1064,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
     const pollEntries = activity.body.entries.filter(({ update }) =>
       'poll' in update || 'poll_answer' in update
     );
-    expectEqual(
+    assertEquals(
       pollEntries.map(({ update, chat_id, user_id }) => [
         Object.keys(update).filter((key) => key !== 'update_id'),
         chat_id,
@@ -1109,7 +1073,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
       [[['poll_answer'], undefined, ada.id], [['poll'], undefined, undefined]],
       'Expected the log to record the poll updates without a chat, and the voter of the answer',
     );
-    expectEqual(
+    assertEquals(
       (await getHistory(ada.id, privateChat)).at(-1)?.text,
       'Thanks for choosing option 1',
       'Expected the account to receive the thanks',
@@ -1153,7 +1117,7 @@ Deno.test('quizzes show their solution to their bot, to voters, and to everyone 
   };
   const { correct_option_id, correct_option_ids, explanation, explanation_entities } = sent
     .poll as TestPoll & Record<string, unknown>;
-  expectEqual(
+  assertEqualsInFieldOrder(
     [sent.poll.type, sent.poll.allows_revoting, {
       correct_option_id,
       correct_option_ids,
@@ -1174,7 +1138,7 @@ Deno.test('quizzes show their solution to their bot, to voters, and to everyone 
   const adaViewBeforeClosing = await quizView(ada.id);
   await callBot('stopPoll', { chat_id: supergroupChat.chatId, message_id: sent.message_id });
   const adaViewAfterClosing = await quizView(ada.id);
-  expectEqual(
+  assertEquals(
     [
       hiddenSolution,
       (graceVote.body.message.poll as TestPoll & Record<string, unknown>).correct_option_ids,
@@ -1205,7 +1169,7 @@ Deno.test('quizzes show their solution to their bot, to voters, and to everyone 
   });
   const legacyPoll = legacy.poll as TestPoll & Record<string, unknown>;
   const severalPoll = several.poll as TestPoll & Record<string, unknown>;
-  expectEqual(
+  assertEquals(
     [
       legacyPoll.correct_option_ids,
       legacyPoll.allows_revoting,
@@ -1312,7 +1276,7 @@ Deno.test('sendPoll refuses quizzes and closing times as Telegram does', async (
       );
     }
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     await getHistory(ada.id, privateChat),
     historyBefore,
     'Expected refused quizzes to store nothing',
@@ -1376,7 +1340,7 @@ Deno.test('tests make a poll closing time arrive, which closes it for its bot to
     from_chat_id: ada.id,
     message_id: timed.message_id,
   });
-  expectEqual(
+  assertEquals(
     [
       expired.status,
       expired.body.poll.is_closed,
@@ -1389,7 +1353,7 @@ Deno.test('tests make a poll closing time arrive, which closes it for its bot to
     [200, true, false, '[[1,0],1]', [409, 409, 404], 409, 'number'],
     'Expected the closing time to close the poll once, and only polls that have one',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     await readUpdates(botApiPath),
     [{ poll: expired.body.poll }],
     'Expected the bot to observe the closed poll',
@@ -1437,7 +1401,7 @@ Deno.test('a bot copies a quiz only when it sees its solution', async () => {
   });
   await callBot('stopPoll', { chat_id: supergroupChat.chatId, message_id: quiz.message_id });
   const closedCopy = await copyAsOtherBot('copyMessage');
-  expectEqual(
+  assertEquals(
     [
       hiddenCopy.body.description,
       hiddenCopies.body.description,

@@ -1,10 +1,10 @@
-import { createTestApi } from '../../tests/support/emulation_api.ts';
-import { EmulationClientError, TelegramEmulationClient } from './mod.ts';
-
-const PUBLIC_ORIGIN = 'http://emulator.example:9000';
+import { assertEquals } from '@std/assert';
+import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
+import { EmulationClientError } from './mod.ts';
 
 Deno.test('A local webhook that fails twice recovers through the webhook delivery controls', async () => {
-  const { api, client } = createInProcessClient();
+  await using api = createTestInProcessEmulator();
+  const { client } = api;
   const session = await client.createSession();
   // The webhook asks for an hour's wait after its first failure, and never answers its second
   // request, so the update is delivered in time only through the controls.
@@ -31,7 +31,7 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
         body: JSON.stringify(parameters),
       })).json();
 
-    assertJson(
+    assertEquals(
       [
         await session.getWebhookDelivery(bot.id),
         await session.setWebhookDelivery({ bot_id: bot.id, scheduling: 'manual' }),
@@ -46,7 +46,7 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
     const firstFailure = await activity.waitFor({ kind: 'webhook_attempt_failed' }, {
       after: start,
     });
-    assertJson(
+    assertEquals(
       [firstFailure.failure, firstFailure.retry_delay_seconds],
       [{
         reason: 'http_error',
@@ -75,7 +75,7 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
       after: secondDelivery,
     });
     const webhookInfo = await callBotApi('getWebhookInfo');
-    assertJson(
+    assertEquals(
       [
         released.status === 'failed' && released.retry,
         expired,
@@ -115,7 +115,8 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
 });
 
 Deno.test('Webhook delivery controls reject what they cannot apply to', async () => {
-  const { api, client } = createInProcessClient();
+  await using api = createTestInProcessEmulator();
+  const { client } = api;
   const session = await client.createSession();
   const otherSession = await client.createSession();
   const webhook = startLocalWebhook(() => new Response(null, { status: 500 }));
@@ -155,8 +156,8 @@ Deno.test('Webhook delivery controls reject what they cannot apply to', async ()
       await failedStatus(session.getWebhookAttempts(bot.id + otherBot.id)),
       await failedStatus(session.getWebhookDelivery(bot.id + otherBot.id)),
     ];
-    assertJson(statuses, [409, 404, 404, 404, 404, 404, 404], 'Expected each control refused');
-    assertJson(
+    assertEquals(statuses, [409, 404, 404, 404, 404, 404, 404], 'Expected each control refused');
+    assertEquals(
       [
         await otherSession.getWebhookAttempts(otherSessionBot.id),
         (await otherSession.getWebhookDelivery(otherSessionBot.id)).scheduling,
@@ -179,7 +180,7 @@ Deno.test('Webhook delivery controls reject what they cannot apply to', async ()
       (await request('POST', `${bot.id}/webhook-attempts/${attemptId}/retry-release`)).status,
       (await request('POST', `${bot.id}/webhook-attempts/${attemptId}/retry-release`)).status,
     ];
-    assertJson(
+    assertEquals(
       httpStatuses,
       [400, 400, 400, 404, 404, 200, 409],
       'Expected malformed requests refused, and a retry released once',
@@ -192,7 +193,8 @@ Deno.test('Webhook delivery controls reject what they cannot apply to', async ()
 });
 
 Deno.test('Ending a session cancels its manual webhook attempts and retries', async () => {
-  const { api, client } = createInProcessClient();
+  await using api = createTestInProcessEmulator();
+  const { client } = api;
   const session = await client.createSession();
   const webhook = startLocalWebhook(() => 'hang');
 
@@ -211,7 +213,7 @@ Deno.test('Ending a session cancels its manual webhook attempts and retries', as
 
     await session.end();
     await webhook.waitForAbortedRequestCount(1);
-    assertJson(
+    assertEquals(
       [attempt.status, await failedStatus(session.getWebhookAttempts(bot.id))],
       ['in_flight', 404],
       'Expected the ended session to abort its attempt in flight and keep no controls',
@@ -220,14 +222,6 @@ Deno.test('Ending a session cancels its manual webhook attempts and retries', as
     await webhook.close();
   }
 });
-
-function createInProcessClient() {
-  const api = createTestApi(PUBLIC_ORIGIN);
-  const client = new TelegramEmulationClient(PUBLIC_ORIGIN, {
-    fetch: async (input, init) => await api.fetch(new Request(input, init)),
-  });
-  return { api, client };
-}
 
 /**
  * Serves a webhook on a local port, answering each request as `respond` says. A request answered
@@ -302,12 +296,4 @@ async function failedStatus(call: Promise<unknown>): Promise<number | undefined>
     throw error;
   }
   throw new Error('Expected the client call to fail');
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

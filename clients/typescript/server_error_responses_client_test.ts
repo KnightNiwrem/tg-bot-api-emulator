@@ -1,16 +1,18 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from '../../tests/support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 import { autoRetry } from '@grammyjs/auto-retry/mod.ts';
 
-import { createTestApi } from '../../tests/support/emulation_api.ts';
-import { EmulationClientError, TelegramEmulationClient } from './mod.ts';
+import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
+import { EmulationClientError } from './mod.ts';
 
-const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 /** auto-retry waits 3 seconds before its first retry of a server error. */
 const AUTO_RETRY_WAIT_TIMEOUT_MILLISECONDS = 10_000;
 
 Deno.test('A grammY bot with auto-retry recovers from a queued server error', async () => {
-  const { client, fetch } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client, fetch } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -39,7 +41,7 @@ Deno.test('A grammY bot with auto-retry recovers from a queued server error', as
       after: failed,
       timeoutMs: AUTO_RETRY_WAIT_TIMEOUT_MILLISECONDS,
     });
-    assertJson(
+    assertEqualsInFieldOrder(
       [
         queued,
         failed.answer,
@@ -64,7 +66,8 @@ Deno.test('A grammY bot with auto-retry recovers from a queued server error', as
 });
 
 Deno.test('A caller that does not retry sees each queued server error once', async () => {
-  const { client, fetch } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client, fetch } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -78,7 +81,7 @@ Deno.test('A caller that does not retry sees each queued server error once', asy
       await callOutcome(grammyBot.api.sendMessage(account.id, 'Hello')),
       await callOutcome(grammyBot.api.sendMessage(account.id, 'Hello')),
     ];
-    assertJson(
+    assertEquals(
       [outcomes, await session.getServerErrorResponses(bot.id)],
       [[[503, 'Service Unavailable'], [503, 'Service Unavailable'], 'ok'], []],
       'Expected two failed calls of any method, then a call that runs',
@@ -89,7 +92,8 @@ Deno.test('A caller that does not retry sees each queued server error once', asy
 });
 
 Deno.test('Server error queue controls reject what they cannot apply to', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const otherSession = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
@@ -118,7 +122,7 @@ Deno.test('Server error queue controls reject what they cannot apply to', async 
       ),
       await failedStatus(session.getServerErrorResponses(account.id)),
     ];
-    assertJson(
+    assertEquals(
       [
         statuses,
         await session.getServerErrorResponses(bot.id),
@@ -129,7 +133,7 @@ Deno.test('Server error queue controls reject what they cannot apply to', async 
     );
 
     await session.end();
-    assertJson(
+    assertEquals(
       await failedStatus(session.getServerErrorResponses(bot.id)),
       404,
       'Expected the queued answers to end with their session',
@@ -138,13 +142,6 @@ Deno.test('Server error queue controls reject what they cannot apply to', async 
     await otherSession.end();
   }
 });
-
-function createInProcessClient() {
-  const api = createTestApi(PUBLIC_ORIGIN);
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  return { client: new TelegramEmulationClient(PUBLIC_ORIGIN, { fetch }), fetch };
-}
 
 /** `'ok'` for a Bot API call that succeeded, or the error code and description it failed with. */
 async function callOutcome(call: Promise<unknown>): Promise<'ok' | [number, string]> {
@@ -170,12 +167,4 @@ async function failedStatus(call: Promise<unknown>): Promise<number | undefined>
     throw error;
   }
   throw new Error('Expected the client call to fail');
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

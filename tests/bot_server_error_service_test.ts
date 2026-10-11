@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { QueuedBotApiAnswerRepository } from '../src/repositories/queued_bot_api_answer.ts';
@@ -26,7 +27,7 @@ Deno.test('BotServerErrorService answers the next matching calls in queue order'
     botServerErrors.takeServerErrorResponse(botId, 'sendMessage'),
   ];
   const remaining = botServerErrors.listServerErrorResponses(botId);
-  assertJson(
+  assertEquals(
     [errorCodes, remaining],
     [[undefined, 500, 503, undefined, 500, undefined], { found: true, responses: [] }],
     'Expected each call to take the earliest matching answer, and none once all were taken',
@@ -47,7 +48,7 @@ Deno.test('BotServerErrorService lists remaining answers and refuses unknown bot
     errorCode: 500,
     remainingCount: 1,
   });
-  assertJson(
+  assertEquals(
     [
       botServerErrors.listServerErrorResponses(botId),
       unknownBotQueueing,
@@ -76,7 +77,7 @@ Deno.test('BotServerErrorService hands each queued answer to exactly one call', 
     { length: 8 },
     () => botServerErrors.takeServerErrorResponse(botId, 'sendMessage'),
   );
-  assertJson(
+  assertEquals(
     [errorCodes, botServerErrors.listServerErrorResponses(botId)],
     [
       [500, 500, 500, 503, 503, undefined, undefined, undefined],
@@ -107,12 +108,4 @@ function createBot(virtualUsers: VirtualUserService, username: string): number {
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot.profile.id;
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

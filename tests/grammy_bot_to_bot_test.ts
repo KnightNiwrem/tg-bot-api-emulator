@@ -1,6 +1,7 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
+import { createTestInProcessEmulator } from './support/emulation_api.ts';
 
 for (
   const { optedIn, coordinatorEnables, translatorEnables } of [
@@ -75,10 +76,11 @@ for (
             text,
             reply_to: reply_to_message?.from?.username,
           }));
-        assertJson(history, [
-          { from: 'coordinator_bot', text: '/translate@translator_bot hola' },
+        assertEquals(history, [
+          // Only the translation replies to another message.
+          { from: 'coordinator_bot', text: '/translate@translator_bot hola', reply_to: undefined },
           { from: 'translator_bot', text: 'hello', reply_to: 'coordinator_bot' },
-          { from: 'coordinator_bot', text: 'Translation: hello' },
+          { from: 'coordinator_bot', text: 'Translation: hello', reply_to: undefined },
         ], 'Expected the bots to finish the exchange');
       } finally {
         await Promise.all(pollingBots.map((bot) => bot.stop()));
@@ -88,12 +90,4 @@ for (
       await session.end();
     }
   });
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

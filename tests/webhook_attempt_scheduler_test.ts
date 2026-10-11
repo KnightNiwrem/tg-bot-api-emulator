@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
@@ -44,7 +45,7 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
     const firstFailure = await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
     // Telegram would send the update again at once; manual scheduling waits for the test.
     await new Promise((resolve) => setTimeout(resolve, 20));
-    assertJson(
+    assertEquals(
       [receivedRequests.length, listAttempts(webhookAttempts, botId)],
       [1, [{
         id: 1,
@@ -61,7 +62,7 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
       }]],
       'Expected the failed attempt to wait for its retry to be released',
     );
-    assertJson(
+    assertEquals(
       firstFailure.kind === 'webhook_attempt_failed' &&
         [firstFailure.webhookAttemptId, firstFailure.retryDelaySeconds],
       [1, 0],
@@ -70,7 +71,7 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
 
     const release = webhookAttempts.releaseRetry(botId, 1);
     const repeatedRelease = webhookAttempts.releaseRetry(botId, 1);
-    assertJson(
+    assertEquals(
       [
         release.released && release.attempt.status === 'failed' && release.attempt.retry,
         repeatedRelease,
@@ -88,7 +89,7 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
       webhookAttempts.expireAttempt(botId, 2),
       webhookAttempts.expireAttempt(botId, 2),
     ]);
-    assertJson(
+    assertEquals(
       [expiry, concurrentExpiry, await webhookAttempts.expireAttempt(botId, 1)],
       [
         {
@@ -108,7 +109,7 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
       ],
       'Expected the attempt in flight to time out once, and to back off as Telegram does',
     );
-    assertJson(
+    assertEquals(
       [
         receivedRequests[1].signal.aborted,
         updateConsumers.getWebhookInfo(botId).last_error_message,
@@ -120,7 +121,7 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
 
     webhookAttempts.releaseRetry(botId, 2);
     await fixture.waitForEntry({ kind: 'update_confirmed' });
-    assertJson(
+    assertEquals(
       [
         listAttempts(webhookAttempts, botId).map(({ status }) => status),
         updateConsumers.getWebhookInfo(botId).pending_update_count,
@@ -164,7 +165,7 @@ Deno.test('Webhook attempt controls apply only to the attempts of the bot they n
     updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
 
-    assertJson(
+    assertEquals(
       [
         webhookAttempts.getScheduling(otherBotId),
         webhookAttempts.releaseRetry(otherBotId, 1),
@@ -192,7 +193,7 @@ Deno.test('Webhook attempt controls apply only to the attempts of the bot they n
       "Expected another bot's controls to find none of the bot's attempts",
     );
     const [attempt] = listAttempts(webhookAttempts, botId);
-    assertJson(
+    assertEquals(
       attempt.status === 'failed' && attempt.retry.status,
       'waiting',
       "Expected the bot's retry to keep waiting",
@@ -219,7 +220,7 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
 
   updateConsumers.setWebhook(botId, { ...webhookRequest(), url: `${WEBHOOK_URL}/second` });
   await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
-  assertJson(
+  assertEquals(
     [
       receivedRequests[0].signal.aborted,
       await webhookAttempts.expireAttempt(botId, 1),
@@ -234,7 +235,7 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
   );
 
   updateConsumers.deleteWebhook(botId, { dropPendingUpdates: false });
-  assertJson(
+  assertEquals(
     [
       webhookAttempts.releaseRetry(botId, 2),
       listAttempts(webhookAttempts, botId).map(describeAttemptState),
@@ -252,7 +253,7 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
   await fixture.waitForRequestCount(3);
   endSession();
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assertJson(
+  assertEquals(
     [
       receivedRequests.length,
       receivedRequests.every(({ signal }) => signal.aborted),
@@ -294,7 +295,7 @@ Deno.test('Manual scheduling holds back only the queue of the failing update', a
     );
     webhookAttempts.releaseRetry(botId, failedAttempt?.id ?? 0);
     await fixture.waitForEntry({ kind: 'update_confirmed', updateId: 2 });
-    assertJson(
+    assertEquals(
       [sentBeforeRelease, receivedRequests.slice(2).map(({ updateId }) => updateId)],
       [[1, 3], [1, 2]],
       "Expected Ada's later update to wait for her failing one, while Grace's was delivered",
@@ -334,7 +335,7 @@ Deno.test('An attempt and its retry follow the scheduling of their bot when the 
     webhookAttempts.releaseRetry(botId, 1);
     await fixture.waitForEntry({ kind: 'update_confirmed' });
 
-    assertJson(
+    assertEquals(
       [
         sentBeforeRelease,
         listAttempts(webhookAttempts, botId).map(({ scheduling }) => scheduling),
@@ -370,7 +371,7 @@ Deno.test('Automatic scheduling lets a test expire an attempt and release a retr
     await fixture.waitForEntry({ kind: 'webhook_attempt_failed', webhookAttemptId: 2 });
     const release = webhookAttempts.releaseRetry(botId, 2);
     await fixture.waitForEntry({ kind: 'update_confirmed' });
-    assertJson(
+    assertEquals(
       [
         expiry.expired && describeAttemptState(expiry.attempt),
         release.released && describeAttemptState(release.attempt),
@@ -405,7 +406,7 @@ Deno.test('An attempt whose webhook answered completely is accepted before its r
     updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForEntry({ kind: 'update_confirmed' });
 
-    assertJson(
+    assertEquals(
       [
         startedReplies.length,
         await webhookAttempts.expireAttempt(botId, 1),
@@ -551,12 +552,4 @@ function listAttempts(
 /** The attempt's status, followed by its retry's for a failed attempt. */
 function describeAttemptState(attempt: WebhookAttempt): string {
   return attempt.status === 'failed' ? `failed: ${attempt.retry.status}` : attempt.status;
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

@@ -31,12 +31,19 @@ export async function callBotApiWithFiles(
   return { status: response.status, body: await response.json() };
 }
 
-/** Returns a reader of each bot's updates since the reader last read that bot's updates. */
+/**
+ * Returns a reader of each bot's updates since the reader last read that bot's updates. A read
+ * that names `allowedUpdates` passes them to `getUpdates` as its `allowed_updates`.
+ */
 export function createUpdateReader(api: EmulationApi) {
   const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
+  return async (
+    botApiPath: string,
+    allowedUpdates?: readonly string[],
+  ): Promise<Array<Record<string, unknown>>> => {
     const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {
       offset: nextOffsetsByBotApiPath.get(botApiPath) ?? 0,
+      ...(allowedUpdates === undefined ? {} : { allowed_updates: allowedUpdates }),
     });
     const updates = (body as { result: Array<Record<string, unknown>> }).result;
     const lastUpdateId = updates.at(-1)?.update_id;
@@ -45,6 +52,13 @@ export function createUpdateReader(api: EmulationApi) {
     }
     return updates;
   };
+}
+
+/** The updates without their `update_id`, for tests that compare updates but not their IDs. */
+export function withoutUpdateIds(
+  updates: readonly Record<string, unknown>[],
+): Array<Record<string, unknown>> {
+  return updates.map(({ update_id: _updateId, ...update }) => update);
 }
 
 /** Returns the messages and edited messages of a successful getUpdates response. */

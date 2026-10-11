@@ -1,4 +1,7 @@
+import { assertEquals } from '@std/assert';
+import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, requestJson } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -46,27 +49,11 @@ const PHOTO_BYTES = new Uint8Array([
  */
 async function createDefaultPermissionsFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const moderatorBot = await createBot('moderator_bot');
-  const memberBot = await createBot('member_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const moderatorBot = await createBot(api, sessionPath, 'moderator_bot');
+  const memberBot = await createBot(api, sessionPath, 'member_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -155,24 +142,10 @@ async function createDefaultPermissionsFixture() {
     }
   };
 
-  const nextUpdateOffsets = new Map<string, number>();
+  const readBotUpdates = createUpdateReader(api);
   /** Returns a bot's updates since the last read, membership changes included. */
-  const readUpdates = async (bot: { botApiPath: string }) => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      {
-        offset: nextUpdateOffsets.get(bot.botApiPath) ?? 0,
-        allowed_updates: ['message', 'chat_member', 'my_chat_member'],
-      },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextUpdateOffsets.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result;
-  };
+  const readUpdates = (bot: { botApiPath: string }) =>
+    readBotUpdates(bot.botApiPath, ['message', 'chat_member', 'my_chat_member']);
 
   return {
     api,
@@ -212,14 +185,6 @@ const ACCOUNT_CONTENTS = {
   voice: { voice: { content_base64: 'Ynl0ZXM=' } },
 } as const;
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 /** A `ChatPermissions` object that grants every permission. */
 const ALL_PERMISSIONS = Object.fromEntries(CHAT_PERMISSION_NAMES.map((name) => [name, true]));
 
@@ -243,20 +208,20 @@ Deno.test('a bot changes default permissions, which members obey and getChat rep
   await readUpdates(moderatorBot);
   await readUpdates(memberBot);
 
-  expectEqual(await setDefaults(moderatorBot, { can_send_messages: true }), [200, 'ok'], 'Change');
-  expectEqual(initialDefaults, CHAT_PERMISSION_NAMES, 'Expected every permission at first');
-  expectEqual(
+  assertEquals(await setDefaults(moderatorBot, { can_send_messages: true }), [200, 'ok'], 'Change');
+  assertEquals(initialDefaults, [...CHAT_PERMISSION_NAMES], 'Expected every permission at first');
+  assertEquals(
     await getDefaults(),
     ['can_send_messages', 'can_react_to_messages'],
     'Expected getChat to show the new default permissions',
   );
-  expectEqual(
+  assertEquals(
     [...await readUpdates(moderatorBot), ...await readUpdates(memberBot)],
     [],
     'Expected no update for changed default permissions',
   );
   // Members, bots included, obey the defaults; the owner and administrators are exempt.
-  expectEqual(
+  assertEquals(
     [
       await sendAsAccount(grace.id, ACCOUNT_CONTENTS.text),
       await sendAsAccount(grace.id, ACCOUNT_CONTENTS.photo),
@@ -292,7 +257,7 @@ Deno.test('a bot changes default permissions, which members obey and getChat rep
     `${moderatorBot.botApiPath}/getChatMember`,
     { chat_id: supergroup.id, user_id: grace.id },
   );
-  expectEqual(
+  assertEquals(
     [whileBothWithhold, onceDefaultsGrantAll, member.result.can_send_photos],
     [[403, 403], [403, 201], true],
     "Expected the member's restriction to apply within the defaults",
@@ -329,7 +294,7 @@ Deno.test('setChatPermissions refuses what Telegram refuses, without changing an
     await setPermissions(moderatorBot, { can_send_messages: true }),
   ];
   const notEnoughRights = 'Bad Request: not enough rights to change chat permissions';
-  expectEqual(
+  assertEquals(
     refusals,
     [
       [400, notEnoughRights],
@@ -349,10 +314,10 @@ Deno.test('setChatPermissions refuses what Telegram refuses, without changing an
     ],
     'Expected Telegram refusals',
   );
-  expectEqual(await getDefaults(), CHAT_PERMISSION_NAMES, 'Expected the defaults to stay');
+  assertEquals(await getDefaults(), [...CHAT_PERMISSION_NAMES], 'Expected the defaults to stay');
 
   // The permissions the supergroup has change nothing, and missing permissions withhold all.
-  expectEqual(
+  assertEquals(
     [
       await setPermissions(moderatorBot, { permissions: ALL_PERMISSIONS }),
       await setPermissions(moderatorBot, { permissions: undefined }),
@@ -404,7 +369,7 @@ Deno.test('default permissions decide information changes and inline bots, never
     await changeTitle(linus.id, 'Administrators again'),
     await changeTitle(ada.id, 'Owners'),
   ];
-  expectEqual(
+  assertEquals(
     [withChangeInfo, defaultsChanges, withoutChangeInfo],
     [
       [204, 204, 'Bad Request: not enough rights to change chat title'],
@@ -415,24 +380,22 @@ Deno.test('default permissions decide information changes and inline bots, never
   );
 
   // Using an inline bot needs `can_send_other_messages`, which the defaults now withhold.
-  const inlineBot = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Inline Bot', username: 'inline_bot', supports_inline_queries: true },
-  );
+  const inlineBot = await createBot(api, sessionPath, 'inline_bot', {
+    first_name: 'Inline Bot',
+    supports_inline_queries: true,
+  });
   const inlineQueriesPath = `${accountPath(grace.id)}/inline-queries`;
   const inlineQuery = await requestJson<{ inline_query: { id: string } }>(
     api,
     'POST',
     inlineQueriesPath,
-    { bot_id: inlineBot.body.bot.id, chat: { type: 'supergroup', chatId: supergroup.id } },
+    { bot_id: inlineBot.bot.id, chat: { type: 'supergroup', chatId: supergroup.id } },
   );
   const inlineQueryId = inlineQuery.body.inline_query.id;
   await requestJson(
     api,
     'POST',
-    `${sessionPath}/bot-api/bot${inlineBot.body.token}/answerInlineQuery`,
+    `${inlineBot.botApiPath}/answerInlineQuery`,
     {
       inline_query_id: inlineQueryId,
       results: [{
@@ -452,7 +415,7 @@ Deno.test('default permissions decide information changes and inline bots, never
     )).status;
   const withoutInlineBots = await chooseResult();
   await changeDefaultsAs(ada.id, { can_send_messages: true, can_send_other_messages: true });
-  expectEqual(
+  assertEquals(
     [withoutInlineBots, await chooseResult()],
     [403, 201],
     'Expected inline results to need can_send_other_messages',
@@ -494,12 +457,12 @@ Deno.test('each kind of content needs its own permission, for accounts and bots 
       botOutcomes.push([kind, await sendAsBot(memberBot, kind)]);
     }
     const isSendable = (kind: string) => (sendableKinds as readonly string[]).includes(kind);
-    expectEqual(
+    assertEquals(
       accountOutcomes,
       accountKinds.map((kind) => [kind, isSendable(kind) ? 201 : 403]),
       `Expected an account to send only what ${permission} allows`,
     );
-    expectEqual(
+    assertEquals(
       botOutcomes,
       botKinds.map((kind) => [kind, isSendable(kind) ? 'ok' : BOT_REFUSALS[kind]]),
       `Expected a bot to send only what ${permission} allows`,

@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
@@ -8,10 +10,12 @@ import {
   type LocationInput,
   type PrivateMessageTarget,
   type SendInlineQueryInput,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 Deno.test('a test expires a cached inline answer, and the next query reaches the bot', async () => {
   const { session, ada, grace, bot, privateChat, callBot, takeInlineQueryUpdates } =
@@ -52,7 +56,7 @@ Deno.test('a test expires a cached inline answer, and the next query reaches the
       result_id: 'cats',
     });
 
-    expectEqual(
+    assertEquals(
       [
         delivered,
         answer.status,
@@ -90,7 +94,7 @@ Deno.test('a test expires a cached inline answer, and the next query reaches the
 });
 
 Deno.test('answer cache expiry follows the request, not the chat, and stays in its session', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const first = await createInlineCacheFixture(api);
   const second = await createInlineCacheFixture(api);
   try {
@@ -140,7 +144,7 @@ Deno.test('answer cache expiry follows the request, not the chat, and stays in i
     }
     const otherSession = (await sendQuery(second, {})).status;
 
-    expectEqual(
+    assertEquals(
       [selector.status, expiry, expiredRequest, otherStatuses, otherSession],
       [
         'answered',
@@ -158,7 +162,7 @@ Deno.test('answer cache expiry follows the request, not the chat, and stays in i
 });
 
 Deno.test('answer cache expiry is refused, changing nothing, when there is no answer to expire', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, ada, bot, privateChat, callBot, takeInlineQueryUpdates } =
     await createInlineCacheFixture(api);
   try {
@@ -192,7 +196,7 @@ Deno.test('answer cache expiry is refused, changing nothing, when there is no an
     const deliveredAfterExpiry = (await takeInlineQueryUpdates()).length;
     const fresh = await sendQuery('cats');
 
-    expectEqual(
+    assertEquals(
       [refusals, reusedAfterRefusals, expiry, repeated, deliveredAfterExpiry, fresh.status],
       [[404, 404, 409, 409, 404], 'answered', 'expired', 409, 0, 'awaiting_answer'],
       'Expected refused expiries to keep the cached answer and a repeated expiry to be refused',
@@ -241,7 +245,7 @@ Deno.test("a bot's answer after an expiry fills the cache again", async () => {
     const lateAnswer = await waitForAnswer(late, beforeLate);
     const reused = await sendQuery();
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [firstAnswer, late.status, whileAnswerHeld, lateAnswer, reused.status, reused.answer],
       [
         'answer-1',
@@ -287,10 +291,11 @@ interface InlineCacheFixture {
  * Creates a session where Ada and Grace can type inline queries for an inline bot that requests
  * their location, which the test drives through its Bot API unless it starts a grammY bot.
  */
-async function createInlineCacheFixture(api = createTestApi()): Promise<InlineCacheFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+async function createInlineCacheFixture(
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
+): Promise<InlineCacheFixture> {
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({
     first_name: 'Inline Bot',
     username: 'inline_bot',
@@ -367,12 +372,4 @@ async function expiryOutcome(
 async function countPendingUpdates(callBot: BotApiCaller): Promise<number> {
   const { body } = await callBot('getUpdates', { timeout: 0 });
   return (body.result as unknown[]).length;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

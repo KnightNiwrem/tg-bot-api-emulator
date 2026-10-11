@@ -1,5 +1,5 @@
-import { createEmulationApi } from '../../src/api/mod.ts';
-import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
+import { assertEquals } from '@std/assert';
+import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import {
   type ControlErrorBody,
   type ControlRefusalReason,
@@ -13,7 +13,8 @@ import {
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 
 Deno.test('A refusal rejects with an EmulationControlError naming its reason', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
@@ -24,7 +25,7 @@ Deno.test('A refusal rejects with an EmulationControlError naming its reason', a
   if (!(refusal instanceof EmulationControlError) || !(refusal instanceof EmulationClientError)) {
     throw new Error(`Expected a control error, which is a client error, received ${refusal}`);
   }
-  assertJson(
+  assertEquals(
     {
       name: refusal.name,
       method: refusal.method,
@@ -49,7 +50,8 @@ Deno.test('A refusal rejects with an EmulationControlError naming its reason', a
 });
 
 Deno.test('Input the emulator rejects lists each issue on the control error', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
@@ -62,7 +64,7 @@ Deno.test('Input the emulator rejects lists each issue on the control error', as
   }
   // Checking for issues narrows the body to a validation failure, whose reason is fixed.
   const validationFailure: ControlValidationErrorBody = refusal.body;
-  assertJson(
+  assertEquals(
     {
       status: refusal.status,
       reason: validationFailure.reason,
@@ -81,7 +83,8 @@ Deno.test('Input the emulator rejects lists each issue on the control error', as
 });
 
 Deno.test('An ended session refuses its operations as session_not_found', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   await session.end();
 
@@ -112,7 +115,7 @@ Deno.test('A refusal whose body is not a control error keeps its status and raw 
     if (!(refusal instanceof EmulationClientError) || refusal instanceof EmulationControlError) {
       throw new Error(`Expected a plain client error for ${expectedBody}, received ${refusal}`);
     }
-    assertJson(
+    assertEquals(
       { status: refusal.status, responseBody: refusal.responseBody },
       { status: answer.status, responseBody: expectedBody },
       'Expected the status and the raw body',
@@ -130,7 +133,7 @@ Deno.test('The body type admits only the shapes the emulator sends', () => {
   const invalidRequestIsNoRefusal: 'invalid_request' extends ControlRefusalReason ? false : true =
     true;
 
-  assertJson(
+  assertEquals(
     [
       validationFailureNeedsIssues,
       refusalHasNoIssues,
@@ -162,17 +165,6 @@ Deno.test('A control error refuses a body its contract does not allow', () => {
 /** `true` when no value of `Value` is a `ControlErrorBody`. */
 type IsNotControlErrorBody<Value> = Value extends ControlErrorBody ? false : true;
 
-function createInProcessClient() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
-  const client = new TelegramEmulationClient(PUBLIC_ORIGIN, {
-    fetch: async (input, init) => await api.fetch(new Request(input, init)),
-  });
-  return { client };
-}
-
 async function rejectionOf(pending: Promise<unknown>): Promise<unknown> {
   try {
     await pending;
@@ -180,10 +172,4 @@ async function rejectionOf(pending: Promise<unknown>): Promise<unknown> {
     return error;
   }
   throw new Error('Expected the operation to be refused');
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

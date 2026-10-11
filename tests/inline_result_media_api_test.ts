@@ -1,3 +1,10 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 interface TestPhotoSize {
@@ -76,25 +83,16 @@ const THUMBNAIL_URL = 'https://cdn.example.com/cat-thumbnail.jpg';
  */
 async function createInlineMediaFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      {
-        first_name: 'Media Bot',
-        username,
-        supports_inline_queries: true,
-        receives_chosen_inline_results: true,
-      },
-    );
-    return { ...body.bot, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
+    const { bot, botApiPath } = await createSessionBot(api, sessionPath, username, {
+      first_name: 'Media Bot',
+      supports_inline_queries: true,
+      receives_chosen_inline_results: true,
+    });
+    return { ...bot, botApiPath };
   };
   const bot = await createBot('media_bot');
   const otherBot = await createBot('other_media_bot');
@@ -180,7 +178,8 @@ async function createInlineMediaFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, bot.botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(bot.botApiPath));
   await readUpdates();
   /** Chooses a result with an inline keyboard and returns the inline message ID the bot receives. */
   const chooseResultForInlineMessageId = async (
@@ -221,24 +220,6 @@ async function createInlineMediaFixture() {
   };
 }
 
-/** Returns a reader of the bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Edits an inline message's media to an uploaded photo, which an inline message cannot take. */
 async function uploadMediaEdit(api: EmulationApi, botApiPath: string, inlineMessageId: string) {
   const form = new FormData();
@@ -253,14 +234,6 @@ async function uploadMediaEdit(api: EmulationApi, botApiPath: string, inlineMess
     status: response.status,
     body: await response.json() as { ok: boolean; result?: unknown; description?: string },
   };
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
 
 const urlPhotoResult = {
@@ -301,8 +274,12 @@ Deno.test('an account sends photos and documents that an inline result names by 
   } = await createInlineMediaFixture();
   const inlineQuery = await sendQuery(ada.id);
   const answered = await answer(inlineQuery.id, [urlPhotoResult, urlDocumentResult]);
-  expectEqual(answered.body, { ok: true, result: true }, 'Expected the answer to be accepted');
-  expectEqual(
+  assertEqualsInFieldOrder(
+    answered.body,
+    { ok: true, result: true },
+    'Expected the answer to be accepted',
+  );
+  assertEqualsInFieldOrder(
     (await getInlineQuery(ada.id, inlineQuery.id)).answer?.results,
     [
       { type: 'photo', id: 'cat', title: 'A cat', description: 'Sleeping' },
@@ -313,7 +290,7 @@ Deno.test('an account sends photos and documents that an inline result names by 
 
   const chosenPhoto = await choose(ada.id, inlineQuery.id, 'cat');
   const photoMessage = chosenPhoto.body?.message;
-  expectEqual(
+  assertEquals(
     [
       chosenPhoto.status,
       photoMessage?.photo?.map(({ width, height }) => [width, height]),
@@ -326,7 +303,7 @@ Deno.test('an account sends photos and documents that an inline result names by 
   );
   const chosenDocument = await choose(ada.id, inlineQuery.id, 'cats-pdf');
   const documentMessage = chosenDocument.body?.message;
-  expectEqual(
+  assertEquals(
     [
       chosenDocument.status,
       documentMessage?.document?.file_name,
@@ -338,7 +315,7 @@ Deno.test('an account sends photos and documents that an inline result names by 
     'Expected the document named after the URL, sent through the bot',
   );
   const history = await getHistory(ada.id, privateChat);
-  expectEqual(
+  assertEquals(
     history.slice(-2).map((message) => message.message_id),
     [photoMessage?.message_id, documentMessage?.message_id],
     'Expected both results in the conversation',
@@ -348,7 +325,7 @@ Deno.test('an account sends photos and documents that an inline result names by 
   const chosenResults = updates.flatMap((update) =>
     update.chosen_inline_result === undefined ? [] : [update.chosen_inline_result]
   ) as Array<Record<string, unknown>>;
-  expectEqual(
+  assertEquals(
     chosenResults.map(({ result_id, inline_message_id }) => [
       result_id,
       typeof inline_message_id,
@@ -383,7 +360,7 @@ Deno.test('a result naming media by URL sends its input_message_content instead'
     await choose(ada.id, inlineQuery.id, 'cat'),
     await choose(ada.id, inlineQuery.id, 'cats-pdf'),
   ];
-  expectEqual(
+  assertEqualsInFieldOrder(
     [answered.body, ...chosen.map(({ status, body }) => [status, body?.message.text])],
     [{ ok: true, result: true }, [201, 'A cat, described'], [201, 'A PDF, described']],
     'Expected the text in place of the media',
@@ -427,7 +404,7 @@ Deno.test('answerInlineQuery checks results naming media by URL and records no p
   for (const results of refusals) {
     descriptions.push((await answer(inlineQuery.id, results)).body.description);
   }
-  expectEqual(
+  assertEquals(
     descriptions,
     [
       "Bad Request: wrong remote file identifier specified: can't unserialize it",
@@ -445,7 +422,7 @@ Deno.test('answerInlineQuery checks results naming media by URL and records no p
     ],
     "Expected Telegram's errors",
   );
-  expectEqual(
+  assertEquals(
     (await getInlineQuery(ada.id, inlineQuery.id)).status,
     'awaiting_answer',
     'Expected refused answers to leave the query unanswered',
@@ -454,7 +431,11 @@ Deno.test('answerInlineQuery checks results naming media by URL and records no p
   const accepted = await answer(inlineQuery.id, [
     { ...urlDocumentResult, mime_type: 'application/pdf; charset=binary' },
   ]);
-  expectEqual(accepted.body, { ok: true, result: true }, 'Expected the PDF type to be accepted');
+  assertEqualsInFieldOrder(
+    accepted.body,
+    { ok: true, result: true },
+    'Expected the PDF type to be accepted',
+  );
 });
 
 Deno.test('an account cannot send media at a URL the emulated web does not serve as the result kind', async () => {
@@ -490,8 +471,8 @@ Deno.test('an account cannot send media at a URL the emulated web does not serve
     (await choose(ada.id, inlineQuery.id, 'gif-as-photo')).status,
     (await choose(ada.id, inlineQuery.id, 'photo-as-document')).status,
   ];
-  expectEqual(statuses, [502, 422, 422, 422], 'Expected unusable media to be refused');
-  expectEqual(
+  assertEquals(statuses, [502, 422, 422, 422], 'Expected unusable media to be refused');
+  assertEquals(
     [(await getHistory(ada.id, privateChat)).length, (await readUpdates()).length],
     [historyBefore.length, 0],
     'Expected no message and no chosen result',
@@ -535,7 +516,7 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
   const photoRefusal = await choose(grace.id, groupQuery.id, 'cat');
   const sentDocument = await choose(grace.id, groupQuery.id, 'cats-pdf');
   const groupHistory = await getHistory(grace.id, supergroupChat);
-  expectEqual(
+  assertEquals(
     [
       permissionsResponse.status,
       photoRefusal.status,
@@ -556,13 +537,13 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
     text: '/start',
   });
   const fromCachedAnswer = await choose(grace.id, graceQuery.id, 'cat');
-  expectEqual(
+  assertEquals(
     [graceQuery.status, fromCachedAnswer.status, fromCachedAnswer.body?.message.photo?.length],
     ['answered', 201, 1],
     'Expected the cached answer to send the photo, downloaded for Grace',
   );
   await requestJson(api, 'PUT', `${accountPath(grace.id)}/blocked-bots/${bot.id}`);
-  expectEqual(
+  assertEquals(
     (await choose(grace.id, graceQuery.id, 'cat')).status,
     409,
     'Expected a blocked bot to refuse the result',
@@ -586,7 +567,7 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
     }),
   ].map(({ body }) => body.ok ? body.result : body.description);
   const editedMessage = (await getHistory(ada.id, privateChat)).at(-1);
-  expectEqual(
+  assertEquals(
     [edits, editedMessage?.photo?.length, editedMessage?.via_bot?.id],
     [
       [
@@ -638,7 +619,7 @@ Deno.test('a bot edits an inline message into a rich message with files named by
   const servedEdit = await editToRichMessageWithPhotoAt(CAT_PHOTO_URL);
   const editedMessage = (await getHistory(ada.id, privateChat)).at(-1);
   const [photoBlock, documentBlock] = editedMessage?.rich_message?.blocks ?? [];
-  expectEqual(
+  assertEquals(
     [
       [unservedEdit, servedEdit].map(({ body }) => body.ok ? body.result : body.description),
       photoBlock?.photo?.map(({ width, height }) => [width, height]),
@@ -703,8 +684,12 @@ Deno.test('an account sends videos and voice notes that inline results name by f
     { type: 'video', id: 'cached-video', video_file_id: sentVideo.video?.file_id, title: 'Again' },
     { type: 'voice', id: 'cached-voice', voice_file_id: sentVoice.voice?.file_id, title: '' },
   ]);
-  expectEqual(answered.body, { ok: true, result: true }, 'Expected the answer to be accepted');
-  expectEqual(
+  assertEqualsInFieldOrder(
+    answered.body,
+    { ok: true, result: true },
+    'Expected the answer to be accepted',
+  );
+  assertEqualsInFieldOrder(
     (await getInlineQuery(ada.id, inlineQuery.id)).answer?.results,
     [
       { type: 'video', id: 'purring', title: 'Purring', description: 'A cat purrs' },
@@ -724,7 +709,7 @@ Deno.test('an account sends videos and voice notes that inline results name by f
     messages.push(chosen.body.message);
   }
   const [urlVideo, urlVoice, cachedVideo, cachedVoice] = messages;
-  expectEqual(
+  assertEquals(
     [
       urlVideo.video && [
         urlVideo.video.duration,
@@ -777,7 +762,7 @@ Deno.test('answerInlineQuery checks video and voice results by their own rules',
   for (const results of refusals) {
     descriptions.push((await answer(inlineQuery.id, results)).body.description);
   }
-  expectEqual(
+  assertEquals(
     descriptions,
     [
       'Bad Request: VIDEO_TITLE_EMPTY',
@@ -801,7 +786,7 @@ Deno.test('answerInlineQuery checks video and voice results by their own rules',
     input_message_content: { message_text: 'https://video.example.com/watch?v=purring' },
   }]);
   const chosen = await choose(ada.id, inlineQuery.id, 'purring');
-  expectEqual(
+  assertEqualsInFieldOrder(
     [answered.body, chosen.status, chosen.body?.message.text, chosen.body?.message.video],
     [{ ok: true, result: true }, 201, 'https://video.example.com/watch?v=purring', undefined],
     'Expected the embedded player to send its text',
@@ -849,7 +834,7 @@ Deno.test('video and voice results follow the inline media contracts, permission
       reply_markup: { inline_keyboard: [[{ text: 'Like', callback_data: 'like' }]] },
     },
   ]);
-  expectEqual(
+  assertEquals(
     [
       (await choose(ada.id, inlineQuery.id, 'webm')).status,
       (await choose(ada.id, inlineQuery.id, 'mp3')).status,
@@ -882,7 +867,7 @@ Deno.test('video and voice results follow the inline media contracts, permission
     }),
   ].map(({ body }) => body.ok ? body.result : body.description);
   const [videoMessage, voiceMessage] = (await getHistory(ada.id, privateChat)).slice(-2);
-  expectEqual(
+  assertEquals(
     [edits, videoMessage.video?.duration, videoMessage.caption, voiceMessage.caption],
     [
       [true, true, "Bad Request: message media can't be edited"],
@@ -899,7 +884,7 @@ Deno.test('video and voice results follow the inline media contracts, permission
   });
   const groupQuery = await sendQuery(grace.id, supergroupChat);
   await answer(groupQuery.id, [urlVideoResult, urlVoiceResult]);
-  expectEqual(
+  assertEquals(
     [
       (await choose(grace.id, groupQuery.id, 'purring')).status,
       (await choose(grace.id, groupQuery.id, 'meow')).status,

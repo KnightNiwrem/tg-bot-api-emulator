@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
@@ -2071,7 +2072,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     contents: [photoMedia(), photoMedia()],
   });
 
-  expectJsonEqual(
+  assertEquals(
     [
       withoutGrant,
       whileBlocked,
@@ -2120,7 +2121,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
   joinRequesterGrants.contactableBotIdsByAccountId.delete(accountId);
   const afterGrant = describeSend(sendText('Still there?'));
 
-  expectJsonEqual(
+  assertEquals(
     [
       edit.edited ? 'edited' : edit.reason,
       deletion.deleted ? 'deleted' : deletion.reason,
@@ -2140,7 +2141,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
   sendPrivateText(privateMessaging, accountId, bot);
   const afterReply = describeSend(sendText('Welcome'));
 
-  expectJsonEqual(
+  assertEquals(
     [
       afterReply,
       joinRequesterGrants.claims.length,
@@ -2458,7 +2459,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
       throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
     }
   }
-  expectJsonEqual(readState(), stateBeforeRefusals, 'Expected refused presses to change nothing');
+  assertEquals(readState(), stateBeforeRefusals, 'Expected refused presses to change nothing');
 
   const sentMessages = new Map<string, PrivateMessage>();
   const presses: Array<[string, ReplyKeyboardRequestAnswer | undefined, unknown]> = [
@@ -2490,14 +2491,14 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
     if (!result.sent) {
       throw new Error(`Expected the ${description} press to be sent, received ${result.reason}`);
     }
-    expectJsonEqual(
+    assertEquals(
       result.message.content.kind === 'poll' ? { kind: 'poll' } : result.message.content,
       expectedContent,
       `Expected the ${description}`,
     );
     sentMessages.set(description, result.message);
     const stateAfterPress = readState();
-    expectJsonEqual(
+    assertEquals(
       [
         stateAfterPress.history.found && stateAfterPress.history.messages.length,
         stateAfterPress.updateCount,
@@ -2511,7 +2512,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
       `Expected the ${description} press to add one message and one update and keep the keyboard`,
     );
   }
-  expectJsonEqual(
+  assertEquals(
     [...sentMessages].map(([description, message]) => [description, message.replyToMessageId]),
     [
       ['text', undefined],
@@ -2541,7 +2542,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
   if (textAfterReplacement.sent) {
     throw new Error('Expected the replaced text button to be gone');
   }
-  expectJsonEqual(
+  assertEquals(
     textAfterReplacement.reason,
     'reply_keyboard_button_answer_missing',
     'Expected the replacement keyboard to leave only the Web App button',
@@ -2553,7 +2554,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
     content: { kind: 'text', text: 'Done' },
   });
   const afterRemoval = press({ kind: 'web_app', data: 'payload' });
-  expectJsonEqual(
+  assertEquals(
     afterRemoval.sent ? 'sent' : afterRemoval.reason,
     'reply_keyboard_button_not_found',
     'Expected a removed keyboard to answer nothing',
@@ -2639,11 +2640,11 @@ Deno.test('PrivateMessagingService refuses a press whose label leaves buttons th
       throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
     }
   }
-  expectJsonEqual(readState(), stateBeforeRefusals, 'Expected ambiguous presses to change nothing');
+  assertEquals(readState(), stateBeforeRefusals, 'Expected ambiguous presses to change nothing');
 
   const same = press('Same');
   const open = press('Open', { kind: 'web_app', data: 'x' });
-  expectJsonEqual(
+  assertEquals(
     [same.sent && same.message.content, open.sent && open.message.content],
     [
       { kind: 'text', text: 'Same', entities: [] },
@@ -2848,12 +2849,4 @@ function photoMedia(): MediaContent {
     hasSpoiler: false,
     showsCaptionAboveMedia: false,
   };
-}
-
-function expectJsonEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

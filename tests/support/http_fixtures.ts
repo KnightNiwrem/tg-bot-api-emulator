@@ -112,7 +112,12 @@ export async function createAccount(
   api: EmulationApi,
   sessionPath: string,
   firstName: string,
-  profile: { last_name?: string; username?: string; has_private_forwards?: boolean } = {},
+  profile: {
+    last_name?: string;
+    username?: string;
+    phone_number?: string;
+    has_private_forwards?: boolean;
+  } = {},
 ) {
   const response = await api.request(
     `${sessionPath}/accounts`,
@@ -126,14 +131,15 @@ export async function createAccount(
 }
 
 /**
- * Creates the bot `username` through `POST bots` with the given settings, returning its
- * profile and token with the path of its Bot API.
+ * Creates the bot `username` through `POST bots` with the given settings, named `Test Bot` unless
+ * they give its `first_name`, returning its profile and token with the path of its Bot API.
  */
 export async function createBot(
   api: EmulationApi,
   sessionPath: string,
   username: string,
-  options: {
+  settings: {
+    first_name?: string;
     can_read_all_group_messages?: boolean;
     supports_inline_queries?: boolean;
     receives_chosen_inline_results?: boolean;
@@ -142,7 +148,7 @@ export async function createBot(
 ) {
   const response = await api.request(
     `${sessionPath}/bots`,
-    jsonRequest('POST', { first_name: 'Test Bot', username, ...options }),
+    jsonRequest('POST', { first_name: 'Test Bot', username, ...settings }),
   );
   const body: unknown = await response.json();
   if (!isCreatedBotResponse(body)) {

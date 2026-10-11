@@ -3,6 +3,7 @@
  * parameters, beside exact `parameters[name]` text, and the issues a malformed pattern reports.
  */
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotActivityReadBody {
   readonly entries: ReadonlyArray<{ readonly position: number; readonly kind: string }>;
@@ -300,29 +301,18 @@ Deno.test('A parameters_json issue is reported with the other issues of the quer
 /** Creates a session holding a bot and an account that can message it. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createdBot = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  const createdAccount = await requestJson<{ account: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: 'Ada' },
-  );
-  const account = createdAccount.body.account;
+  const createdBot = await createBot(api, sessionPath, 'test_bot');
+  const account = await createAccount(api, sessionPath, 'Ada');
   const sendText = async (text: string) => {
     await requestJson(api, 'POST', `${sessionPath}/accounts/${account.id}/messages`, {
-      to: { type: 'private', botId: createdBot.body.bot.id },
+      to: { type: 'private', botId: createdBot.bot.id },
       text,
     });
   };
   return {
     api,
     activityPath: `${sessionPath}/bot-activity`,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.body.token}`,
+    botApiPath: createdBot.botApiPath,
     account,
     sendText,
   };
