@@ -1,67 +1,17 @@
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { BotCommandRepository } from '../src/repositories/bot_command.ts';
-import { BotDefaultAdministratorRightsRepository } from '../src/repositories/bot_default_administrator_rights.ts';
-import { BotDescriptionRepository } from '../src/repositories/bot_description.ts';
-import { BotMenuButtonRepository } from '../src/repositories/bot_menu_button.ts';
-import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
-import { ChatActionRepository } from '../src/repositories/chat_action.ts';
-import { ChatInviteLinkRepository } from '../src/repositories/chat_invite_link.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
-import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { MessageDraftRepository } from '../src/repositories/message_draft.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { createAccountChatMessageReader } from '../src/services/account_chat_message.ts';
-import { BotActivityService } from '../src/services/bot_activity.ts';
-import { BotApiService } from '../src/services/bot_api.ts';
-import { BotCommandService } from '../src/services/bot_command.ts';
-import { BotDefaultAdministratorRightsService } from '../src/services/bot_default_administrator_rights.ts';
-import { BotDescriptionService } from '../src/services/bot_description.ts';
-import { BotMediaResolver } from '../src/services/bot_media_resolution.ts';
-import { BotMenuButtonService } from '../src/services/bot_menu_button.ts';
-import { BotMessageRepeater } from '../src/services/bot_message_repetition.ts';
-import { BotMessageSender } from '../src/services/bot_message_sending.ts';
-import { BotMessageViewService } from '../src/services/bot_message_view.ts';
-import { MediaFileService } from '../src/services/media_file.ts';
-import { normalizeBotDraftText, normalizeCaption } from '../src/services/message_content.ts';
-import { MessageDraftService } from '../src/services/message_draft.ts';
-import { MessageDeletionService } from '../src/services/message_deletion.ts';
-import { MessageEditingService } from '../src/services/message_editing.ts';
-import { MessagePinningService } from '../src/services/message_pinning.ts';
-import { MessageReactionService } from '../src/services/message_reaction.ts';
-import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
-import { createSessionUserMentionContext } from '../src/services/session_user_mention.ts';
-import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
-import {
-  WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-  WebhookAttemptScheduler,
-} from '../src/services/webhook_attempt_scheduler.ts';
-import { CallbackQueryService } from '../src/services/callback_query.ts';
-import { ChatActionService } from '../src/services/chat_action.ts';
-import { ChatAdmissionService } from '../src/services/chat_admission.ts';
-import { InlineQueryService } from '../src/services/inline_query.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { PrivateMessagingService } from '../src/services/private_messaging.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
+import { assertEquals } from '@std/assert';
+import type {
+  RestrictChatMemberAsAccountInput,
+  SharedChatAdministrationService,
+} from '../src/services/shared_chat_administration.ts';
+import type { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
-import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
-import { createUpdateConsumers } from './support/webhook_delivery.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotApiService reports why a bot cannot address a private chat, for the Bot API to present', () => {
-  const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, privateMessaging, botApi } = session;
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
   const strangerAccount = createAccount(virtualUsers);
@@ -142,7 +92,8 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
 });
 
 Deno.test('BotApiService sends a contact without a user its caller passes along', () => {
-  const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, privateMessaging, botApi } = session;
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
   privateMessaging.sendAccountMessage({
@@ -161,42 +112,37 @@ Deno.test('BotApiService sends a contact without a user its caller passes along'
     chatId: account.profile.id,
     contact: contactWithUser,
   });
-  if (
-    !result.sent ||
-    JSON.stringify('contact' in result.message ? result.message.contact : undefined) !==
-      JSON.stringify({ phone_number: '15550100', first_name: 'Ada' })
-  ) {
-    throw new Error(`Expected the contact to show no user, received ${JSON.stringify(result)}`);
-  }
+  assertEqualsInFieldOrder(
+    result.sent && 'contact' in result.message ? result.message.contact : result,
+    { phone_number: '15550100', first_name: 'Ada' },
+    'Expected the contact to show no user',
+  );
 });
 
 Deno.test('BotApiService reads text with its parse mode or entities', () => {
-  const { botApi } = createBotApiFixture();
+  using session = buildSessionServices();
+  const { botApi } = session;
   const bold = { type: 'bold', offset: 0, length: 2 } as const;
   const read = (text: string, parseMode?: string) =>
     botApi.readFormattedText({ text, parseMode, entities: [bold] });
 
   // Without a parse mode, or with `none`, the specified entities stand.
   for (const parseMode of [undefined, '', 'None']) {
-    const result = read('*a*', parseMode);
-    if (
-      !result.read || result.formattedText.text !== '*a*' ||
-      JSON.stringify(result.formattedText.entities) !== JSON.stringify([bold])
-    ) {
-      throw new Error(
-        `Expected parse mode ${parseMode} to keep the entities, received ${JSON.stringify(result)}`,
-      );
-    }
+    assertEquals(
+      read('*a*', parseMode),
+      { read: true, formattedText: { text: '*a*', entities: [bold] } },
+      `Expected parse mode ${parseMode} to keep the entities`,
+    );
   }
   // A parse mode, matched case-insensitively, overrides them.
-  const markdownResult = read('_a_', 'MARKDOWNV2');
-  if (
-    !markdownResult.read || markdownResult.formattedText.text !== 'a' ||
-    JSON.stringify(markdownResult.formattedText.entities) !==
-      JSON.stringify([{ type: 'italic', offset: 0, length: 1 }])
-  ) {
-    throw new Error(`Expected the markup to be parsed, received ${JSON.stringify(markdownResult)}`);
-  }
+  assertEquals(
+    read('_a_', 'MARKDOWNV2'),
+    {
+      read: true,
+      formattedText: { text: 'a', entities: [{ type: 'italic', offset: 0, length: 1 }] },
+    },
+    'Expected the markup to be parsed',
+  );
 
   const failures: ReadonlyArray<readonly [ReturnType<typeof read>, string]> = [
     [read('x'.repeat(2 ** 15 + 1), 'HTML'), 'text_too_long'],
@@ -220,8 +166,8 @@ Deno.test('BotApiService reads text with its parse mode or entities', () => {
 });
 
 Deno.test('BotApiService sends, forwards and copies to a supergroup only what the bot may send', () => {
-  const { virtualUsers, sharedChats, sharedChatAdministration, supergroupMessaging, botApi } =
-    createBotApiFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, sharedChatAdministration, supergroupMessaging, botApi } = session;
   const owner = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
   const creation = sharedChatAdministration.createSupergroup({
@@ -263,9 +209,10 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
   if (!botPhoto.sent) {
     throw new Error(`Expected the bot's photo to be sent, received ${botPhoto.reason}`);
   }
-  sharedChats.updateChatMemberStatus(chatId, bot.profile.id, {
-    status: 'restricted',
-    isMember: true,
+  restrictAsOwner(sharedChatAdministration, {
+    actorAccountId: owner.profile.id,
+    chatId,
+    memberId: bot.profile.id,
     permissions: new Set(['can_send_messages']),
   });
   // As TDLib's `edit_message_media` does, new media of an edit needs its permission too.
@@ -324,24 +271,26 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
       supergroupMessaging.getMessageByChatMessageId(chatId, messageId)?.content.kind
     )
     : [];
-  if (
-    JSON.stringify(received) !== JSON.stringify([
+  assertEquals(
+    [received, batchKinds],
+    [
+      [
         'sent',
         'send_permission_missing',
         'sent',
         'message_not_forwardable',
         'message_not_copyable',
         'messages_not_repeatable',
-      ]) || JSON.stringify(batchKinds) !== JSON.stringify(['text'])
-  ) {
-    throw new Error(
-      `Expected only text to reach the supergroup, received ${JSON.stringify([received, batch])}`,
-    );
-  }
+      ],
+      ['text'],
+    ],
+    'Expected only text to reach the supergroup',
+  );
 });
 
 Deno.test('BotApiService shows restricted members and default permissions', () => {
-  const { virtualUsers, sharedChats, sharedChatAdministration, botApi } = createBotApiFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, sharedChatAdministration, botApi } = session;
   const owner = createAccount(virtualUsers);
   const member = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
@@ -356,16 +305,21 @@ Deno.test('BotApiService shows restricted members and default permissions', () =
   for (const memberId of [member.profile.id, bot.profile.id]) {
     sharedChatAdministration.addChatMember({ actorAccountId: owner.profile.id, chatId, memberId });
   }
-  sharedChats.updateChatMemberStatus(chatId, member.profile.id, {
-    status: 'restricted',
-    isMember: true,
-    permissions: new Set(['can_send_messages', 'can_send_voice_notes']),
-    restrictedUntilUnixSeconds: 1_700_003_600,
-  });
-  sharedChats.updateSupergroupDefaultPermissions(
+  restrictAsOwner(sharedChatAdministration, {
+    actorAccountId: owner.profile.id,
     chatId,
-    new Set(['can_send_messages', 'can_send_polls', 'can_invite_users']),
-  );
+    memberId: member.profile.id,
+    permissions: new Set(['can_send_messages', 'can_send_voice_notes']),
+    requestedRestrictionEndUnixSeconds: 1_700_003_600,
+  });
+  const permissionChange = sharedChatAdministration.changeDefaultPermissions({
+    actor: { kind: 'account', accountId: owner.profile.id },
+    chatId,
+    permissions: new Set(['can_send_messages', 'can_send_polls', 'can_invite_users']),
+  });
+  if (!permissionChange.changed) {
+    throw new Error(`Expected the default permissions to change: ${permissionChange.reason}`);
+  }
 
   const chatMember = botApi.getChatMember(bot.profile, { chatId, userId: member.profile.id });
   const chat = botApi.getChat(bot.profile, { chatId });
@@ -398,22 +352,22 @@ Deno.test('BotApiService shows restricted members and default permissions', () =
     ...permissionsOf(['can_send_messages', 'can_send_media_messages', 'can_send_voice_notes']),
     is_member: true,
   };
-  if (
-    !chatMember.found || JSON.stringify(chatMember.member) !== JSON.stringify(expectedMember) ||
-    !chat.found || !('permissions' in chat.chat) ||
-    JSON.stringify(chat.chat.permissions) !==
-      JSON.stringify(permissionsOf(['can_send_messages', 'can_send_polls', 'can_invite_users']))
-  ) {
-    throw new Error(
-      `Expected the restriction and default permissions, received ${
-        JSON.stringify([chatMember, chat])
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    [
+      chatMember.found ? chatMember.member : chatMember,
+      chat.found && 'permissions' in chat.chat ? chat.chat.permissions : chat,
+    ],
+    [
+      expectedMember,
+      permissionsOf(['can_send_messages', 'can_send_polls', 'can_invite_users']),
+    ],
+    'Expected the restriction and default permissions',
+  );
 });
 
 Deno.test('BotApiService refuses to change a supergroup for a bot that does not exist', () => {
-  const { virtualUsers, sharedChatAdministration, botApi } = createBotApiFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, sharedChatAdministration, botApi } = session;
   const owner = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
   const creation = sharedChatAdministration.createSupergroup({
@@ -452,262 +406,6 @@ Deno.test('BotApiService refuses to change a supergroup for a bot that does not 
   }
 });
 
-function createBotApiFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const messageBoxes = new MessageBoxRepository();
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const botUpdates = new BotUpdateRepository();
-  const botActivity = new BotActivityService({
-    log: new BotActivityLogRepository(),
-    scheduler: createRealTimeScheduler(),
-  });
-  const updateSubscriptions = new BotUpdateSubscriptionRepository();
-  const sharedChats = new SharedChatRepository();
-  const botMessageViews = new BotMessageViewService({
-    accounts,
-    bots,
-    sharedChats,
-    messageBoxes,
-    messages,
-    files,
-    polls,
-  });
-  const botUpdateDelivery = new BotUpdateDeliveryService({
-    botMessageViews,
-    botUpdates,
-    updateSubscriptions,
-    bots,
-    sharedChats,
-    messages,
-    lastMessageSendingBots: new LastMessageSendingBotRepository(),
-  });
-  // The fixture's repositories are not staged, so each event is projected and queued at once.
-  const events = { emit: (event: ChatDomainEvent) => botUpdateDelivery.project(event) };
-  const privateConversations = new PrivateConversationRepository();
-  const blockedUsers = new BlockedUserRepository();
-  const joinRequesterContacts = {
-    mayContactJoinRequester: () => false,
-    claimJoinRequesterContact: () => {
-      throw new Error('Unexpected join requester contact');
-    },
-  };
-  const messageDrafts = new MessageDraftService({
-    accounts,
-    bots,
-    drafts: new MessageDraftRepository(),
-    transactions: { ...events, withinTransaction: (command) => command() },
-  });
-  const privateMessaging = new PrivateMessagingService({
-    accounts,
-    bots,
-    privateConversations,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    blockedUsers,
-    joinRequesterContacts,
-    events,
-    messageDrafts,
-    currentUnixTimeSeconds: () => 1_700_000_000,
-  });
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
-    sharedChats,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    events,
-    currentUnixTimeSeconds: () => 1_700_000_000,
-  });
-  const privateChats = new PrivateChatPolicy({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers,
-    joinRequesterContacts,
-    privateMessages: privateMessaging,
-  });
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-  });
-  const callbackQueries = new CallbackQueryService({
-    accountChatMessages: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
-    bots,
-    callbackQueries: new CallbackQueryRepository(),
-    transactions: { ...events, withinTransaction: (command) => command() },
-  });
-  const sharedChatAdministration = new SharedChatAdministrationService({
-    identities,
-    accounts,
-    bots,
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds: () => 1_700_000_000,
-  });
-  const mediaFiles = new MediaFileService({
-    files,
-    uploadProfile: 'cloud',
-    webFiles: {
-      download: () => Promise.resolve({ downloaded: false, reason: 'content_unavailable' }),
-    },
-  });
-  const chatActions = new ChatActionService({
-    accounts,
-    bots,
-    sharedChats,
-    chatActions: new ChatActionRepository(),
-  });
-  const textFixingContext = createSessionUserMentionContext({ accounts, bots });
-  const messageSender = new BotMessageSender({
-    botMessages: privateMessaging,
-    supergroupBotMessages: supergroupMessaging,
-    botMessageViews,
-    chatActions,
-    getPrivateForwardName: () => undefined,
-  });
-  const botApi = new BotApiService({
-    bots,
-    updateConsumers: createUpdateConsumers({
-      botUpdates,
-      updateSubscriptions,
-      updateActivity: botActivity,
-      sendWebhookRequest: () => Promise.reject(new Error('Unexpected webhook request')),
-      startWebhookReply: () => {
-        throw new Error('Unexpected webhook reply');
-      },
-      attempts: new WebhookAttemptScheduler({
-        bots,
-        attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-        scheduler: createRetryScheduler(() =>
-          Promise.reject(new Error('Unexpected webhook retry'))
-        ),
-      }),
-    }).updateConsumers,
-    botMessages: privateMessaging,
-    supergroupBotMessages: supergroupMessaging,
-    messageSender,
-    messageEditing: new MessageEditingService({
-      accounts,
-      bots,
-      privateChats,
-      supergroups,
-      messages,
-      files,
-      polls,
-      transactions: { ...events, withinTransaction: (command) => command() },
-      currentUnixTimeSeconds: () => 1_700_000_000,
-    }),
-    messageDeletion: new MessageDeletionService({
-      accounts,
-      bots,
-      privateChats,
-      supergroups,
-      messages,
-      privateReplyInterfaces: privateConversations,
-      transactions: { withinTransaction: (command) => command() },
-    }),
-    messageRepeater: new BotMessageRepeater({
-      messageSender,
-      mediaGroups: messages,
-      polls,
-      getPrivateForwardName: () => undefined,
-      currentUnixTimeSeconds: () => 1_700_000_000,
-    }),
-    chatMemberships: sharedChatAdministration,
-    chatAdmission: new ChatAdmissionService({
-      accounts,
-      bots,
-      sharedChats,
-      inviteLinks: new ChatInviteLinkRepository(),
-      memberships: sharedChatAdministration,
-      transactions: { ...events, withinTransaction: (command) => command() },
-      currentUnixTimeSeconds: () => 1_700_000_000,
-    }),
-    botMessageViews,
-    messagePinning: new MessagePinningService({
-      accounts,
-      bots,
-      privateChats,
-      supergroups,
-      privateMessages: privateMessaging,
-      supergroupMessages: supergroupMessaging,
-      messages,
-      currentUnixTimeSeconds: () => 1_700_000_000,
-    }),
-    messageReactions: new MessageReactionService({
-      accounts,
-      bots,
-      sharedChats,
-      supergroupMessages: supergroupMessaging,
-      messages,
-      transactions: { ...events, withinTransaction: (command) => command() },
-      currentUnixTimeSeconds: () => 1_700_000_000,
-    }),
-    botMedia: new BotMediaResolver({ mediaFiles }),
-    mediaFiles,
-    callbackQueries,
-    inlineQueries: new InlineQueryService({
-      accounts,
-      bots,
-      sharedChats,
-      privateMessages: privateMessaging,
-      supergroupMessages: supergroupMessaging,
-      inlineQueries: new InlineQueryRepository(),
-      webMediaFiles: mediaFiles,
-      transactions: { ...events, withinTransaction: (command) => command() },
-    }),
-    botCaptions: {
-      normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', textFixingContext),
-    },
-    botCommands: new BotCommandService({
-      accounts,
-      bots,
-      privateConversations,
-      supergroupMembers: sharedChats,
-      botCommands: new BotCommandRepository(),
-    }),
-    botDescriptions: new BotDescriptionService({
-      bots,
-      botDescriptions: new BotDescriptionRepository(),
-    }),
-    defaultAdministratorRights: new BotDefaultAdministratorRightsService({
-      bots,
-      defaultAdministratorRights: new BotDefaultAdministratorRightsRepository(),
-    }),
-    menuButtons: new BotMenuButtonService({
-      accounts,
-      bots,
-      menuButtons: new BotMenuButtonRepository(),
-    }),
-    chatActions,
-    messageDrafts,
-    botDraftTexts: {
-      normalizeBotDraftText: (text) => normalizeBotDraftText(text, textFixingContext),
-    },
-    publicChats: sharedChatAdministration,
-    currentUnixTimeSeconds: () => 1_700_000_000,
-  });
-  return {
-    virtualUsers,
-    sharedChats,
-    sharedChatAdministration,
-    supergroupMessaging,
-    privateMessaging,
-    messageDrafts,
-    botApi,
-  };
-}
-
 /** A photo upload of a 4 by 3 GIF image, whose header is all the emulator reads. */
 function photoUpload(): PhotoUpload {
   const content = new Uint8Array(13);
@@ -717,17 +415,20 @@ function photoUpload(): PhotoUpload {
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string) {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username });
 }
 
 function createAccount(virtualUsers: VirtualUserService) {
-  const result = virtualUsers.createAccount({ first_name: 'Ada' });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
+  return createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+}
+
+/** Restricts a member as the supergroup's owner, failing the test if the owner may not. */
+function restrictAsOwner(
+  sharedChatAdministration: SharedChatAdministrationService,
+  input: RestrictChatMemberAsAccountInput,
+): void {
+  const restriction = sharedChatAdministration.restrictChatMemberAsAccount(input);
+  if (!restriction.changed) {
+    throw new Error(`Expected member ${input.memberId} to be restricted: ${restriction.reason}`);
   }
-  return result.account;
 }
