@@ -637,9 +637,8 @@ function createBotApiFixture() {
     messagePinning: new MessagePinningService({
       accounts,
       bots,
-      privateConversations,
-      blockedUsers,
-      sharedChats,
+      privateChats,
+      supergroups,
       privateMessages: privateMessaging,
       supergroupMessages: supergroupMessaging,
       messages,

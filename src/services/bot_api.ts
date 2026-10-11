@@ -173,14 +173,7 @@ import type {
   BotSupergroupMessageTarget,
   MessageEditingService,
 } from './message_editing.ts';
-import type {
-  PinMessageInput,
-  PinMessageResult,
-  UnpinAllMessagesInput,
-  UnpinAllMessagesResult,
-  UnpinMessageInput,
-  UnpinMessageResult,
-} from './message_pinning.ts';
+import type { MessagePinningService } from './message_pinning.ts';
 import type {
   ReactionChoiceFailureReason,
   SetBotMessageReactionInput,
@@ -1182,6 +1175,9 @@ export interface UnpinChatMessageRequest {
 /** Why a bot cannot pin or unpin a message, in the order the official server and TDLib check. */
 type BotPinChangeFailureReason =
   | 'chat_not_found'
+  /** The account of the bot's private chat does not exist, or never started the chat. */
+  | 'account_not_found'
+  | 'conversation_not_started'
   | FormerSupergroupMemberFailureReason
   /** The account of the bot's private chat blocks the bot. */
   | 'bot_blocked'
@@ -1921,12 +1917,11 @@ interface ChatAdmission {
   declineJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult;
 }
 
-interface MessagePinning {
-  pinMessage(input: PinMessageInput): PinMessageResult;
-  unpinMessage(input: UnpinMessageInput): UnpinMessageResult;
-  unpinAllMessages(input: UnpinAllMessagesInput): UnpinAllMessagesResult;
-  findNewestPinnedMessage(chat: ChatKey): ChatMessage | undefined;
-}
+/** The pinning that the pin methods carry out for the bot, and the newest pin `getChat` shows. */
+type MessagePinning = Pick<
+  MessagePinningService,
+  'pinMessageByBot' | 'unpinMessageByBot' | 'unpinAllMessagesByBot' | 'findNewestPinnedMessage'
+>;
 
 interface MessageReactions {
   setBotMessageReaction(input: SetBotMessageReactionInput): SetBotMessageReactionResult;
@@ -3586,7 +3581,7 @@ export class BotApiService {
   }
 
   /**
-   * Pins a message of a bot's chat, as `MessagePinningService.pinMessage` pins it for the bot,
+   * Pins a message of a bot's chat, as `MessagePinningService.pinMessageByBot` pins it,
    * which then receives the pin's service message, as the official server's
    * `need_skip_update_message` keeps a bot's own pins.
    */
@@ -3594,52 +3589,50 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, isSilent }: PinChatMessageRequest,
   ): BotApiPinChatMessageResult {
-    const result = this.#messagePinning.pinMessage({
-      pinner: { kind: 'bot', botId: authenticatedBot.id },
+    const result = this.#messagePinning.pinMessageByBot({
+      fromBotId: authenticatedBot.id,
       chat: getBotApiChatAddress(chatId),
       messageId,
       isSilent,
     });
     return result.pinned
       ? { pinned: true }
-      : { pinned: false, reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason) };
+      : { pinned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
   }
 
   /**
    * Unpins a message of a bot's chat, or, without one, the chat's newest pinned message, as
-   * `MessagePinningService.unpinMessage` unpins it for the bot. No service message records it.
+   * `MessagePinningService.unpinMessageByBot` unpins it. No service message records it.
    */
   unpinChatMessage(
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId }: UnpinChatMessageRequest,
   ): BotApiUnpinChatMessageResult {
-    const result = this.#messagePinning.unpinMessage({
-      pinner: { kind: 'bot', botId: authenticatedBot.id },
+    const result = this.#messagePinning.unpinMessageByBot({
+      fromBotId: authenticatedBot.id,
       chat: getBotApiChatAddress(chatId),
       messageId,
     });
-    return result.unpinned ? { unpinned: true } : {
-      unpinned: false,
-      reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason),
-    };
+    return result.unpinned
+      ? { unpinned: true }
+      : { unpinned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
   }
 
   /**
-   * Unpins every message of a bot's chat, as `MessagePinningService.unpinAllMessages` unpins them
-   * for the bot. No service message records it.
+   * Unpins every message of a bot's chat, as `MessagePinningService.unpinAllMessagesByBot` unpins
+   * them. No service message records it.
    */
   unpinAllChatMessages(
     authenticatedBot: VirtualBotProfile,
     { chatId }: UnpinAllChatMessagesRequest,
   ): BotApiUnpinAllChatMessagesResult {
-    const result = this.#messagePinning.unpinAllMessages({
-      pinner: { kind: 'bot', botId: authenticatedBot.id },
+    const result = this.#messagePinning.unpinAllMessagesByBot({
+      fromBotId: authenticatedBot.id,
       chat: getBotApiChatAddress(chatId),
     });
-    return result.unpinned ? { unpinned: true } : {
-      unpinned: false,
-      reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason),
-    };
+    return result.unpinned
+      ? { unpinned: true }
+      : { unpinned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
   }
 
   /**
@@ -4832,20 +4825,6 @@ function excludeAccountActorFailure<Reason extends string>(
 ): Reason {
   if (reason === 'actor_not_found' || reason === 'not_a_member') {
     throw new Error(`Bot ${authenticatedBot.id} could not act in chat ${chatId}: ${reason}`);
-  }
-  return reason;
-}
-
-/**
- * Leaves out the pin failures that only an account meets, which an authenticated bot never does:
- * it exists, and a supergroup refuses it as a former member, not as a non-member account.
- */
-function excludeAccountPinChangeFailure<Reason extends string>(
-  authenticatedBot: VirtualBotProfile,
-  reason: Reason | 'pinner_not_found' | 'not_a_member',
-): Reason {
-  if (reason === 'pinner_not_found' || reason === 'not_a_member') {
-    throw new Error(`Bot ${authenticatedBot.id} could not pin: ${reason}`);
   }
   return reason;
 }

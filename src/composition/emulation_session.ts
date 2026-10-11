@@ -188,17 +188,6 @@ export function createEmulationSession(
     messageDrafts,
     currentUnixTimeSeconds,
   });
-  const messagePinning = new MessagePinningService({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers,
-    sharedChats,
-    privateMessages: privateMessaging,
-    supergroupMessages: supergroupMessaging,
-    messages,
-    currentUnixTimeSeconds,
-  });
   const messageReactions = new MessageReactionService({
     accounts,
     bots,
@@ -219,6 +208,16 @@ export function createEmulationSession(
   const supergroups = new SupergroupChatPolicy({
     sharedChats,
     supergroupMessages: supergroupMessaging,
+  });
+  const messagePinning = new MessagePinningService({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateMessages: privateMessaging,
+    supergroupMessages: supergroupMessaging,
+    messages,
+    currentUnixTimeSeconds,
   });
   const messageEditing = new MessageEditingService({
     accounts,
