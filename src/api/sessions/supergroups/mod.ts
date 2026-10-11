@@ -43,7 +43,10 @@ export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
         throw new Error(`User ${userId} whose restriction expired is ${status}`);
       }
       // A shallow copy, whose plain object type the contract's open Telegram object describes.
-      return { status: 200, body: { chat_member: { ...chatMember, status } } };
+      return {
+        status: 200,
+        body: { chat_member: { ...chatMember, user: { ...chatMember.user }, status } },
+      };
     },
   );
 

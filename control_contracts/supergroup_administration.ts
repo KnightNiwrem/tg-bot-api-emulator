@@ -12,7 +12,7 @@ import {
   accountSupergroupUserPathSchema,
   supergroupUserPathSchema,
 } from './supergroups.ts';
-import { telegramObjectSchema } from './wire_fields.ts';
+import { telegramObjectSchema, telegramUserIdSchema } from './wire_fields.ts';
 
 /**
  * A supergroup administrator right, by the Bot API's name. Any right includes `can_manage_chat`,
@@ -76,14 +76,14 @@ const customTitleSchema = z.string().min(1).max(16);
 
 /** The supergroup's owner, as a member account inspects it. */
 const ownerSchema = z.strictObject({
-  user_id: z.int(),
+  user_id: telegramUserIdSchema,
   status: z.literal('owner'),
   custom_title: customTitleSchema.optional(),
 });
 
 /** An administrator of a supergroup, as a member account inspects it. */
 const administratorSchema = z.strictObject({
-  user_id: z.int(),
+  user_id: telegramUserIdSchema,
   status: z.literal('administrator'),
   /** Every supergroup right by its Bot API name, held or not. */
   rights: z.strictObject(shapeOf(SUPERGROUP_ADMINISTRATOR_RIGHTS, z.boolean())),
@@ -92,7 +92,7 @@ const administratorSchema = z.strictObject({
    * The owner or administrator that last set the administrator's rights, as Telegram records it
    * in `promoted_by`, even once that promoter's tenure has ended.
    */
-  promoted_by_user_id: z.int(),
+  promoted_by_user_id: telegramUserIdSchema,
   /**
    * Whether this account may change the administrator's rights or demote it: it owns the
    * supergroup, or it holds `can_promote_members` and promoted the administrator, directly or
@@ -380,7 +380,11 @@ export const expireSupergroupMemberRestrictionContract = defineControlOperation(
     body: {
       kind: 'json',
       schema: z.strictObject({
-        chat_member: telegramObjectSchema('ChatMember', { status: z.enum(['member', 'left']) }),
+        chat_member: telegramObjectSchema('ChatMember', {
+          /** The user, as bots see it, of which the contract checks the ID. */
+          user: z.looseObject({ id: telegramUserIdSchema }),
+          status: z.enum(['member', 'left']),
+        }),
       }),
     },
   },
