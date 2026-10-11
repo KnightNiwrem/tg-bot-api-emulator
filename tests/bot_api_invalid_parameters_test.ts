@@ -501,6 +501,38 @@ Deno.test('the sending methods name the parameter that does not fit their schema
   );
 });
 
+Deno.test('the pinning methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'pinChatMessage',
+      { chat_id: 1, message_id: 1, disable_notification: 'secret' },
+      'Bad Request: invalid pinChatMessage parameters: disable_notification',
+    ],
+    [
+      'unpinChatMessage',
+      { chat_id: 1, message_id: -1 },
+      'Bad Request: invalid unpinChatMessage parameters: message_id',
+    ],
+    [
+      'unpinAllChatMessages',
+      { chat_id: 'secret-chat' },
+      'Bad Request: invalid unpinAllChatMessages parameters: chat_id',
+    ],
+    ['pinChatMessage', { message_id: 1 }, 'Bad Request: chat_id is empty'],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected a schema refusal to name its path, and the chat read before the message',
+  );
+});
+
 Deno.test('the member administration methods name the parameter that does not fit their schema', async () => {
   await using fixture = await createFixture();
   const { api, botApiPath } = fixture;

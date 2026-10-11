@@ -342,13 +342,13 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
       pinningBot,
       'unpinChatMessage',
       { chat_id: chatId, message_id: -1 },
-      [400, 'Bad Request: invalid unpinChatMessage parameters'],
+      [400, 'Bad Request: invalid unpinChatMessage parameters: message_id'],
     ],
     [
       pinningBot,
       'pinChatMessage',
       { chat_id: chatId, message_id: serviceMessageId, business_connection_id: 'connection' },
-      [400, 'Bad Request: invalid pinChatMessage parameters'],
+      [400, 'Bad Request: invalid pinChatMessage parameters: business_connection_id'],
     ],
   ];
   for (const [bot, method, parameters, expected] of cases) {

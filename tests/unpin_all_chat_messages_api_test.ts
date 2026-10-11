@@ -371,12 +371,12 @@ Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothi
         [resetBot, {}, [400, 'Bad Request: chat_id is empty']],
         [resetBot, { chat_id: 'team' }, [
           400,
-          'Bad Request: invalid unpinAllChatMessages parameters',
+          'Bad Request: invalid unpinAllChatMessages parameters: chat_id',
         ]],
         [
           resetBot,
           { chat_id: team.chatId, message_id: 1 },
-          [400, 'Bad Request: invalid unpinAllChatMessages parameters'],
+          [400, 'Bad Request: invalid unpinAllChatMessages parameters: message_id'],
         ],
         [outsider, { chat_id: team.chatId }, [400, 'Bad Request: chat not found']],
         [resetBot, { chat_id: grace.id }, [400, 'Bad Request: chat not found']],
