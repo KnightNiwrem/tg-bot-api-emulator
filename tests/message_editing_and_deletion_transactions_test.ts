@@ -11,7 +11,7 @@ import {
 const FAILED_VIEW_MESSAGE = 'The view failed';
 
 Deno.test('an account edit whose projection fails after one bot commits nothing', async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const { session } = fixture;
   const lastAlphaUpdateId = await fixture.confirmUpdates(fixture.alpha);
   const stateBefore = fixture.readState();
@@ -35,7 +35,7 @@ Deno.test('an account edit whose projection fails after one bot commits nothing'
 });
 
 Deno.test("a bot's edit whose answer fails to be viewed commits nothing", async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const stateBefore = fixture.readState();
   // The edit is staged before the bot's view of the edited message, which answers the call, fails.
   const restoreViews = fixture.failMessageViewsFor(fixture.alpha.id);
@@ -56,7 +56,7 @@ Deno.test("a bot's edit whose answer fails to be viewed commits nothing", async 
 });
 
 Deno.test('a deletion of several messages whose record fails deletes none of them', async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const stateBefore = fixture.readState();
   const restoreRecording = fixture.failCallRecording();
 
@@ -75,7 +75,7 @@ Deno.test('a deletion of several messages whose record fails deletes none of the
 });
 
 Deno.test('a private deletion whose record fails keeps the reply keyboard shown', async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const { session, alpha, adaId } = fixture;
   const keyboardMessage = await fixture.callMethodExpectingResult(alpha, 'sendMessage', {
     chat_id: String(adaId),
@@ -106,7 +106,7 @@ Deno.test('a private deletion whose record fails keeps the reply keyboard shown'
 });
 
 Deno.test('an edit prepared before its message was deleted is not committed', async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const { session } = fixture;
   const reply = fixture.holdWebhookReply(fixture.alpha, {
     method: 'editMessageText',
@@ -137,7 +137,7 @@ Deno.test('an edit prepared before its message was deleted is not committed', as
 });
 
 Deno.test('a deletion prepared before the bot lost its right is not committed', async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const reply = fixture.holdWebhookReply(fixture.alpha, {
     method: 'deleteMessage',
     chat_id: String(fixture.chatId),
@@ -161,7 +161,7 @@ Deno.test('a deletion prepared before the bot lost its right is not committed', 
 });
 
 Deno.test('an edit or deletion prepared before its session ended changes nothing', async () => {
-  const fixture = createEditingFixture();
+  using fixture = createEditingFixture();
   const edit = fixture.holdWebhookReply(fixture.alpha, {
     method: 'editMessageText',
     chat_id: String(fixture.chatId),
