@@ -78,19 +78,21 @@ import {
   WebFileDownloader,
 } from '../services/web_file_download.ts';
 import { WebResourceService } from '../services/web_resource.ts';
-import { WebhookDeliveryService } from '../services/webhook_delivery.ts';
+import { WebhookDeliveryService, type WebhookTransport } from '../services/webhook_delivery.ts';
 import type { SessionTiming } from '../timing/session_timing.ts';
 import { SessionChangeJournal } from '../transactions/change_staging.ts';
 import { SessionTransactions } from '../transactions/session_transactions.ts';
 
 /**
  * Composes one isolated session. Its services read calendar time and measure deadlines only
- * through the session's own `timing`.
+ * through the session's own `timing`, and reach its bots' webhooks only through
+ * `webhookTransport`.
  */
 export function createEmulationSession(
   id: string,
   { uploadProfile }: EmulationSessionOptions,
   { wallClock, scheduler }: SessionTiming,
+  webhookTransport: WebhookTransport,
 ): EmulationSession {
   const sessionEnd = new AbortController();
   const lifetime = new SessionLifetime(sessionEnd.signal);
@@ -375,7 +377,7 @@ export function createEmulationSession(
     pendingUpdates: botUpdates,
     deliveryErrors: webhooks,
     updateActivity: botActivity,
-    sendWebhookRequest: (request) => fetch(request),
+    sendWebhookRequest: webhookTransport,
     startWebhookReply: (botId, reply) => {
       const bot = bots.getById(botId);
       if (bot === undefined) {

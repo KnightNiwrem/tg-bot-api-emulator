@@ -36,6 +36,12 @@ const MAX_READABLE_RETRY_AFTER_SECONDS = 2 ** 31 - 1;
 /** Telegram's description of a webhook that answered nothing in time. */
 const READ_TIMEOUT_ERROR_MESSAGE = 'Read timeout expired';
 
+/**
+ * Sends a webhook request and answers with the webhook's response, as `fetch` does over the
+ * network. A sender fails by rejecting, as `fetch` does when it cannot connect.
+ */
+export type WebhookTransport = (request: Request) => Promise<Response>;
+
 interface PendingUpdateQueue {
   readPendingUpdates(botId: number): readonly BotApiUpdate[];
   confirmPendingUpdate(botId: number, updateId: number): void;
@@ -77,8 +83,7 @@ interface WebhookDeliveryServiceDependencies {
   readonly pendingUpdates: PendingUpdateQueue;
   readonly deliveryErrors: WebhookDeliveryErrorStore;
   readonly updateActivity: UpdateActivityRecorder;
-  /** Sends a webhook request over the network, as `fetch` does. */
-  readonly sendWebhookRequest: (request: Request) => Promise<Response>;
+  readonly sendWebhookRequest: WebhookTransport;
   /**
    * Starts running the Bot API method, if any, that the bot's webhook names in its complete
    * successful response to an update, as work of the session apart from the delivery: nothing
@@ -158,7 +163,7 @@ export class WebhookDeliveryService {
   readonly #pendingUpdates: PendingUpdateQueue;
   readonly #deliveryErrors: WebhookDeliveryErrorStore;
   readonly #updateActivity: UpdateActivityRecorder;
-  readonly #sendWebhookRequest: (request: Request) => Promise<Response>;
+  readonly #sendWebhookRequest: WebhookTransport;
   readonly #startWebhookReply: (botId: number, reply: Response) => void;
   readonly #attempts: WebhookAttemptTracker;
   readonly #currentUnixTimeSeconds: () => number;

@@ -6,7 +6,6 @@
 import { assertEquals } from '@std/assert';
 import { z } from 'zod';
 
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
 import {
   botApiError,
   type BotApiMethodAnswer,
@@ -25,7 +24,7 @@ import {
   startSteps,
 } from '../src/api/sessions/bot_api/method_steps.ts';
 import { integerParameter } from '../src/api/sessions/bot_api/request_parameters.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
+import { buildSessionServices } from './support/session_services.ts';
 
 Deno.test('steps run in order, each reading what the step before it produced', () => {
   const ranSteps: string[] = [];
@@ -192,11 +191,7 @@ Deno.test('a handled method of steps may wait, and keeps its answer once its ses
 
 /** The context of a call by a bot of a new session. */
 function createMethodContext(): BotApiMethodContext {
-  const session = createEmulationSession(
-    'method-steps',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
+  const session = buildSessionServices({ id: 'method-steps' });
   const bot = session.virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   if (!bot.created) {
     throw new Error('Expected the bot to be created');

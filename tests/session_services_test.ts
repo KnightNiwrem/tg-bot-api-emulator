@@ -1,14 +1,21 @@
 import { assertEquals, assertRejects } from '@std/assert';
+import type { BotApiWebhookInfo } from '../src/types/bot_api.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
 import { createTestSession } from './support/emulation_api.ts';
 import {
   createPrivateConversationFixture,
   createSupergroupFixture,
 } from './support/http_fixtures.ts';
-import { ControlledScheduler } from './support/scheduler.ts';
+import { ControlledScheduler, createRetryScheduler } from './support/scheduler.ts';
 import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
 import { buildSessionServices } from './support/session_services.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
+import {
+  waitForAbort,
+  waitUntil,
+  WEBHOOK_URL,
+  webhookRequest,
+} from './support/webhook_delivery.ts';
 
 Deno.test('a session built for a test dates messages by a fixed clock unless given its own', async () => {
   using fixedClockSession = buildSessionServices();
@@ -80,6 +87,55 @@ Deno.test('disposing of an HTTP fixture disposes of the emulator it created', as
     );
   }
 });
+
+Deno.test('a session built for a test reaches no webhook over the network unless given a transport', async () => {
+  const receivedUrls: string[] = [];
+  // A failed delivery is not sent again, so the unreachable webhook is tried once.
+  using unreachableSession = buildSessionServices({
+    scheduler: createRetryScheduler((_delaySeconds, signal) => waitForAbort(signal)),
+  });
+  using ownTransportSession = buildSessionServices({
+    webhookTransport: (request) => {
+      receivedUrls.push(request.url);
+      return Promise.resolve(new Response(null));
+    },
+  });
+  const readUnreachableInfo = sendUpdateToWebhook(unreachableSession);
+  const readOwnTransportInfo = sendUpdateToWebhook(ownTransportSession);
+  await waitUntil(() =>
+    readUnreachableInfo().last_error_message !== undefined &&
+    readOwnTransportInfo().pending_update_count === 0
+  );
+
+  assertEquals(
+    [
+      readUnreachableInfo().last_error_message,
+      readUnreachableInfo().pending_update_count,
+      receivedUrls,
+    ],
+    ["Can't connect to the webhook", 1, [WEBHOOK_URL]],
+    "Expected the default transport to fail as an unreachable webhook, and the test's to be used",
+  );
+});
+
+/**
+ * Sets a bot's webhook in `session` and has Ada write to the bot, and answers with a reader of the
+ * bot's `getWebhookInfo`.
+ */
+function sendUpdateToWebhook(session: EmulationSession): () => BotApiWebhookInfo {
+  const adaId = createVirtualAccount(session.virtualUsers, { first_name: 'Ada' }).profile.id;
+  const bot = createVirtualBot(session.virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  }).profile;
+  session.botApi.setWebhook(bot, webhookRequest());
+  session.messageSending.sendAccountPrivateChatMessage({
+    fromAccountId: adaId,
+    chat: { type: 'private', peerId: bot.id },
+    content: { kind: 'text', text: 'Hello' },
+  });
+  return () => session.botApi.getWebhookInfo(bot);
+}
 
 /** Ada writes to a bot in `session`, and the date of that message as the bot receives it. */
 async function readFirstMessageDate(session: EmulationSession): Promise<number | undefined> {

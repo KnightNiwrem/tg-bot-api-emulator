@@ -14,10 +14,9 @@ import { defineControlOperation } from '../control_contracts/operation_contract.
 import { registerControlOperation } from '../src/api/control_operation_route.ts';
 import { answerWithActionReceipt } from '../src/api/sessions/action_receipt.ts';
 import type { SessionRouteContextTypes } from '../src/api/sessions/session_route_context_types.ts';
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
 import { readOpenApiDocument } from './support/openapi_conformance/openapi_document.ts';
+import { buildSessionServices } from './support/session_services.ts';
 
 const RECEIPT_HEADER_NAMES = ['action-receipt-session-id', 'action-receipt-activity-position'];
 
@@ -110,11 +109,7 @@ Deno.test('A route outside a session cannot capture a receipt before its action'
 });
 
 Deno.test('An entry an action records before it answers follows its receipt', async () => {
-  const session = createEmulationSession(
-    'receipts',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
+  const session = buildSessionServices({ id: 'receipts' });
   const routes = new Hono<SessionRouteContextTypes>();
   routes.use('*', (context, next) => {
     context.set('emulationSession', session);
@@ -156,11 +151,7 @@ Deno.test('An entry an action records before it answers follows its receipt', as
 });
 
 Deno.test("A route writes its own headers over a handler's, whatever their letter case", async () => {
-  const session = createEmulationSession(
-    'receipts',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
+  const session = buildSessionServices({ id: 'receipts' });
   const routes = new Hono<SessionRouteContextTypes>();
   routes.use('*', (context, next) => {
     context.set('emulationSession', session);

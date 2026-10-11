@@ -1,19 +1,15 @@
 /**
- * Helpers for tests of webhook delivery that answer webhook requests in place of the network.
+ * Helpers for tests of webhook delivery that answer webhook requests in place of the network,
+ * whether through a root-backed session whose webhook transport the test supplies, or through a
+ * delivery a component test composes around its own fakes.
  */
-import { BotUpdateRepository } from '../../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../../src/repositories/bot_update_subscription.ts';
-import { BotWebhookRepository } from '../../src/repositories/bot_webhook.ts';
-import {
-  BotUpdateConsumerService,
-  type SetWebhookRequest,
-} from '../../src/services/bot_update_consumer.ts';
-import { BotUpdatePollingService } from '../../src/services/bot_update_polling.ts';
-import { SessionLifetime } from '../../src/services/session_lifetime.ts';
-import type { WebhookAttemptScheduler } from '../../src/services/webhook_attempt_scheduler.ts';
-import { WebhookDeliveryService } from '../../src/services/webhook_delivery.ts';
+import type { SetWebhookRequest } from '../../src/services/bot_update_consumer.ts';
+import type { WebhookTransport } from '../../src/services/webhook_delivery.ts';
+import type { Scheduler } from '../../src/timing/session_timing.ts';
 import type { BotApiPrivateMessage } from '../../src/types/bot_api.ts';
-import { createRealTimeScheduler } from './scheduler.ts';
+import type { VirtualBotProfile } from '../../src/types/virtual_bot.ts';
+import { buildSessionServices, type SessionServices } from './session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './virtual_users.ts';
 
 export const WEBHOOK_URL = 'https://bot.example/webhook';
 /** The time the tests' clocks tell, and the date of their messages. */
@@ -109,57 +105,103 @@ export class ReceivedRequestCounter {
   }
 }
 
-/** What a test supplies to deliver a session's updates to webhooks in place of the network. */
-export interface UpdateConsumersOptions {
-  readonly botUpdates: BotUpdateRepository;
-  /** Records what polling and webhook delivery observe, as the session's bot activity does. */
-  readonly updateActivity:
-    & ConstructorParameters<typeof BotUpdatePollingService>[0]['updateActivity']
-    & ConstructorParameters<typeof WebhookDeliveryService>[0]['updateActivity'];
-  readonly attempts: WebhookAttemptScheduler;
-  readonly sendWebhookRequest: (request: Request) => Promise<Response>;
-  readonly startWebhookReply: (botId: number, reply: Response) => void;
-  /** A fresh subscription repository when omitted. */
-  readonly updateSubscriptions?: BotUpdateSubscriptionRepository;
+/** What a webhook received in one request: the update it was sent, and how it was sent. */
+export interface ReceivedWebhookRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly headers: Headers;
+  readonly redirect: RequestRedirect;
+  readonly signal: AbortSignal;
+  readonly updateId: number;
+}
+
+/** Answers the webhook request numbered `requestIndex`, counting from 0, as a webhook would. */
+export type WebhookResponder = (
+  request: Request,
+  requestIndex: number,
+) => Response | Promise<Response>;
+
+/** What a test supplies to a session whose webhook requests it answers. */
+export interface WebhookSessionOptions {
+  /** The session's ID; `webhook-session` when omitted. */
+  readonly id?: string;
+  /** The session's scheduler; real time when omitted. */
+  readonly scheduler?: Scheduler;
 }
 
 /**
- * Creates the delivery owner of a session's bots, with polling and webhook delivery, and the end
- * of its session, which stops every webhook generation as `session.end()` does.
+ * A root-backed session with one bot, `webhook_bot`, and three accounts, whose webhook requests a
+ * test answers in place of the network. Disposing of it ends the session.
  */
-export function createUpdateConsumers(
-  {
-    botUpdates,
-    updateActivity,
-    attempts,
-    sendWebhookRequest,
-    startWebhookReply,
-    updateSubscriptions = new BotUpdateSubscriptionRepository(),
-  }: UpdateConsumersOptions,
-): { readonly updateConsumers: BotUpdateConsumerService; readonly endSession: () => void } {
-  const sessionEnd = new AbortController();
-  const sessionLifetime = new SessionLifetime(sessionEnd.signal);
-  const webhooks = new BotWebhookRepository();
-  const updateConsumers = new BotUpdateConsumerService({
-    webhooks,
-    pendingUpdates: botUpdates,
-    updateSubscriptions,
-    polling: new BotUpdatePollingService({
-      botUpdates,
-      updateActivity,
-      scheduler: createRealTimeScheduler(),
-      sessionLifetime,
-    }),
-    webhookDelivery: new WebhookDeliveryService({
-      pendingUpdates: botUpdates,
-      deliveryErrors: webhooks,
-      updateActivity,
-      sendWebhookRequest,
-      startWebhookReply,
-      attempts,
-      currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
-    }),
-    sessionLifetime,
-  });
-  return { updateConsumers, endSession: () => sessionEnd.abort() };
+export interface WebhookSession extends Disposable {
+  readonly session: SessionServices;
+  readonly bot: VirtualBotProfile;
+  readonly adaId: number;
+  readonly graceId: number;
+  readonly linusId: number;
+  /** Every webhook request the session has sent, in the order it sent them. */
+  readonly receivedRequests: readonly ReceivedWebhookRequest[];
+  /** Resolves once the session has sent `count` webhook requests, failing after a second. */
+  waitForRequestCount(count: number): Promise<void>;
+  /**
+   * Sends a text message from the account to its private chat with the bot, failing the test if
+   * it is not sent, which gives the bot one update.
+   */
+  sendAccountMessage(accountId: number, text?: string): void;
+  /** Sets the bot's webhook as `webhookRequest()` does, with the changes `request` makes. */
+  setWebhook(
+    request?: Partial<SetWebhookRequest>,
+  ): ReturnType<SessionServices['botApi']['setWebhook']>;
+  getWebhookInfo(): ReturnType<SessionServices['botApi']['getWebhookInfo']>;
+}
+
+/**
+ * Builds a session through the production composition root whose webhook requests `respond`
+ * answers, recording each request before it is answered.
+ */
+export function createWebhookSession(
+  respond: WebhookResponder,
+  { id = 'webhook-session', scheduler }: WebhookSessionOptions = {},
+): WebhookSession {
+  const receivedRequests: ReceivedWebhookRequest[] = [];
+  const requestCounter = new ReceivedRequestCounter();
+  const webhookTransport: WebhookTransport = async (request) => {
+    const { method, url, headers, redirect, signal } = request;
+    const { update_id: updateId } = await request.json();
+    receivedRequests.push({ method, url, headers, redirect, signal, updateId });
+    requestCounter.countRequest();
+    return await respond(request, receivedRequests.length - 1);
+  };
+  const session = buildSessionServices({ id, scheduler, webhookTransport });
+  const bot = createVirtualBot(session.virtualUsers, {
+    first_name: 'Webhook Bot',
+    username: 'webhook_bot',
+  }).profile;
+  const [adaId, graceId, linusId] = ['Ada', 'Grace', 'Linus'].map((first_name) =>
+    createVirtualAccount(session.virtualUsers, { first_name }).profile.id
+  );
+
+  return {
+    session,
+    bot,
+    adaId,
+    graceId,
+    linusId,
+    receivedRequests,
+    waitForRequestCount: (count) => requestCounter.waitForCount(count),
+    sendAccountMessage: (accountId, text = 'Hello') => {
+      const sending = session.messageSending.sendAccountPrivateChatMessage({
+        fromAccountId: accountId,
+        chat: { type: 'private', peerId: bot.id },
+        content: { kind: 'text', text },
+      });
+      if (!sending.sent) {
+        throw new Error(`Expected account ${accountId}'s message to be sent: ${sending.reason}`);
+      }
+    },
+    setWebhook: (request = {}) =>
+      session.botApi.setWebhook(bot, { ...webhookRequest(), ...request }),
+    getWebhookInfo: () => session.botApi.getWebhookInfo(bot),
+    [Symbol.dispose]: () => session[Symbol.dispose](),
+  };
 }
