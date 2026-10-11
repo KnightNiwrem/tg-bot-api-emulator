@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { MessageRepository } from '../src/repositories/message.ts';
+import { MessageRepository } from '../src/repositories/message/message.ts';
 import type { ChatKey, PrivateChatKey, SupergroupChatKey } from '../src/types/virtual_chat.ts';
 import { type ChatMessage, getContentText } from '../src/types/virtual_message.ts';
 

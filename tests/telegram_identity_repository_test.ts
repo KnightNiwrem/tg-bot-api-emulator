@@ -4,7 +4,7 @@ import {
   type IdentityReservationInput,
   type TelegramIdentity,
   TelegramIdentityRepository,
-} from '../src/repositories/telegram_identity.ts';
+} from '../src/repositories/telegram_identity/telegram_identity.ts';
 import { SessionChangeJournal } from '../src/transactions/staging/change_staging.ts';
 import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
 

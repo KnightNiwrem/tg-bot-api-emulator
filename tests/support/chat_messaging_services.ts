@@ -8,16 +8,16 @@
  * transactions it composed itself. Tests that need the whole session build it through
  * `buildSessionServices()` instead.
  */
-import { AccountRepository } from '../../src/repositories/account.ts';
-import { BlockedUserRepository } from '../../src/repositories/blocked_user.ts';
-import { BotRepository } from '../../src/repositories/bot.ts';
-import { FileRepository } from '../../src/repositories/file.ts';
-import { MessageRepository } from '../../src/repositories/message.ts';
-import { MessageBoxRepository } from '../../src/repositories/message_box.ts';
-import { PollRepository } from '../../src/repositories/poll.ts';
-import { PrivateConversationRepository } from '../../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../../src/repositories/telegram_identity.ts';
+import { AccountRepository } from '../../src/repositories/account/account.ts';
+import { BlockedUserRepository } from '../../src/repositories/blocked_user/blocked_user.ts';
+import { BotRepository } from '../../src/repositories/bot/bot.ts';
+import { FileRepository } from '../../src/repositories/file/file.ts';
+import { MessageRepository } from '../../src/repositories/message/message.ts';
+import { MessageBoxRepository } from '../../src/repositories/message_box/message_box.ts';
+import { PollRepository } from '../../src/repositories/poll/poll.ts';
+import { PrivateConversationRepository } from '../../src/repositories/private_conversation/private_conversation.ts';
+import { SharedChatRepository } from '../../src/repositories/shared_chat/shared_chat.ts';
+import { TelegramIdentityRepository } from '../../src/repositories/telegram_identity/telegram_identity.ts';
 import { createAccountChatMessageReader } from '../../src/services/domain/account_chat_message.ts';
 import { MessageCommitter } from '../../src/services/domain/message_commit.ts';
 import { MessageDeletionService } from '../../src/services/domain/message_deletion.ts';

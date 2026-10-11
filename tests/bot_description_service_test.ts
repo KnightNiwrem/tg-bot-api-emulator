@@ -1,7 +1,7 @@
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { BotDescriptionRepository } from '../src/repositories/bot_description.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
+import { AccountRepository } from '../src/repositories/account/account.ts';
+import { BotRepository } from '../src/repositories/bot/bot.ts';
+import { BotDescriptionRepository } from '../src/repositories/bot_description/bot_description.ts';
+import { TelegramIdentityRepository } from '../src/repositories/telegram_identity/telegram_identity.ts';
 import {
   BotDescriptionService,
   type BotDescriptionTarget,

@@ -1,4 +1,4 @@
-import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
+import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot/last_message_sending_bot.ts';
 
 Deno.test('LastMessageSendingBotRepository keeps the latest sending bot of each supergroup', () => {
   const lastMessageSendingBots = new LastMessageSendingBotRepository();

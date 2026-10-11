@@ -1,4 +1,4 @@
-import { SessionRepository } from '../repositories/session.ts';
+import { SessionRepository } from '../repositories/session/session.ts';
 import { SessionLifecycleService } from '../services/application/session_lifecycle.ts';
 import type { WebhookTransport } from '../services/webhook_delivery/webhook_delivery.ts';
 import type { SessionTiming } from '../timing/session/session_timing.ts';

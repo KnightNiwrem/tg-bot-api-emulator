@@ -1,4 +1,4 @@
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
+import { MessageBoxRepository } from '../src/repositories/message_box/message_box.ts';
 
 Deno.test('MessageBoxRepository numbers each owner message box independently and resolves IDs back', () => {
   const messageBoxes = new MessageBoxRepository();

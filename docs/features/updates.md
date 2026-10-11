@@ -70,7 +70,7 @@ differences.
 
 [Delivery owner](../../src/services/update_consumers/bot_update_consumer.ts),
 [polling service](../../src/services/update_polling/bot_update_polling.ts),
-[queue](../../src/repositories/bot_update.ts),
+[queue](../../src/repositories/bot_update/bot_update.ts),
 [delivery/subscription filtering](../../src/services/update_delivery/bot_update_delivery.ts),
 [polling tests](../../tests/bot_update_polling_service_test.ts) and
 [queue tests](../../tests/bot_update_repository_test.ts).

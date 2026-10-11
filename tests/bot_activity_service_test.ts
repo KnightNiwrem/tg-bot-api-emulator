@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
+import { BotActivityLogRepository } from '../src/repositories/bot_activity_log/bot_activity_log.ts';
 import {
   BotActivityService,
   type ReadBotActivityResult,

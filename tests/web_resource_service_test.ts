@@ -1,4 +1,4 @@
-import { WebResourceRepository } from '../src/repositories/web_resource.ts';
+import { WebResourceRepository } from '../src/repositories/web_resource/web_resource.ts';
 import { WebFileDownloader } from '../src/services/domain/web_file_download.ts';
 import { WebResourceService } from '../src/services/domain/web_resource.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';

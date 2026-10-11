@@ -293,7 +293,8 @@ does neither, as for a bot's stop.
 [quiz parameters](../../src/api/sessions/bot_api/quiz_parameters.ts),
 [domain model](../../src/types/poll.ts),
 [normalization](../../src/services/domain/poll_normalization.ts),
-[voting and stopping](../../src/services/domain/poll.ts), [storage](../../src/repositories/poll.ts),
+[voting and stopping](../../src/services/domain/poll.ts),
+[storage](../../src/repositories/poll/poll.ts),
 [account poll requests](../../src/api/sessions/accounts/request_fields.ts) and
 [closure routes](../../src/api/sessions/accounts/poll_closures.ts),
 [update delivery](../../src/services/update_delivery/bot_update_delivery.ts),

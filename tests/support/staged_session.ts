@@ -3,11 +3,11 @@
  * explicit seams for what the full composition hides: a view that fails for a chosen observer, the
  * journal that consumers register with, and the session's end.
  */
-import { BotActivityLogRepository } from '../../src/repositories/bot_activity_log.ts';
-import { BotUpdateRepository } from '../../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../../src/repositories/bot_update_subscription.ts';
-import { ChatInviteLinkRepository } from '../../src/repositories/chat_invite_link.ts';
-import { LastMessageSendingBotRepository } from '../../src/repositories/last_message_sending_bot.ts';
+import { BotActivityLogRepository } from '../../src/repositories/bot_activity_log/bot_activity_log.ts';
+import { BotUpdateRepository } from '../../src/repositories/bot_update/bot_update.ts';
+import { BotUpdateSubscriptionRepository } from '../../src/repositories/bot_update_subscription/bot_update_subscription.ts';
+import { ChatInviteLinkRepository } from '../../src/repositories/chat_invite_link/chat_invite_link.ts';
+import { LastMessageSendingBotRepository } from '../../src/repositories/last_message_sending_bot/last_message_sending_bot.ts';
 import { BotMessageViewService } from '../../src/services/bot_message_view/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../../src/services/update_delivery/bot_update_delivery.ts';
 import { ChatAdmissionService } from '../../src/services/domain/chat_admission.ts';

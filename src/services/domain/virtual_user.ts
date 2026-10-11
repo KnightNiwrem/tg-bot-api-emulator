@@ -2,7 +2,7 @@ import type {
   IdentityReservationFailureReason,
   IdentityReservationInput,
   IdentityReservationResult,
-} from '../../repositories/telegram_identity.ts';
+} from '../../repositories/telegram_identity/telegram_identity.ts';
 import { cleanInputString } from '../../text_entities/input_string.ts';
 import type { VirtualAccount, VirtualAccountProfile } from '../../types/virtual_account.ts';
 import type { VirtualBot, VirtualBotProfile } from '../../types/virtual_bot.ts';

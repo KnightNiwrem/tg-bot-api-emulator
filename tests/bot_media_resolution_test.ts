@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { FileRepository } from '../src/repositories/file.ts';
+import { FileRepository } from '../src/repositories/file/file.ts';
 import type {
   BotApiInputFile,
   BotApiRichMessageFileTypes,

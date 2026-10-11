@@ -459,7 +459,7 @@ no audio files. Voice notes keep no waveform and are never transcribed.
 [video MIME types](../../src/media/video_file.ts),
 [voice note MIME types](../../src/media/voice_file.ts),
 [audio MIME types and extensions](../../src/media/audio_file.ts),
-[file repository](../../src/repositories/file.ts),
+[file repository](../../src/repositories/file/file.ts),
 [URL downloads](../../src/services/domain/web_file_download.ts),
 [web resources](../../src/services/domain/web_resource.ts),
 [media tests](../../tests/media_file_service_test.ts),
