@@ -1,39 +1,107 @@
 import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import type { FormerSupergroupMemberFailureReason } from '../../../../types/chat_membership.ts';
+import type { AuthenticatedBotFailure } from '../authenticated_bot_failures.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
 
-type BotApi = EmulationSession['botApi'];
+type SharedChatAdministration = EmulationSession['sharedChatAdministration'];
+
+/** Why a bot cannot reach a supergroup's members: it is not one, or the chat does not exist. */
+type ChatMemberAccessFailureReason = 'chat_not_found' | FormerSupergroupMemberFailureReason;
+
+/** Why `getChatMember` found no member. */
+export interface MemberReadFailure {
+  readonly found: false;
+  readonly reason: ChatMemberAccessFailureReason | 'member_not_found';
+}
+
+/** Why `getChatAdministrators` found no administrators. */
+export interface AdministratorsReadFailure {
+  readonly found: false;
+  readonly reason: ChatMemberAccessFailureReason | 'private_chat_has_no_administrators';
+}
+
+/** Why `getChatMemberCount` counted no members. */
+export interface MemberCountFailure {
+  readonly found: false;
+  readonly reason: ChatMemberAccessFailureReason;
+}
 
 /** Why `getChatMember`, `getChatAdministrators` or `getChatMemberCount` found nothing. */
-type MemberLookupFailure = Extract<
-  ReturnType<
-    BotApi['getChatMember'] | BotApi['getChatAdministrators'] | BotApi['getChatMemberCount']
-  >,
-  { readonly found: false }
->;
+type MemberLookupFailure = MemberReadFailure | AdministratorsReadFailure | MemberCountFailure;
 
 /** Why `leaveChat` left no chat. */
-type ChatLeaveFailure = Extract<ReturnType<BotApi['leaveChat']>, { readonly left: false }>;
+export interface ChatLeaveFailure {
+  readonly left: false;
+  readonly reason:
+    | 'chat_not_found'
+    | FormerSupergroupMemberFailureReason
+    | 'private_chat_not_leavable';
+}
+
+/** Why a bot cannot ban a user or lift its ban, as the Bot API reports it. */
+type ChatMemberModerationFailureReason =
+  | ChatMemberAccessFailureReason
+  | 'member_not_found'
+  | 'member_is_owner'
+  | 'not_enough_rights'
+  | 'member_is_administrator';
+
+/** Why `banChatMember` banned no one. */
+export interface MemberBanFailure {
+  readonly banned: false;
+  readonly reason:
+    | ChatMemberModerationFailureReason
+    | 'cannot_restrict_self'
+    | 'private_chat_members_not_bannable';
+}
+
+/** Why `unbanChatMember` lifted no ban. */
+export interface MemberUnbanFailure {
+  readonly unbanned: false;
+  readonly reason: ChatMemberModerationFailureReason | 'method_unavailable_in_private_chats';
+}
+
+/** Why `restrictChatMember` restricted no one. */
+export interface MemberRestrictionFailure {
+  readonly restricted: false;
+  readonly reason:
+    | ChatMemberModerationFailureReason
+    | 'cannot_restrict_self'
+    | 'cannot_unrestrict_self'
+    | 'not_enough_rights_to_promote'
+    | 'method_unavailable_outside_supergroups';
+}
 
 /** Why `banChatMember`, `unbanChatMember` or `restrictChatMember` changed no member. */
-type MemberModerationFailure =
-  | Extract<ReturnType<BotApi['banChatMember']>, { readonly banned: false }>
-  | Extract<ReturnType<BotApi['unbanChatMember']>, { readonly unbanned: false }>
-  | Extract<ReturnType<BotApi['restrictChatMember']>, { readonly restricted: false }>;
+type MemberModerationFailure = MemberBanFailure | MemberUnbanFailure | MemberRestrictionFailure;
 
 /** Why `promoteChatMember` changed no member. */
-type MemberPromotionFailure = Extract<
-  ReturnType<BotApi['promoteChatMember']>,
-  { readonly promoted: false }
->;
+export type MemberPromotionFailure =
+  | AuthenticatedBotFailure<
+    Extract<
+      ReturnType<SharedChatAdministration['promoteChatMemberAsBot']>,
+      { readonly promoted: false }
+    >
+  >
+  // A private chat, as `findPrivateChatRefusal` refuses it.
+  | {
+    readonly promoted: false;
+    readonly reason: 'method_unavailable_in_private_chats' | 'chat_not_found';
+  };
 
 /** Why `setChatAdministratorCustomTitle` changed no title. */
-type CustomTitleChangeFailure = Extract<
-  ReturnType<BotApi['setChatAdministratorCustomTitle']>,
-  { readonly set: false }
->;
+export type CustomTitleChangeFailure =
+  | AuthenticatedBotFailure<
+    Extract<ReturnType<SharedChatAdministration['setCustomTitleAsBot']>, { readonly set: false }>
+  >
+  // A private chat, as `findPrivateChatRefusal` refuses it.
+  | {
+    readonly set: false;
+    readonly reason: 'method_unavailable_outside_groups' | 'chat_not_found';
+  };
 
 /**
  * The operation of the chat member family that failed: reading members, leaving the chat,

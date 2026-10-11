@@ -1,7 +1,12 @@
 import type { SupergroupBotAccessFailureReason } from '../../../types/chat_membership.ts';
+import { getBotApiChatAddress, type PrivateChatAddress } from '../../../types/virtual_chat.ts';
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './errors/error_template.ts';
-import type { BotApiMethodAnswer, BotApiMethodContext } from './method_call.ts';
+import type {
+  BotApiFamilyContext,
+  BotApiMethodAnswer,
+  BotApiMethodContext,
+} from './method_call.ts';
 import { answerWith, type BotApiStepResult, proceedWith } from './method_steps.ts';
 import { CHAT_USERNAME_PREFIX, type ChatIdentifier } from './request_parameters.ts';
 
@@ -66,4 +71,35 @@ export function botChatAccessFailureAnswer(
   reason: BotChatAccessFailureReason,
 ): BotApiMethodAnswer {
   return presentFixedBotApiError(BOT_CHAT_ACCESS_ERRORS[reason]);
+}
+
+/** What telling the private chats a bot knows uses: the session's private messaging. */
+type PrivateChatKnowledgeContext = BotApiFamilyContext<'privateMessaging'>;
+
+/** Whether the bot knows a private chat, which it does once the chat's account has written to it. */
+export function isPrivateChatKnown(
+  context: PrivateChatKnowledgeContext,
+  chat: PrivateChatAddress,
+): boolean {
+  return context.session.privateMessaging.isPrivateConversationStarted({
+    accountId: chat.peerId,
+    botId: context.bot.id,
+  });
+}
+
+/**
+ * Why a method that only supergroups support refuses the chat a bot's `chat_id` addresses: a
+ * private chat the bot knows refuses it for the method's own reason, and one it does not know is
+ * not found, as for any method; `undefined` for a supergroup, which the method reaches itself.
+ */
+export function findPrivateChatRefusal<PrivateChatRefusalReason extends string>(
+  context: PrivateChatKnowledgeContext,
+  chatId: number,
+  privateChatRefusalReason: PrivateChatRefusalReason,
+): PrivateChatRefusalReason | 'chat_not_found' | undefined {
+  const chat = getBotApiChatAddress(chatId);
+  if (chat.type === 'supergroup') {
+    return undefined;
+  }
+  return isPrivateChatKnown(context, chat) ? privateChatRefusalReason : 'chat_not_found';
 }

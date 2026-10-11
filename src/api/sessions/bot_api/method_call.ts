@@ -30,6 +30,11 @@ export interface BotApiMethodContext {
     | 'callbackQueries'
     | 'inlineQueries'
     | 'botMediaResolver'
+    | 'privateMessaging'
+    | 'sharedChatAdministration'
+    | 'chatAdmission'
+    | 'botMessageViews'
+    | 'messagePinning'
     | 'lifetime'
   >;
   /** The bot whose token authenticated the call. */

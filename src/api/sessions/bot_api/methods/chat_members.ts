@@ -1,15 +1,27 @@
 import { z } from 'zod';
 
+import type { BotApiChatMember } from '../../../../types/bot_api.ts';
 import {
+  type ChatMemberStatus,
+  getSupergroupNonMemberFailureReason,
   grantSupergroupAdministratorRights,
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
 } from '../../../../types/chat_membership.ts';
-import { requireSpecifiedChatId } from '../chat_access.ts';
+import { getBotApiChatAddress } from '../../../../types/virtual_chat.ts';
+import {
+  excludeMissingBotFailure,
+  missingAuthenticatedBotError,
+} from '../authenticated_bot_failures.ts';
+import {
+  findPrivateChatRefusal,
+  isPrivateChatKnown,
+  requireSpecifiedChatId,
+} from '../chat_access.ts';
 import { readChatMemberTargetStep, requireValidUserId } from '../chat_member_requests.ts';
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
 import { presentChatMemberFailure } from '../errors/chat_member_failure_presenter.ts';
-import { type BotApiMethod, botApiResult } from '../method_call.ts';
+import { type BotApiFamilyContext, type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
   answerWithBadRequest,
   type BotApiStepResult,
@@ -104,6 +116,14 @@ const unbanChatMemberParametersSchema = z.strictObject({
 });
 
 /**
+ * What the chat member methods use: the service that administers shared chats, the view of a
+ * chat's members, and the private chats the bot knows.
+ */
+type ChatMemberContext = BotApiFamilyContext<
+  'sharedChatAdministration' | 'botMessageViews' | 'privateMessaging'
+>;
+
+/**
  * The methods that read a chat's members, moderate or promote them, or make the bot leave. Each
  * method that changes the chat is executed as a command in its call's transaction; the reads
  * change nothing, and answer from their handlers.
@@ -120,11 +140,29 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
           ? proceedWith({ ...targetReading.value, untilUnixSeconds: ban.until_date })
           : targetReading;
       }),
-    execute: (context, request) => {
-      const result = context.session.botApi.banChatMember(context.bot, request);
-      return result.banned
-        ? botApiResult(true)
-        : presentChatMemberFailure('member_moderation', result);
+    // A private chat has no members to ban.
+    execute: (context: ChatMemberContext, { chatId, userId, untilUnixSeconds }) => {
+      const privateChatRefusal = findPrivateChatRefusal(
+        context,
+        chatId,
+        'private_chat_members_not_bannable',
+      );
+      if (privateChatRefusal !== undefined) {
+        return presentChatMemberFailure('member_moderation', {
+          banned: false,
+          reason: privateChatRefusal,
+        });
+      }
+      const result = context.session.sharedChatAdministration.banChatMember({
+        actorBotId: context.bot.id,
+        chatId,
+        memberId: userId,
+        requestedBanEndUnixSeconds: untilUnixSeconds,
+      });
+      return result.banned ? botApiResult(true) : presentChatMemberFailure('member_moderation', {
+        banned: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
   handledMethodOfSteps({
@@ -132,14 +170,34 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: getChatAdministratorsParametersSchema,
     steps: ({ parameters }) => startSteps(parameters).andThen(requireSpecifiedChatId),
-    execute: (context, { chat_id: chatId, return_bots: includesOtherBots }) => {
-      const result = context.session.botApi.getChatAdministrators(context.bot, {
+    // As on Telegram, administrators that are other bots are left out unless requested; a private
+    // chat has none.
+    execute: (context: ChatMemberContext, { chat_id: chatId, return_bots: includesOtherBots }) => {
+      const privateChatRefusal = findPrivateChatRefusal(
+        context,
         chatId,
-        includesOtherBots,
+        'private_chat_has_no_administrators',
+      );
+      if (privateChatRefusal !== undefined) {
+        return presentChatMemberFailure('member_lookup', {
+          found: false,
+          reason: privateChatRefusal,
+        });
+      }
+      const result = context.session.sharedChatAdministration.getChatAdministrators({
+        observerBotId: context.bot.id,
+        chatId,
       });
-      return result.found
-        ? botApiResult(result.administrators)
-        : presentChatMemberFailure('member_lookup', result);
+      if (!result.found) {
+        return presentChatMemberFailure('member_lookup', {
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
+      }
+      const administrators = result.administrators
+        .map(({ userId, status }) => viewChatMember(context, { chatId, userId, status }))
+        .filter(({ user }) => includesOtherBots || !user.is_bot || user.id === context.bot.id);
+      return botApiResult(administrators);
     },
   }),
   handledMethodOfSteps({
@@ -147,11 +205,35 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: getChatMemberParametersSchema,
     steps: ({ parameters }) => startSteps(parameters).andThen(readChatMemberTargetStep),
-    execute: (context, target) => {
-      const result = context.session.botApi.getChatMember(context.bot, target);
+    // In a private chat, either participant is a member; in a supergroup, the bot must be a
+    // member, and a user of the session that never joined has `left`.
+    execute: (context: ChatMemberContext, { chatId, userId }) => {
+      const chat = getBotApiChatAddress(chatId);
+      if (chat.type === 'private') {
+        if (!isPrivateChatKnown(context, chat)) {
+          return presentChatMemberFailure('member_lookup', {
+            found: false,
+            reason: 'chat_not_found',
+          });
+        }
+        return userId === context.bot.id || userId === chat.peerId
+          ? botApiResult(viewChatMember(context, { chatId, userId, status: { status: 'member' } }))
+          : presentChatMemberFailure('member_lookup', {
+            found: false,
+            reason: 'member_not_found',
+          });
+      }
+      const result = context.session.sharedChatAdministration.getChatMemberStatus({
+        observerBotId: context.bot.id,
+        chatId,
+        userId,
+      });
       return result.found
-        ? botApiResult(result.member)
-        : presentChatMemberFailure('member_lookup', result);
+        ? botApiResult(viewChatMember(context, { chatId, userId, status: result.status }))
+        : presentChatMemberFailure('member_lookup', {
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
   handledMethodOfSteps({
@@ -159,11 +241,24 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: getChatMemberCountParametersSchema,
     steps: ({ parameters }) => startSteps(parameters).andThen(requireSpecifiedChatId),
-    execute: (context, { chat_id: chatId }) => {
-      const result = context.session.botApi.getChatMemberCount(context.bot, { chatId });
+    // A private chat has both its participants; a supergroup counts its members.
+    execute: (context: ChatMemberContext, { chat_id: chatId }) => {
+      const chat = getBotApiChatAddress(chatId);
+      if (chat.type === 'private') {
+        return isPrivateChatKnown(context, chat)
+          ? botApiResult(PRIVATE_CHAT_MEMBER_COUNT)
+          : presentChatMemberFailure('member_lookup', { found: false, reason: 'chat_not_found' });
+      }
+      const result = context.session.sharedChatAdministration.getChatMemberCount({
+        observerBotId: context.bot.id,
+        chatId,
+      });
       return result.found
         ? botApiResult(result.memberCount)
-        : presentChatMemberFailure('member_lookup', result);
+        : presentChatMemberFailure('member_lookup', {
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
   commandMethodOfSteps({
@@ -171,10 +266,7 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: leaveChatParametersSchema,
     steps: ({ parameters }) => startSteps(parameters).andThen(requireSpecifiedChatId),
-    execute: (context, { chat_id: chatId }) => {
-      const result = context.session.botApi.leaveChat(context.bot, { chatId });
-      return result.left ? botApiResult(true) : presentChatMemberFailure('chat_leave', result);
-    },
+    execute: (context: ChatMemberContext, { chat_id: chatId }) => leaveChat(context, chatId),
   }),
   // As the official server's `process_promote_chat_member_query` reads them, each right is a
   // separate parameter, a missing one is false, and passing none demotes an administrator.
@@ -196,11 +288,30 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
             ? proceedWith({ ...target, rights: readPromotedSupergroupRights(promotion) })
             : anonymityReading;
         }),
-    execute: (context, request) => {
-      const result = context.session.botApi.promoteChatMember(context.bot, request);
-      return result.promoted
-        ? botApiResult(true)
-        : presentChatMemberFailure('member_promotion', result);
+    // As the official server's `process_promote_chat_member_query` refuses, a private chat has no
+    // members to promote.
+    execute: (context: ChatMemberContext, { chatId, userId, rights }) => {
+      const privateChatRefusal = findPrivateChatRefusal(
+        context,
+        chatId,
+        'method_unavailable_in_private_chats',
+      );
+      if (privateChatRefusal !== undefined) {
+        return presentChatMemberFailure('member_promotion', {
+          promoted: false,
+          reason: privateChatRefusal,
+        });
+      }
+      const result = context.session.sharedChatAdministration.promoteChatMemberAsBot({
+        actorBotId: context.bot.id,
+        chatId,
+        memberId: userId,
+        rights,
+      });
+      return result.promoted ? botApiResult(true) : presentChatMemberFailure('member_promotion', {
+        promoted: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
   // Telegram reads the user, then the permissions, before it looks at the chat.
@@ -230,11 +341,33 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
             })
             : targetReading;
         }),
-    execute: (context, request) => {
-      const result = context.session.botApi.restrictChatMember(context.bot, request);
+    // As the official server's `process_restrict_chat_member_query` refuses, a private chat has no
+    // members to restrict.
+    execute: (context: ChatMemberContext, { chatId, userId, permissions, untilUnixSeconds }) => {
+      const privateChatRefusal = findPrivateChatRefusal(
+        context,
+        chatId,
+        'method_unavailable_outside_supergroups',
+      );
+      if (privateChatRefusal !== undefined) {
+        return presentChatMemberFailure('member_moderation', {
+          restricted: false,
+          reason: privateChatRefusal,
+        });
+      }
+      const result = context.session.sharedChatAdministration.restrictChatMember({
+        actorBotId: context.bot.id,
+        chatId,
+        memberId: userId,
+        permissions,
+        requestedRestrictionEndUnixSeconds: untilUnixSeconds,
+      });
       return result.restricted
         ? botApiResult(true)
-        : presentChatMemberFailure('member_moderation', result);
+        : presentChatMemberFailure('member_moderation', {
+          restricted: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
   // As the official server reads it, a missing `custom_title` is empty, which removes the title.
@@ -249,11 +382,30 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
           ? proceedWith({ ...targetReading.value, customTitle: titleChange.custom_title ?? '' })
           : targetReading;
       }),
-    execute: (context, request) => {
-      const result = context.session.botApi.setChatAdministratorCustomTitle(context.bot, request);
-      return result.set
-        ? botApiResult(true)
-        : presentChatMemberFailure('custom_title_change', result);
+    // As the official server's `process_set_chat_administrator_custom_title_query` refuses, a
+    // private chat has none.
+    execute: (context: ChatMemberContext, { chatId, userId, customTitle }) => {
+      const privateChatRefusal = findPrivateChatRefusal(
+        context,
+        chatId,
+        'method_unavailable_outside_groups',
+      );
+      if (privateChatRefusal !== undefined) {
+        return presentChatMemberFailure('custom_title_change', {
+          set: false,
+          reason: privateChatRefusal,
+        });
+      }
+      const result = context.session.sharedChatAdministration.setCustomTitleAsBot({
+        actorBotId: context.bot.id,
+        chatId,
+        memberId: userId,
+        customTitle,
+      });
+      return result.set ? botApiResult(true) : presentChatMemberFailure('custom_title_change', {
+        set: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
   commandMethodOfSteps({
@@ -267,14 +419,96 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
           ? proceedWith({ ...targetReading.value, onlyIfBanned: unban.only_if_banned })
           : targetReading;
       }),
-    execute: (context, request) => {
-      const result = context.session.botApi.unbanChatMember(context.bot, request);
-      return result.unbanned
-        ? botApiResult(true)
-        : presentChatMemberFailure('member_moderation', result);
+    // Unless only a ban is to be lifted, this removes a member, as on Telegram; a private chat has
+    // no members to unban.
+    execute: (context: ChatMemberContext, { chatId, userId, onlyIfBanned }) => {
+      const privateChatRefusal = findPrivateChatRefusal(
+        context,
+        chatId,
+        'method_unavailable_in_private_chats',
+      );
+      if (privateChatRefusal !== undefined) {
+        return presentChatMemberFailure('member_moderation', {
+          unbanned: false,
+          reason: privateChatRefusal,
+        });
+      }
+      const result = context.session.sharedChatAdministration.unbanChatMember({
+        actorBotId: context.bot.id,
+        chatId,
+        memberId: userId,
+        onlyIfBanned,
+      });
+      return result.unbanned ? botApiResult(true) : presentChatMemberFailure('member_moderation', {
+        unbanned: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
 ];
+
+/** The members of a private chat: the bot and the account it talks to. */
+const PRIVATE_CHAT_MEMBER_COUNT = 2;
+
+/**
+ * Makes the bot leave a supergroup, which the bot's own `my_chat_member` update and a service
+ * message record. As on Telegram, a private chat cannot be left, and a supergroup the bot already
+ * left or was removed from turns it away.
+ */
+function leaveChat(context: ChatMemberContext, chatId: number) {
+  const privateChatRefusal = findPrivateChatRefusal(context, chatId, 'private_chat_not_leavable');
+  if (privateChatRefusal !== undefined) {
+    return presentChatMemberFailure('chat_leave', { left: false, reason: privateChatRefusal });
+  }
+  const result = context.session.sharedChatAdministration.leaveChat({
+    memberId: context.bot.id,
+    chatId,
+  });
+  if (result.left) {
+    return botApiResult(true);
+  }
+  switch (result.reason) {
+    case 'chat_not_found':
+      return presentChatMemberFailure('chat_leave', { left: false, reason: 'chat_not_found' });
+    case 'not_a_member':
+      return presentChatMemberFailure('chat_leave', {
+        left: false,
+        reason: getSupergroupNonMemberFailureReason(result.formerStatus),
+      });
+    case 'member_not_found':
+      throw missingAuthenticatedBotError(context.bot);
+    case 'owner_cannot_leave':
+      throw new Error(`Bot ${context.bot.id} owns chat ${chatId}`);
+    default: {
+      const unhandledReason: never = result.reason;
+      throw new Error(`Unhandled leaveChat failure: ${unhandledReason}`);
+    }
+  }
+}
+
+/**
+ * Shows a user of the session, which the caller found, in its standing in a chat, as the
+ * authenticated bot observes it.
+ */
+function viewChatMember(
+  context: ChatMemberContext,
+  { chatId, userId, status }: {
+    readonly chatId: number;
+    readonly userId: number;
+    readonly status: ChatMemberStatus;
+  },
+): BotApiChatMember {
+  const member = context.session.botMessageViews.viewChatMember({
+    chatId,
+    userId,
+    status,
+    observerBotId: context.bot.id,
+  });
+  if (member === undefined) {
+    throw new Error(`Chat member ${userId} does not exist`);
+  }
+  return member;
+}
 
 /**
  * The step that refuses a promotion to an anonymous administrator, which the emulator does not
