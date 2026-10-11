@@ -452,6 +452,55 @@ Deno.test('link_preview_options that is not JSON gets the official server descri
   );
 });
 
+Deno.test('the sending methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'sendMessage',
+      { chat_id: 1, text: 'Hi', disable_notification: 'secret' },
+      'Bad Request: invalid sendMessage parameters: disable_notification',
+    ],
+    [
+      'sendPhoto',
+      { chat_id: 1, photo: 'file-id', show_caption_above_media: 'secret' },
+      'Bad Request: invalid sendPhoto parameters: show_caption_above_media',
+    ],
+    [
+      'sendMediaGroup',
+      { chat_id: 1, media: '[]', protect_content: 'secret' },
+      'Bad Request: invalid sendMediaGroup parameters: protect_content',
+    ],
+    [
+      'sendChatAction',
+      { chat_id: 'secret-chat', action: 'typing' },
+      'Bad Request: invalid sendChatAction parameters: chat_id',
+    ],
+    [
+      'sendMessageDraft',
+      { chat_id: 1, draft_id: 1, can_stop: 'secret' },
+      'Bad Request: invalid sendMessageDraft parameters: can_stop',
+    ],
+    // The step-level checks keep Telegram's descriptions.
+    [
+      'sendContact',
+      { chat_id: 1, first_name: 'Ada' },
+      'Bad Request: parameter "phone_number" is required',
+    ],
+    ['sendLocation', { chat_id: 1, longitude: 2 }, 'Bad Request: latitude is empty'],
+    ['sendVoice', { chat_id: 1 }, 'Bad Request: there is no voice in the request'],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    "Expected a schema refusal to name its path, and a step's refusal to keep Telegram's words",
+  );
+});
+
 Deno.test('the member administration methods name the parameter that does not fit their schema', async () => {
   await using fixture = await createFixture();
   const { api, botApiPath } = fixture;

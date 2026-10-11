@@ -431,7 +431,7 @@ Deno.test('sendPoll refuses polls as Telegram does and stores none of them', asy
     },
     {
       parameters: { options: ['Pizza'], shuffle_options: true },
-      description: 'Bad Request: invalid sendPoll parameters',
+      description: 'Bad Request: invalid sendPoll parameters: shuffle_options',
     },
     {
       parameters: { chat_id: undefined, options: ['Pizza'] },

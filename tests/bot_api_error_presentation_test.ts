@@ -495,6 +495,9 @@ Deno.test('every catalogue entry names where its description comes from', () => 
       BOT_API_ERRORS.albumMemberUploadRefused.provenance({ refusal: { reason: 'image_invalid' } }),
       BOT_API_ERRORS.albumMemberUploadRefused.provenance({ refusal: uploadTooBig('local') }),
     ],
+    inputFileMissing: (['photo', 'document', 'video', 'voice', 'audio'] as const).map((fileKind) =>
+      BOT_API_ERRORS.inputFileMissing.provenance({ fileKind })
+    ),
   };
   const problems = Object.entries(BOT_API_ERRORS).flatMap(([name, entry]) => {
     const provenances = hasFixedProvenance(entry)

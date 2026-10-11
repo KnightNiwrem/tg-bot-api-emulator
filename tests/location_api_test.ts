@@ -156,14 +156,14 @@ Deno.test('sendLocation refuses missing, off-Earth and live locations without se
     [{ ...valid, latitude: 90.0001 }, 'Bad Request: invalid location specified'],
     [{ ...valid, longitude: -180.5 }, 'Bad Request: invalid location specified'],
     [{ ...valid, latitude: '1e999' }, 'Bad Request: invalid location specified'],
-    [{ ...valid, latitude: 'NaN' }, invalidParameters],
-    [{ ...valid, longitude: 'east' }, invalidParameters],
-    [{ ...valid, horizontal_accuracy: -1 }, invalidParameters],
-    [{ ...valid, horizontal_accuracy: 1500.5 }, invalidParameters],
-    [{ ...valid, live_period: 60 }, invalidParameters],
-    [{ ...valid, live_period: 0 }, invalidParameters],
-    [{ ...valid, heading: 90 }, invalidParameters],
-    [{ ...valid, proximity_alert_radius: 100 }, invalidParameters],
+    [{ ...valid, latitude: 'NaN' }, `${invalidParameters}: latitude`],
+    [{ ...valid, longitude: 'east' }, `${invalidParameters}: longitude`],
+    [{ ...valid, horizontal_accuracy: -1 }, `${invalidParameters}: horizontal_accuracy`],
+    [{ ...valid, horizontal_accuracy: 1500.5 }, `${invalidParameters}: horizontal_accuracy`],
+    [{ ...valid, live_period: 60 }, `${invalidParameters}: live_period`],
+    [{ ...valid, live_period: 0 }, `${invalidParameters}: live_period`],
+    [{ ...valid, heading: 90 }, `${invalidParameters}: heading`],
+    [{ ...valid, proximity_alert_radius: 100 }, `${invalidParameters}: proximity_alert_radius`],
   ] as const;
   for (const [parameters, description] of refusals) {
     const { status, body } = await callBot('sendLocation', parameters);

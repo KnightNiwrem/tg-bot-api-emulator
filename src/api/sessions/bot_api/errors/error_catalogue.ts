@@ -73,6 +73,18 @@ const DOCUMENTED_LIMIT_INFERENCE =
 /** The errors of `check_full_local_location`, which TDLib makes before it uploads a file. */
 const LOCAL_FILE_CHECKS = tdlibSource('td/telegram/files/FileLoaderUtils.cpp#L273-L340');
 
+/** The files that send methods send from a parameter of their own name. */
+type SentFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio';
+
+/** Where each send method of the official server refuses a call without its file. */
+const INPUT_FILE_MISSING_LINES = {
+  photo: 'L14073-L14077',
+  document: 'L14057-L14061',
+  video: 'L14120-L14124',
+  voice: 'L14159-L14163',
+  audio: 'L14033-L14037',
+} as const satisfies Record<SentFileKind, string>;
+
 /** The official Bot API server's `check_message`, which words a missing message by its role. */
 const CHECK_MESSAGE = botApiServerSource('telegram-bot-api/Client.cpp#L9084-L9104');
 
@@ -148,12 +160,16 @@ export const BOT_API_ERRORS = {
     'Bad Request: invalid message identifier specified',
     botApiServerSource('telegram-bot-api/Client.cpp#L13532-L13534'),
   ),
-  /** A forward or copy that names no chat to repeat from, read by `get_required_string_arg`. */
-  fromChatIdRequired: fixedBotApiError(
-    400,
-    'Bad Request: parameter "from_chat_id" is required',
-    botApiServerSource('telegram-bot-api/Client.cpp#L13464-L13470'),
-  ),
+  /**
+   * A parameter that the official server reads with `get_required_string_arg`, such as a forward's
+   * `from_chat_id` or a contact's `phone_number`, given as no text or not at all.
+   */
+  requiredParameterMissing: {
+    status: () => 400,
+    description: ({ parameterName }: { readonly parameterName: string }) =>
+      `Bad Request: parameter "${parameterName}" is required`,
+    provenance: () => botApiServerSource('telegram-bot-api/Client.cpp#L13464-L13470'),
+  },
   /** A forward or copy of several messages that names none, after `get_message_ids` read them. */
   repeatedMessageIdentifiersEmpty: fixedBotApiError(
     400,
@@ -187,6 +203,26 @@ export const BOT_API_ERRORS = {
     403,
     'Forbidden: bot was blocked by the user',
     botApiServerSource('telegram-bot-api/Client.cpp#L127-L129'),
+  ),
+
+  /** A file a send method sends that its call names neither by parameter nor by upload. */
+  inputFileMissing: {
+    status: () => 400,
+    description: ({ fileKind }: { readonly fileKind: SentFileKind }) =>
+      `Bad Request: there is no ${fileKind} in the request`,
+    provenance: ({ fileKind }: { readonly fileKind: SentFileKind }) =>
+      botApiServerSource(`telegram-bot-api/Client.cpp#${INPUT_FILE_MISSING_LINES[fileKind]}`),
+  },
+  /** A static location's coordinates, which the official server's `get_location` requires. */
+  latitudeEmpty: fixedBotApiError(
+    400,
+    'Bad Request: latitude is empty',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12489-L12492'),
+  ),
+  longitudeEmpty: fixedBotApiError(
+    400,
+    'Bad Request: longitude is empty',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12493-L12496'),
   ),
 
   // Text, captions and buttons of message content.
@@ -308,6 +344,20 @@ export const BOT_API_ERRORS = {
   },
 
   // Polls a message sends.
+  pollTypeUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: unsupported poll type specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L14301-L14305'),
+  ),
+  /** The Bot API documents that a poll takes `open_period` or `close_date`, not both. */
+  pollClosingTimesConflict: fixedBotApiError(
+    400,
+    "Bad Request: open_period and close_date can't be used together",
+    emulatorInference(
+      'The Bot API documents the rule, but the official server ignores close_date instead of ' +
+        "refusing it, so the description is the emulator's",
+    ),
+  ),
   pollQuestionTooLong: fixedBotApiError(
     400,
     `Bad Request: poll question length must not exceed ${MAX_POLL_QUESTION_LENGTH}`,

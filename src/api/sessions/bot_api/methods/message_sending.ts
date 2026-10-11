@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
 import {
   createGeoLocation,
+  type GeoLocation,
   isPointOnEarth,
   MAX_HORIZONTAL_ACCURACY_METERS,
 } from '../../../../types/geo_location.ts';
@@ -11,12 +12,11 @@ import {
   MAX_VIDEO_SIDE_LENGTH,
 } from '../../../../types/stored_file.ts';
 import type { ChatAction } from '../../../../types/virtual_chat.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
-import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
-import { presentFixedBotApiError } from '../errors/error_template.ts';
-import { parameterSchemaFailureAnswer } from '../errors/invalid_parameters.ts';
-import { presentMessageSendingFailure } from '../errors/message_sending_failure_presenter.ts';
+import { requireSpecifiedChatId } from '../chat_access.ts';
 import { contactNameSchema, contactVcardSchema } from '../contact_parameter.ts';
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentBotApiError, presentFixedBotApiError } from '../errors/error_template.ts';
+import { presentMessageSendingFailure } from '../errors/message_sending_failure_presenter.ts';
 import {
   captionParametersShape,
   linkPreviewParametersShape,
@@ -26,12 +26,18 @@ import {
   readSpecifiedFormattedText,
   type SpecifiedFormattedText,
 } from '../formatted_text_reading.ts';
-import { readInputFileParameter, readThumbnailParameter } from '../input_file_parameter.ts';
+import {
+  type BotApiInputFile,
+  readInputFileParameter,
+  readThumbnailParameter,
+  type RequestedInputFile,
+} from '../input_file_parameter.ts';
 import {
   getRequestedMediaFile,
   INPUT_MEDIA_ERROR_PREFIX,
   readInputMediaGroupParameter,
   toMediaReplacementRequest,
+  type UnreadMediaReplacement,
 } from '../input_media_parameter.ts';
 import {
   describeInputPollOptionTextError,
@@ -39,21 +45,26 @@ import {
 } from '../input_poll_option_parameter.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
-  answeredPreparation,
-  answeredPreparationUnlessEnded,
-  type BotApiCallPreparation,
-  botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
   SESSION_ENDED,
 } from '../method_call.ts';
+import {
+  answerWith,
+  answerWithBadRequest,
+  type BotApiStepCall,
+  type BotApiStepResult,
+  type BotApiSteps,
+  commandMethodOfSteps,
+  proceedWith,
+  startSteps,
+  waitingCommandMethodOfSteps,
+} from '../method_steps.ts';
 import { readCorrectOptionIdsParameter } from '../quiz_parameters.ts';
 import {
   booleanParameter,
-  type BotApiRequestParameters,
-  type BotApiUploadedFiles,
   clampedIntegerParameter,
   integerParameter,
   numberParameter,
@@ -64,35 +75,16 @@ import { sendMethodAnswer } from '../send_answer.ts';
 import {
   readSendOptions,
   replyMarkupParametersShape,
+  type SendOptionsParameters,
   sendOptionsParametersShape,
+  type SendRequestOptions,
 } from '../send_options.ts';
 import {
   readSpecifiedRichMessage,
   resolveSpecifiedRichMessage,
+  type SpecifiedRichMessage,
 } from '../specified_rich_message.ts';
-import { resolveRequestedInputFile } from '../web_file_parameter.ts';
-
-/**
- * The methods that send a new message, or show a chat action or a draft before one, each executed
- * as a command in its call's transaction. Preparation reads the parameters, including the send
- * options, whose reply to another chat is read from the session, and downloads the files named by
- * URL; execution reaches the chat and makes every other check before it sends.
- */
-export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
-  { name: 'sendAudio', recordsActivity: true, prepare: prepareSendAudio },
-  { name: 'sendChatAction', recordsActivity: true, prepare: prepareSendChatAction },
-  { name: 'sendContact', recordsActivity: true, prepare: prepareSendContact },
-  { name: 'sendDocument', recordsActivity: true, prepare: prepareSendDocument },
-  { name: 'sendLocation', recordsActivity: true, prepare: prepareSendLocation },
-  { name: 'sendMediaGroup', recordsActivity: true, prepare: prepareSendMediaGroup },
-  { name: 'sendMessage', recordsActivity: true, prepare: prepareSendMessage },
-  { name: 'sendMessageDraft', recordsActivity: true, prepare: prepareSendMessageDraft },
-  { name: 'sendPhoto', recordsActivity: true, prepare: prepareSendPhoto },
-  { name: 'sendPoll', recordsActivity: true, prepare: prepareSendPoll },
-  { name: 'sendRichMessage', recordsActivity: true, prepare: prepareSendRichMessage },
-  { name: 'sendVideo', recordsActivity: true, prepare: prepareSendVideo },
-  { name: 'sendVoice', recordsActivity: true, prepare: prepareSendVoice },
-];
+import { resolveRequestedInputFile, toWaitResult } from '../web_file_parameter.ts';
 
 /** Chat actions by the lowercase names Telegram reads, including its older aliases. */
 const CHAT_ACTIONS_BY_NAME: ReadonlyMap<string, ChatAction> = new Map([
@@ -278,7 +270,7 @@ const sendChatActionParametersSchema = z.strictObject({
   action: z.string().default(''),
 });
 
-type SendResult = ReturnType<EmulationSession['botApi']['sendMessage']>;
+type SendPollParameters = z.output<typeof sendPollParametersSchema>;
 
 type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGroup']>;
 
@@ -293,601 +285,461 @@ type MediaReplacementRequest = Parameters<
 /** A poll's type as `sendPoll` takes it. */
 type PollTypeRequest = Parameters<EmulationSession['botApi']['sendPoll']>[1]['type'];
 
-function prepareSendMessage(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid sendMessage parameters';
-  const parsedParameters = sendMessageParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { text, parse_mode: parseMode, entities } = parsedParameters.data;
+/** The files that send methods send from a parameter of their own name. */
+type SentFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio';
+
+/** The parameters of a method that sends a file of `FileKind` with a caption. */
+type MediaSendParameters<FileKind extends SentFileKind> =
+  & SendOptionsParameters
+  & { readonly [Kind in FileKind]?: string }
+  & {
+    readonly caption: string;
+    readonly parse_mode?: string;
+    readonly caption_entities?: readonly unknown[];
+  };
+
+/** A message with a file as its steps read it, before the file is downloaded if named by URL. */
+interface MediaSendReading<Parameters> {
+  readonly parameters: Parameters;
+  readonly requestedFile: RequestedInputFile;
+  readonly caption: SpecifiedFormattedText;
+  readonly options: SendRequestOptions;
+}
+
+/**
+ * The methods that send a new message, or show a chat action or a draft before one, each executed
+ * as a command in its call's transaction. Their steps read the parameters, including the send
+ * options, whose reply to another chat is read from the session; a method that sends a file named
+ * by URL then waits for its download. Execution reaches the chat and makes every other check
+ * before it sends.
+ */
+export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
+  waitingCommandMethodOfSteps({
+    name: 'sendAudio',
+    recordsActivity: true,
+    parameters: sendAudioParametersSchema,
+    steps: (call) => readMediaSend(call, 'audio').andThen((send) => readThumbnail(call, send)),
+    waitFor: (context, send) => waitForMediaFile(context, send, 'audio'),
+    execute: (context, { parameters, file, thumbnail, caption, options }) =>
+      sendMethodAnswer(context.session.botApi.sendAudio(context.bot, {
+        ...options,
+        audio: file,
+        attributes: {
+          durationSeconds: parameters.duration,
+          performer: parameters.performer,
+          title: parameters.title,
+        },
+        ...(thumbnail === undefined ? {} : { thumbnail }),
+        caption,
+      })),
+  }),
+  // Telegram reads the action before it looks at the chat.
+  commandMethodOfSteps({
+    name: 'sendChatAction',
+    recordsActivity: true,
+    parameters: sendChatActionParametersSchema,
+    steps: ({ parameters }) =>
+      startSteps(parameters).andThen(readChatAction).andThen(requireSpecifiedChatId),
+    execute: (context, { chat_id: chatId, chatAction }) => {
+      const result = context.session.botApi.sendChatAction(
+        context.bot,
+        { chatId, action: chatAction },
+      );
+      return result.sent ? botApiResult(true) : presentMessageSendingFailure('chat_action', result);
+    },
+  }),
+  // As the official server's `process_send_contact_query` reads it, before the chat: a phone
+  // number and a first name, each required, and an optional last name and vCard. As that method
+  // does, a bot names no Telegram user for the contact.
+  commandMethodOfSteps({
+    name: 'sendContact',
+    recordsActivity: true,
+    parameters: sendContactParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => requireTextParameter(parameters, 'phone_number'))
+        .andThen((parameters) => requireTextParameter(parameters, 'first_name'))
+        .andThen((parameters) => readSendOptions(call, { parameters })),
+    execute: (context, { parameters, options }) =>
+      sendMethodAnswer(context.session.botApi.sendContact(context.bot, {
+        ...options,
+        contact: {
+          phoneNumber: parameters.phone_number,
+          firstName: parameters.first_name,
+          lastName: parameters.last_name,
+          vcard: parameters.vcard,
+        },
+      })),
+  }),
+  waitingCommandMethodOfSteps({
+    name: 'sendDocument',
+    recordsActivity: true,
+    parameters: sendDocumentParametersSchema,
+    steps: (call) => readMediaSend(call, 'document').andThen((send) => readThumbnail(call, send)),
+    waitFor: (context, send) => waitForMediaFile(context, send, 'document'),
+    execute: (context, { file, thumbnail, caption, options }) =>
+      sendMethodAnswer(context.session.botApi.sendDocument(context.bot, {
+        ...options,
+        document: file,
+        ...(thumbnail === undefined ? {} : { thumbnail }),
+        caption,
+      })),
+  }),
+  // As the official server's `process_send_location_query` reads it: the latitude and longitude,
+  // each required, and an optional accuracy, which TDLib's `get_input_geo_point` sends as whole
+  // meters, rounded up. As TDLib's `Location::init` decides, coordinates that name no point on
+  // Earth are refused. The emulator checks them once it has read `chat_id` and the reply markup,
+  // but before it looks the chat up, while TDLib checks them once the chat is found.
+  commandMethodOfSteps({
+    name: 'sendLocation',
+    recordsActivity: true,
+    parameters: sendLocationParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen(requireCoordinates)
+        .andThen((parameters) => readSendOptions(call, { parameters }))
+        .andThen(readSentLocation),
+    execute: (context, { location, options }) =>
+      sendMethodAnswer(
+        context.session.botApi.sendLocation(context.bot, { ...options, location }),
+      ),
+  }),
+  // As the official server reads them, the media and their captions are read before the chat; the
+  // files the media name by URL are then downloaded in order, as for `sendPhoto`.
+  waitingCommandMethodOfSteps({
+    name: 'sendMediaGroup',
+    recordsActivity: true,
+    parameters: sendMediaGroupParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readAlbumMedia(call, parameters))
+        .andThen((album) => readSendOptions(call, album)),
+    waitFor: waitForAlbumFiles,
+    execute: (context, { media, options }) => {
+      const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = options;
+      return sendMediaGroupAnswer(context.session.botApi.sendMediaGroup(context.bot, {
+        chatId,
+        replyTo,
+        isContentProtected,
+        isSilent,
+        messageEffectId,
+        media,
+      }));
+    },
+  }),
   // Telegram reads the text and its formatting before it looks at the chat.
-  const formattedTextReading = readSpecifiedFormattedText(
-    context,
-    { text, parseMode, entities },
-    invalidParametersDescription,
-  );
-  if (!formattedTextReading.read) {
-    return answeredPreparation(formattedTextReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(
-    context,
-    parsedParameters.data,
-    invalidParametersDescription,
-  );
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  return sendingCommand(() =>
-    context.session.botApi.sendMessage(context.bot, {
-      ...optionsReading.options,
-      ...formattedTextReading.formattedText,
-    })
-  );
-}
-
-/**
- * Sends a contact as the official Bot API server's `process_send_contact_query` reads it, before
- * the chat: a phone number and a first name, each required, and an optional last name and vCard.
- * As that method does, a bot names no Telegram user for the contact.
- */
-function prepareSendContact(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid sendContact parameters';
-  const parsedParameters = sendContactParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  if (data.phone_number.length === 0) {
-    return answeredPreparation(
-      botApiError(400, 'Bad Request: parameter "phone_number" is required'),
-    );
-  }
-  if (data.first_name.length === 0) {
-    return answeredPreparation(botApiError(400, 'Bad Request: parameter "first_name" is required'));
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  return sendingCommand(() =>
-    context.session.botApi.sendContact(context.bot, {
-      ...optionsReading.options,
-      contact: {
-        phoneNumber: data.phone_number,
-        firstName: data.first_name,
-        lastName: data.last_name,
-        vcard: data.vcard,
-      },
-    })
-  );
-}
-
-/**
- * Sends a static location as the official Bot API server's `process_send_location_query` reads
- * it: the latitude and longitude, each required, and an optional accuracy, which TDLib's
- * `get_input_geo_point` sends as whole meters, rounded up. As TDLib's `Location::init` decides,
- * coordinates that name no point on Earth are refused. The emulator checks them once it has read
- * `chat_id` and the reply markup, but before it looks the chat up, while TDLib checks them once
- * the chat is found.
- */
-function prepareSendLocation(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid sendLocation parameters';
-  const parsedParameters = sendLocationParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  if (data.latitude === undefined) {
-    return answeredPreparation(botApiError(400, 'Bad Request: latitude is empty'));
-  }
-  if (data.longitude === undefined) {
-    return answeredPreparation(botApiError(400, 'Bad Request: longitude is empty'));
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-  if (!isPointOnEarth(data.latitude, data.longitude)) {
-    return answeredPreparation(botApiError(400, LOCATION_INVALID_DESCRIPTION));
-  }
-
-  const location = createGeoLocation(data.latitude, data.longitude, data.horizontal_accuracy ?? 0);
-  return sendingCommand(() =>
-    context.session.botApi.sendLocation(context.bot, { ...optionsReading.options, location })
-  );
-}
-
-async function prepareSendRichMessage(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendRichMessage parameters';
-  const parsedParameters = sendRichMessageParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
+  commandMethodOfSteps({
+    name: 'sendMessage',
+    recordsActivity: true,
+    parameters: sendMessageParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readMessageText(call, parameters))
+        .andThen((send) => readSendOptions(call, send)),
+    execute: (context, { text, options }) =>
+      sendMethodAnswer(context.session.botApi.sendMessage(context.bot, { ...options, ...text })),
+  }),
+  // As the official server's `process_send_message_draft_query` reads it: the text and its
+  // formatting before the chat, and a missing or zero `draft_id` as none, which Telegram's servers
+  // refuse. Empty text is allowed.
+  commandMethodOfSteps({
+    name: 'sendMessageDraft',
+    recordsActivity: true,
+    parameters: sendMessageDraftParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readDraftText(call, parameters))
+        .andThen(requireSpecifiedChatId),
+    execute: (context, parameters) => {
+      const result = context.session.botApi.sendMessageDraft(context.bot, {
+        chatId: parameters.chat_id,
+        draftId: parameters.draft_id,
+        text: parameters.text,
+        canStop: parameters.can_stop,
+        keepOnStop: parameters.keep_on_stop,
+      });
+      return result.sent
+        ? botApiResult(true)
+        : presentMessageSendingFailure('message_draft', result);
+    },
+  }),
+  waitingCommandMethodOfSteps({
+    name: 'sendPhoto',
+    recordsActivity: true,
+    parameters: sendPhotoParametersSchema,
+    steps: (call) => readMediaSend(call, 'photo'),
+    waitFor: (context, send) => waitForMediaFile(context, send, 'photo'),
+    execute: (context, { parameters, file, caption, options }) =>
+      sendMethodAnswer(context.session.botApi.sendPhoto(context.bot, {
+        ...options,
+        photo: file,
+        caption,
+        hasSpoiler: parameters.has_spoiler,
+        showsCaptionAboveMedia: parameters.show_caption_above_media,
+      })),
+  }),
+  // As the official server's `process_send_poll_query` reads it, before the chat: the question and
+  // the options, each with its formatting, then the poll's type with a quiz's explanation and
+  // correct options, then its closing time. `allows_revoting` defaults to true for a regular poll
+  // and to false for a quiz. Quiz parameters of a regular poll, which the server ignores, and both
+  // `open_period` and `close_date`, of which the server ignores `close_date`, are rejected to
+  // surface the bot's mistake.
+  commandMethodOfSteps({
+    name: 'sendPoll',
+    recordsActivity: true,
+    parameters: sendPollParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readPollQuestion(call, parameters))
+        .andThen((poll) => readPollOptions(call, poll))
+        .andThen((poll) => readPollType(call, poll))
+        .andThen(refuseBothPollClosingTimes)
+        .andThen((poll) => readSendOptions(call, poll)),
+    execute: (context, { parameters, question, pollOptions, type, options }) =>
+      sendMethodAnswer(context.session.botApi.sendPoll(context.bot, {
+        ...options,
+        question,
+        pollOptions,
+        isAnonymous: parameters.is_anonymous,
+        allowsMultipleAnswers: parameters.allows_multiple_answers,
+        allowsRevoting: parameters.allows_revoting ?? type.kind === 'regular',
+        type,
+        isClosed: parameters.is_closed,
+        ...(parameters.open_period === undefined
+          ? {}
+          : { closingTime: { kind: 'open_period', openPeriodSeconds: parameters.open_period } }),
+        ...(parameters.close_date === undefined
+          ? {}
+          : { closingTime: { kind: 'close_date', closeDateUnixSeconds: parameters.close_date } }),
+      })),
+  }),
   // Telegram reads the rich message before it looks at the chat.
+  waitingCommandMethodOfSteps({
+    name: 'sendRichMessage',
+    recordsActivity: true,
+    parameters: sendRichMessageParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readRichMessage(call, parameters))
+        .andThen((send) => readSendOptions(call, send)),
+    waitFor: async (context, { richMessage, options }) => {
+      const resolution = await resolveSpecifiedRichMessage(context, richMessage);
+      if (!context.session.lifetime.admitsCommits) {
+        return SESSION_ENDED;
+      }
+      return toWaitResult(resolution, (resolvedRichMessage) => ({ resolvedRichMessage, options }));
+    },
+    execute: (context, { resolvedRichMessage, options }) =>
+      sendMethodAnswer(context.session.botApi.sendRichMessage(context.bot, {
+        ...options,
+        ...resolvedRichMessage,
+      })),
+  }),
+  waitingCommandMethodOfSteps({
+    name: 'sendVideo',
+    recordsActivity: true,
+    parameters: sendVideoParametersSchema,
+    steps: (call) => readMediaSend(call, 'video').andThen((send) => readThumbnail(call, send)),
+    waitFor: (context, send) => waitForMediaFile(context, send, 'video'),
+    execute: (context, { parameters, file, thumbnail, caption, options }) =>
+      sendMethodAnswer(context.session.botApi.sendVideo(context.bot, {
+        ...options,
+        video: file,
+        attributes: {
+          durationSeconds: parameters.duration,
+          width: parameters.width,
+          height: parameters.height,
+        },
+        ...(thumbnail === undefined ? {} : { thumbnail }),
+        startTimestampSeconds: parameters.start_timestamp,
+        caption,
+        hasSpoiler: parameters.has_spoiler,
+        showsCaptionAboveMedia: parameters.show_caption_above_media,
+      })),
+  }),
+  waitingCommandMethodOfSteps({
+    name: 'sendVoice',
+    recordsActivity: true,
+    parameters: sendVoiceParametersSchema,
+    steps: (call) => readMediaSend(call, 'voice'),
+    waitFor: (context, send) => waitForMediaFile(context, send, 'voice'),
+    execute: (context, { parameters, file, caption, options }) =>
+      sendMethodAnswer(context.session.botApi.sendVoice(context.bot, {
+        ...options,
+        voice: file,
+        durationSeconds: parameters.duration,
+        caption,
+      })),
+  }),
+];
+
+/** The step that reads the text of `sendMessage` and its formatting. */
+function readMessageText<Parameters extends z.output<typeof sendMessageParametersSchema>>(
+  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  parameters: Parameters,
+): BotApiStepResult<{ readonly parameters: Parameters; readonly text: SpecifiedFormattedText }> {
+  const textReading = readSpecifiedFormattedText(
+    context,
+    { text: parameters.text, parseMode: parameters.parse_mode, entities: parameters.entities },
+    invalidParametersDescription,
+  );
+  return textReading.read
+    ? proceedWith({ parameters, text: textReading.formattedText })
+    : answerWith(textReading.errorAnswer);
+}
+
+/** The step that reads the rich message of `sendRichMessage`, as `readSpecifiedRichMessage` does. */
+function readRichMessage<Parameters extends z.output<typeof sendRichMessageParametersSchema>>(
+  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  parameters: Parameters,
+): BotApiStepResult<
+  { readonly parameters: Parameters; readonly richMessage: SpecifiedRichMessage }
+> {
   const richMessageReading = readSpecifiedRichMessage(
     context,
-    data.rich_message,
+    parameters.rich_message,
     uploadedFiles,
     invalidParametersDescription,
   );
-  if (!richMessageReading.read) {
-    return answeredPreparation(richMessageReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  const richMessageResolution = await resolveSpecifiedRichMessage(
-    context,
-    richMessageReading.richMessage,
-  );
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
-  }
-  if (!richMessageResolution.resolved) {
-    return answeredPreparationUnlessEnded(richMessageResolution.errorAnswer);
-  }
-
-  return sendingCommand(() =>
-    context.session.botApi.sendRichMessage(context.bot, {
-      ...optionsReading.options,
-      ...richMessageResolution.value,
-    })
-  );
+  return richMessageReading.read
+    ? proceedWith({ parameters, richMessage: richMessageReading.richMessage })
+    : answerWith(richMessageReading.errorAnswer);
 }
 
 /**
- * Sends a poll as the official Bot API server's `process_send_poll_query` reads it, before the
- * chat: the question and the options, each with its formatting, then the poll's type with a quiz's
- * explanation and correct options, then its closing time. `allows_revoting` defaults to true for a
- * regular poll and to false for a quiz. Quiz parameters of a regular poll, which the server
- * ignores, and both `open_period` and `close_date`, of which the server ignores `close_date`, are
- * rejected to surface the bot's mistake.
+ * The step that refuses a parameter that the official server reads with
+ * `get_required_string_arg`, given as no text or not at all.
  */
-function prepareSendPoll(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid sendPoll parameters';
-  const parsedParameters = sendPollParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  const questionReading = readFormattedTextParameters(
-    context,
-    { text: data.question, parseMode: data.question_parse_mode, entities: data.question_entities },
-    invalidParametersDescription,
-  );
-  if (!questionReading.read) {
-    return answeredPreparation(botApiError(400, questionReading.description));
-  }
-  const optionsReading = readInputPollOptionsParameter(data.options, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(botApiError(400, optionsReading.description));
-  }
-  const pollOptions: SpecifiedFormattedText[] = [];
-  for (const option of optionsReading.options) {
-    const optionReading = readFormattedTextParameters(
-      context,
-      { text: option.text, parseMode: option.parseMode, entities: option.entities },
-      invalidParametersDescription,
-    );
-    if (!optionReading.read) {
-      return answeredPreparation(botApiError(
-        400,
-        optionReading.description === invalidParametersDescription
-          ? invalidParametersDescription
-          : describeInputPollOptionTextError(optionReading.description),
-      ));
-    }
-    pollOptions.push(optionReading.formattedText);
-  }
-  const typeReading = readPollTypeParameters(context, data, invalidParametersDescription);
-  if (!typeReading.read) {
-    return answeredPreparation(typeReading.errorAnswer);
-  }
-  if (data.open_period !== undefined && data.close_date !== undefined) {
-    return answeredPreparation(
-      botApiError(400, "Bad Request: open_period and close_date can't be used together"),
-    );
-  }
-  const sendOptionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!sendOptionsReading.read) {
-    return answeredPreparation(sendOptionsReading.errorAnswer);
-  }
-
-  return sendingCommand(() =>
-    context.session.botApi.sendPoll(context.bot, {
-      ...sendOptionsReading.options,
-      question: questionReading.formattedText,
-      pollOptions,
-      isAnonymous: data.is_anonymous,
-      allowsMultipleAnswers: data.allows_multiple_answers,
-      allowsRevoting: data.allows_revoting ?? typeReading.type.kind === 'regular',
-      type: typeReading.type,
-      isClosed: data.is_closed,
-      ...(data.open_period === undefined
-        ? {}
-        : { closingTime: { kind: 'open_period', openPeriodSeconds: data.open_period } }),
-      ...(data.close_date === undefined
-        ? {}
-        : { closingTime: { kind: 'close_date', closeDateUnixSeconds: data.close_date } }),
-    })
-  );
+function requireTextParameter<
+  Parameters extends Readonly<Record<Name, string>>,
+  Name extends string,
+>(
+  parameters: Parameters,
+  parameterName: Name,
+): BotApiStepResult<Parameters> {
+  return parameters[parameterName].length === 0
+    ? answerWith(presentBotApiError(BOT_API_ERRORS.requiredParameterMissing, { parameterName }))
+    : proceedWith(parameters);
 }
 
-/**
- * Reads a poll's type as `process_send_poll_query` reads it: a regular poll, or a quiz, whose
- * explanation is read with its formatting, then its correct options, as
- * `readCorrectOptionIdsParameter` reads them. A regular poll with any quiz parameter answers
- * `invalidParametersDescription`.
- */
-function readPollTypeParameters(
-  context: BotApiMethodContext,
-  parameters: Pick<
-    z.infer<typeof sendPollParametersSchema>,
-    | 'type'
-    | 'correct_option_ids'
-    | 'correct_option_id'
-    | 'explanation'
-    | 'explanation_parse_mode'
-    | 'explanation_entities'
-  >,
-  invalidParametersDescription: string,
-):
-  | { readonly read: true; readonly type: PollTypeRequest }
-  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
-  const {
-    type,
-    correct_option_ids: correctOptionIds,
-    correct_option_id: correctOptionId,
-    explanation,
-    explanation_parse_mode: explanationParseMode,
-    explanation_entities: explanationEntities,
-  } = parameters;
-  const specifiedQuizParameters = [
-    correctOptionIds,
-    correctOptionId,
-    explanation,
-    explanationParseMode,
-    explanationEntities,
-  ];
-  if (type === '' || type === 'regular') {
-    return specifiedQuizParameters.some((value) => value !== undefined)
-      ? { read: false, errorAnswer: botApiError(400, invalidParametersDescription) }
-      : { read: true, type: { kind: 'regular' } };
+/** The step that reads a location's coordinates, which the official server's `get_location` requires. */
+function requireCoordinates<
+  Parameters extends { readonly latitude?: number; readonly longitude?: number },
+>(
+  parameters: Parameters,
+): BotApiStepResult<Parameters & { readonly latitude: number; readonly longitude: number }> {
+  const { latitude, longitude } = parameters;
+  if (latitude === undefined) {
+    return answerWith(presentFixedBotApiError(BOT_API_ERRORS.latitudeEmpty));
   }
-  if (type !== 'quiz') {
-    return {
-      read: false,
-      errorAnswer: botApiError(400, 'Bad Request: unsupported poll type specified'),
+  if (longitude === undefined) {
+    return answerWith(presentFixedBotApiError(BOT_API_ERRORS.longitudeEmpty));
+  }
+  return proceedWith({ ...parameters, latitude, longitude });
+}
+
+/** The step that checks that a location's coordinates name a point on Earth. */
+function readSentLocation<
+  Send extends {
+    readonly parameters: {
+      readonly latitude: number;
+      readonly longitude: number;
+      readonly horizontal_accuracy?: number;
     };
-  }
-  const explanationReading = readFormattedTextParameters(
-    context,
-    { text: explanation ?? '', parseMode: explanationParseMode, entities: explanationEntities },
-    invalidParametersDescription,
-  );
-  if (!explanationReading.read) {
-    return { read: false, errorAnswer: botApiError(400, explanationReading.description) };
-  }
-  const correctOptionsReading = readCorrectOptionIdsParameter(correctOptionIds, correctOptionId);
-  if (!correctOptionsReading.read) {
-    return { read: false, errorAnswer: botApiError(400, correctOptionsReading.description) };
-  }
-  return {
-    read: true,
-    type: {
-      kind: 'quiz',
-      correctOptionPositions: correctOptionsReading.correctOptionPositions,
-      explanation: explanationReading.formattedText,
-    },
-  };
-}
-
-async function prepareSendPhoto(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendPhoto parameters';
-  const parsedParameters = sendPhotoParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
-  const photoReading = readInputFileParameter('photo', data.photo, uploadedFiles);
-  if (!photoReading.read) {
-    return answeredPreparation(missingInputFileError('photo'));
-  }
-  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
-  if (!captionReading.read) {
-    return answeredPreparation(captionReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  const photoResolution = await resolveRequestedInputFile(context, photoReading.inputFile, 'photo');
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
-  }
-  if (!photoResolution.resolved) {
-    return answeredPreparationUnlessEnded(photoResolution.errorAnswer);
-  }
-
-  return sendingCommand(() =>
-    context.session.botApi.sendPhoto(context.bot, {
-      ...optionsReading.options,
-      photo: photoResolution.value,
-      caption: captionReading.formattedText,
-      hasSpoiler: data.has_spoiler,
-      showsCaptionAboveMedia: data.show_caption_above_media,
+  },
+>(send: Send): BotApiStepResult<Send & { readonly location: GeoLocation }> {
+  const { latitude, longitude, horizontal_accuracy: horizontalAccuracy } = send.parameters;
+  return isPointOnEarth(latitude, longitude)
+    ? proceedWith({
+      ...send,
+      location: createGeoLocation(latitude, longitude, horizontalAccuracy ?? 0),
     })
-  );
-}
-
-async function prepareSendDocument(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendDocument parameters';
-  const parsedParameters = sendDocumentParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
-  const documentReading = readInputFileParameter('document', data.document, uploadedFiles);
-  if (!documentReading.read) {
-    return answeredPreparation(missingInputFileError('document'));
-  }
-  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
-  if (!captionReading.read) {
-    return answeredPreparation(captionReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  const documentResolution = await resolveRequestedInputFile(
-    context,
-    documentReading.inputFile,
-    'document',
-  );
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
-  }
-  if (!documentResolution.resolved) {
-    return answeredPreparationUnlessEnded(documentResolution.errorAnswer);
-  }
-
-  const thumbnail = readThumbnailParameter(data, uploadedFiles);
-  return sendingCommand(() =>
-    context.session.botApi.sendDocument(context.bot, {
-      ...optionsReading.options,
-      document: documentResolution.value,
-      ...(thumbnail === undefined ? {} : { thumbnail }),
-      caption: captionReading.formattedText,
-    })
-  );
-}
-
-async function prepareSendVideo(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendVideo parameters';
-  const parsedParameters = sendVideoParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
-  const videoReading = readInputFileParameter('video', data.video, uploadedFiles);
-  if (!videoReading.read) {
-    return answeredPreparation(missingInputFileError('video'));
-  }
-  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
-  if (!captionReading.read) {
-    return answeredPreparation(captionReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  const videoResolution = await resolveRequestedInputFile(
-    context,
-    videoReading.inputFile,
-    'video',
-  );
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
-  }
-  if (!videoResolution.resolved) {
-    return answeredPreparationUnlessEnded(videoResolution.errorAnswer);
-  }
-
-  const thumbnail = readThumbnailParameter(data, uploadedFiles);
-  return sendingCommand(() =>
-    context.session.botApi.sendVideo(context.bot, {
-      ...optionsReading.options,
-      video: videoResolution.value,
-      attributes: { durationSeconds: data.duration, width: data.width, height: data.height },
-      ...(thumbnail === undefined ? {} : { thumbnail }),
-      startTimestampSeconds: data.start_timestamp,
-      caption: captionReading.formattedText,
-      hasSpoiler: data.has_spoiler,
-      showsCaptionAboveMedia: data.show_caption_above_media,
-    })
-  );
-}
-
-async function prepareSendVoice(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendVoice parameters';
-  const parsedParameters = sendVoiceParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
-  const voiceReading = readInputFileParameter('voice', data.voice, uploadedFiles);
-  if (!voiceReading.read) {
-    return answeredPreparation(missingInputFileError('voice'));
-  }
-  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
-  if (!captionReading.read) {
-    return answeredPreparation(captionReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  const voiceResolution = await resolveRequestedInputFile(
-    context,
-    voiceReading.inputFile,
-    'voice',
-  );
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
-  }
-  if (!voiceResolution.resolved) {
-    return answeredPreparationUnlessEnded(voiceResolution.errorAnswer);
-  }
-
-  return sendingCommand(() =>
-    context.session.botApi.sendVoice(context.bot, {
-      ...optionsReading.options,
-      voice: voiceResolution.value,
-      durationSeconds: data.duration,
-      caption: captionReading.formattedText,
-    })
-  );
-}
-
-async function prepareSendAudio(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendAudio parameters';
-  const parsedParameters = sendAudioParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
-  const audioReading = readInputFileParameter('audio', data.audio, uploadedFiles);
-  if (!audioReading.read) {
-    return answeredPreparation(missingInputFileError('audio'));
-  }
-  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
-  if (!captionReading.read) {
-    return answeredPreparation(captionReading.errorAnswer);
-  }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
-
-  const audioResolution = await resolveRequestedInputFile(
-    context,
-    audioReading.inputFile,
-    'audio',
-  );
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
-  }
-  if (!audioResolution.resolved) {
-    return answeredPreparationUnlessEnded(audioResolution.errorAnswer);
-  }
-
-  const thumbnail = readThumbnailParameter(data, uploadedFiles);
-  return sendingCommand(() =>
-    context.session.botApi.sendAudio(context.bot, {
-      ...optionsReading.options,
-      audio: audioResolution.value,
-      attributes: { durationSeconds: data.duration, performer: data.performer, title: data.title },
-      ...(thumbnail === undefined ? {} : { thumbnail }),
-      caption: captionReading.formattedText,
-    })
-  );
+    : answerWithBadRequest(LOCATION_INVALID_DESCRIPTION);
 }
 
 /**
- * Prepares an album, which `BotApiService.sendMediaGroup` sends once the call executes. As the
- * official Bot API server reads them, the media and their captions are read before the chat; the
- * files the media name by URL are then downloaded in order, as for `sendPhoto`.
+ * The steps of a method that sends a file of `fileKind` with a caption, as the official server
+ * reads them before it looks at the chat: the file, then the caption and its formatting, then the
+ * send options.
  */
-async function prepareSendMediaGroup(
+function readMediaSend<
+  FileKind extends SentFileKind,
+  Parameters extends MediaSendParameters<FileKind>,
+>(
+  call: BotApiStepCall<Parameters>,
+  fileKind: FileKind,
+): BotApiSteps<MediaSendReading<Parameters>> {
+  const { context, uploadedFiles, invalidParametersDescription } = call;
+  return startSteps(call.parameters)
+    .andThen((parameters) => {
+      const fileReading = readInputFileParameter(fileKind, parameters[fileKind], uploadedFiles);
+      return fileReading.read
+        ? proceedWith({ parameters, requestedFile: fileReading.inputFile })
+        : answerWith(presentBotApiError(BOT_API_ERRORS.inputFileMissing, { fileKind }));
+    })
+    .andThen((send) => {
+      const captionReading = readSpecifiedCaption(
+        context,
+        send.parameters,
+        invalidParametersDescription,
+      );
+      return captionReading.read
+        ? proceedWith({ ...send, caption: captionReading.formattedText })
+        : answerWith(captionReading.errorAnswer);
+    })
+    .andThen((send) => readSendOptions(call, send));
+}
+
+/** The step that reads the thumbnail a document, video, or audio file is sent with, if any. */
+function readThumbnail<
+  Send extends {
+    readonly parameters: { readonly thumbnail?: string; readonly thumb?: string };
+  },
+>(
+  { uploadedFiles }: BotApiStepCall<unknown>,
+  send: Send,
+): BotApiStepResult<Send & { readonly thumbnail: Uint8Array<ArrayBuffer> | undefined }> {
+  return proceedWith({
+    ...send,
+    thumbnail: readThumbnailParameter(send.parameters, uploadedFiles),
+  });
+}
+
+/** Downloads the file a message names by URL; a file it names otherwise needs no download. */
+async function waitForMediaFile<Send extends { readonly requestedFile: RequestedInputFile }>(
   context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const invalidParametersDescription = 'Bad Request: invalid sendMediaGroup parameters';
-  const parsedParameters = sendMediaGroupParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
+  { requestedFile, ...send }: Send,
+  fileKind: SentFileKind,
+): Promise<
+  | BotApiStepResult<Omit<Send, 'requestedFile'> & { readonly file: BotApiInputFile }>
+  | typeof SESSION_ENDED
+> {
+  const resolution = await resolveRequestedInputFile(context, requestedFile, fileKind);
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
   }
-  const { data } = parsedParameters;
+  return toWaitResult(resolution, (file) => ({ ...send, file }));
+}
+
+/**
+ * The step that reads the media of an album, as `readInputMediaGroupParameter` reads them, then
+ * each member's caption, which the official server reports as media it cannot read.
+ */
+function readAlbumMedia<Parameters extends z.output<typeof sendMediaGroupParametersSchema>>(
+  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  parameters: Parameters,
+): BotApiStepResult<{
+  readonly parameters: Parameters;
+  readonly members: readonly UnreadMediaReplacement[];
+  readonly captions: readonly SpecifiedFormattedText[];
+}> {
   const mediaReading = readInputMediaGroupParameter(
-    data.media,
+    parameters.media,
     uploadedFiles,
     invalidParametersDescription,
   );
   if (!mediaReading.read) {
-    return answeredPreparation(botApiError(400, mediaReading.description));
+    return answerWithBadRequest(mediaReading.description);
   }
   const captions: SpecifiedFormattedText[] = [];
   for (const { caption } of mediaReading.media) {
@@ -898,18 +750,31 @@ async function prepareSendMediaGroup(
       INPUT_MEDIA_ERROR_PREFIX,
     );
     if (!captionReading.read) {
-      return answeredPreparation(botApiError(400, captionReading.description));
+      return answerWithBadRequest(captionReading.description);
     }
     captions.push(captionReading.formattedText);
   }
-  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
-  if (!optionsReading.read) {
-    return answeredPreparation(optionsReading.errorAnswer);
-  }
+  return proceedWith({ parameters, members: mediaReading.media, captions });
+}
 
+/** Downloads, in the album's order, the files its media name by URL. */
+async function waitForAlbumFiles(
+  context: BotApiMethodContext,
+  { members, captions, options }: {
+    readonly members: readonly UnreadMediaReplacement[];
+    readonly captions: readonly SpecifiedFormattedText[];
+    readonly options: SendRequestOptions;
+  },
+): Promise<
+  | BotApiStepResult<{
+    readonly media: readonly MediaReplacementRequest[];
+    readonly options: SendRequestOptions;
+  }>
+  | typeof SESSION_ENDED
+> {
   const media: MediaReplacementRequest[] = [];
-  for (const [memberIndex, member] of mediaReading.media.entries()) {
-    const fileResolution = await resolveRequestedInputFile(
+  for (const [memberIndex, member] of members.entries()) {
+    const resolution = await resolveRequestedInputFile(
       context,
       getRequestedMediaFile(member),
       member.kind,
@@ -918,36 +783,161 @@ async function prepareSendMediaGroup(
     if (!context.session.lifetime.admitsCommits) {
       return SESSION_ENDED;
     }
-    if (!fileResolution.resolved) {
-      return answeredPreparationUnlessEnded(fileResolution.errorAnswer);
+    const waitResult = toWaitResult(
+      resolution,
+      (file) => toMediaReplacementRequest(member, file, captions[memberIndex]),
+    );
+    if (waitResult === SESSION_ENDED || !waitResult.proceeds) {
+      return waitResult;
     }
-    media.push(toMediaReplacementRequest(member, fileResolution.value, captions[memberIndex]));
+    media.push(waitResult.value);
   }
+  return proceedWith({ media, options });
+}
 
-  const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = optionsReading.options;
-  return albumSendingCommand(() =>
-    context.session.botApi.sendMediaGroup(context.bot, {
-      chatId,
-      replyTo,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-      media,
-    })
+/** The step that reads a poll's question and its formatting. */
+function readPollQuestion(
+  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  parameters: SendPollParameters,
+): BotApiStepResult<{
+  readonly parameters: SendPollParameters;
+  readonly question: SpecifiedFormattedText;
+}> {
+  const questionReading = readFormattedTextParameters(
+    context,
+    {
+      text: parameters.question,
+      parseMode: parameters.question_parse_mode,
+      entities: parameters.question_entities,
+    },
+    invalidParametersDescription,
   );
+  return questionReading.read
+    ? proceedWith({ parameters, question: questionReading.formattedText })
+    : answerWithBadRequest(questionReading.description);
 }
 
 /**
- * The command that sends the message a call prepared: `send` reaches the chat, makes every check
- * that depends on the session's state, and sends the message, once the call executes.
+ * The step that reads a poll's options, as `readInputPollOptionsParameter` reads them, then each
+ * option's formatting, whose problems the official server reports per option.
  */
-function sendingCommand(send: () => SendResult): BotApiCallPreparation {
-  return { kind: 'command', execute: () => sendMethodAnswer(send()) };
+function readPollOptions<Poll extends { readonly parameters: SendPollParameters }>(
+  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  poll: Poll,
+): BotApiStepResult<Poll & { readonly pollOptions: readonly SpecifiedFormattedText[] }> {
+  const optionsReading = readInputPollOptionsParameter(
+    poll.parameters.options,
+    invalidParametersDescription,
+  );
+  if (!optionsReading.read) {
+    return answerWithBadRequest(optionsReading.description);
+  }
+  const pollOptions: SpecifiedFormattedText[] = [];
+  for (const option of optionsReading.options) {
+    const optionReading = readFormattedTextParameters(
+      context,
+      { text: option.text, parseMode: option.parseMode, entities: option.entities },
+      invalidParametersDescription,
+    );
+    if (!optionReading.read) {
+      return answerWithBadRequest(
+        optionReading.description === invalidParametersDescription
+          ? invalidParametersDescription
+          : describeInputPollOptionTextError(optionReading.description),
+      );
+    }
+    pollOptions.push(optionReading.formattedText);
+  }
+  return proceedWith({ ...poll, pollOptions });
 }
 
-/** The command that sends the album a call prepared, as `sendingCommand` sends a message. */
-function albumSendingCommand(send: () => SendMediaGroupResult): BotApiCallPreparation {
-  return { kind: 'command', execute: () => sendMediaGroupAnswer(send()) };
+/**
+ * The step that reads a poll's type as `process_send_poll_query` reads it: a regular poll, or a
+ * quiz, whose explanation is read with its formatting, then its correct options, as
+ * `readCorrectOptionIdsParameter` reads them. A regular poll with any quiz parameter answers the
+ * method's description of parameters that do not fit it.
+ */
+function readPollType<Poll extends { readonly parameters: SendPollParameters }>(
+  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  poll: Poll,
+): BotApiStepResult<Poll & { readonly type: PollTypeRequest }> {
+  const {
+    type,
+    correct_option_ids: correctOptionIds,
+    correct_option_id: correctOptionId,
+    explanation,
+    explanation_parse_mode: explanationParseMode,
+    explanation_entities: explanationEntities,
+  } = poll.parameters;
+  const specifiedQuizParameters = [
+    correctOptionIds,
+    correctOptionId,
+    explanation,
+    explanationParseMode,
+    explanationEntities,
+  ];
+  if (type === '' || type === 'regular') {
+    return specifiedQuizParameters.some((value) => value !== undefined)
+      ? answerWithBadRequest(invalidParametersDescription)
+      : proceedWith({ ...poll, type: { kind: 'regular' } });
+  }
+  if (type !== 'quiz') {
+    return answerWith(presentFixedBotApiError(BOT_API_ERRORS.pollTypeUnsupported));
+  }
+  const explanationReading = readFormattedTextParameters(
+    context,
+    { text: explanation ?? '', parseMode: explanationParseMode, entities: explanationEntities },
+    invalidParametersDescription,
+  );
+  if (!explanationReading.read) {
+    return answerWithBadRequest(explanationReading.description);
+  }
+  const correctOptionsReading = readCorrectOptionIdsParameter(correctOptionIds, correctOptionId);
+  if (!correctOptionsReading.read) {
+    return answerWithBadRequest(correctOptionsReading.description);
+  }
+  return proceedWith({
+    ...poll,
+    type: {
+      kind: 'quiz',
+      correctOptionPositions: correctOptionsReading.correctOptionPositions,
+      explanation: explanationReading.formattedText,
+    },
+  });
+}
+
+/** The step that refuses a poll with both `open_period` and `close_date`, as the Bot API documents. */
+function refuseBothPollClosingTimes<Poll extends { readonly parameters: SendPollParameters }>(
+  poll: Poll,
+): BotApiStepResult<Poll> {
+  return poll.parameters.open_period !== undefined && poll.parameters.close_date !== undefined
+    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.pollClosingTimesConflict))
+    : proceedWith(poll);
+}
+
+/** The step that reads a draft's text and its formatting; empty text is allowed. */
+function readDraftText<Parameters extends z.output<typeof sendMessageDraftParametersSchema>>(
+  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  parameters: Parameters,
+): BotApiStepResult<Omit<Parameters, 'text'> & { readonly text: SpecifiedFormattedText }> {
+  const textReading = readFormattedTextParameters(
+    context,
+    { text: parameters.text, parseMode: parameters.parse_mode, entities: parameters.entities },
+    invalidParametersDescription,
+  );
+  return textReading.read
+    ? proceedWith({ ...parameters, text: textReading.formattedText })
+    : answerWithBadRequest(textReading.description);
+}
+
+/** The step that reads a chat action by the lowercase names Telegram reads. */
+function readChatAction<Parameters extends z.output<typeof sendChatActionParametersSchema>>(
+  parameters: Parameters,
+): BotApiStepResult<Parameters & { readonly chatAction: ChatAction }> {
+  const chatAction = CHAT_ACTIONS_BY_NAME.get(parameters.action.toLowerCase());
+  return chatAction === undefined
+    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.chatActionInvalid))
+    : proceedWith({ ...parameters, chatAction });
 }
 
 /** Telegram's answer to `sendMediaGroup`: the album's messages, or its error for why none was sent. */
@@ -955,88 +945,4 @@ function sendMediaGroupAnswer(result: SendMediaGroupResult): BotApiMethodAnswer 
   return result.sent
     ? botApiResult(result.messages)
     : presentMessageSendingFailure('message_send', result);
-}
-
-/** The error for a file parameter that names no uploaded file. */
-function missingInputFileError(
-  parameterName: 'photo' | 'document' | 'video' | 'voice' | 'audio',
-): BotApiMethodAnswer {
-  return botApiError(400, `Bad Request: there is no ${parameterName} in the request`);
-}
-
-/**
- * Shows a draft of a message the bot is generating, as the official Bot API server's
- * `process_send_message_draft_query` reads it: the text and its formatting before the chat, and a
- * missing or zero `draft_id` as none, which Telegram's servers refuse. Empty text is allowed.
- */
-function prepareSendMessageDraft(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid sendMessageDraft parameters';
-  const parsedParameters = sendMessageDraftParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
-    );
-  }
-  const { data } = parsedParameters;
-  const formattedTextReading = readFormattedTextParameters(
-    context,
-    { text: data.text, parseMode: data.parse_mode, entities: data.entities },
-    invalidParametersDescription,
-  );
-  if (!formattedTextReading.read) {
-    return answeredPreparation(botApiError(400, formattedTextReading.description));
-  }
-  const chatId = data.chat_id;
-  if (chatId === undefined) {
-    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.sendMessageDraft(context.bot, {
-        chatId,
-        draftId: data.draft_id,
-        text: formattedTextReading.formattedText,
-        canStop: data.can_stop,
-        keepOnStop: data.keep_on_stop,
-      });
-      return result.sent
-        ? botApiResult(true)
-        : presentMessageSendingFailure('message_draft', result);
-    },
-  };
-}
-
-function prepareSendChatAction(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = sendChatActionParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(botApiError(400, 'Bad Request: invalid sendChatAction parameters'));
-  }
-  const { chat_id: chatId, action: actionName } = parsedParameters.data;
-  // Telegram reads the action before it looks at the chat.
-  const action = CHAT_ACTIONS_BY_NAME.get(actionName.toLowerCase());
-  if (action === undefined) {
-    return answeredPreparation(presentFixedBotApiError(BOT_API_ERRORS.chatActionInvalid));
-  }
-  if (chatId === undefined) {
-    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.sendChatAction(
-        context.bot,
-        { chatId, action },
-      );
-      return result.sent ? botApiResult(true) : presentMessageSendingFailure('chat_action', result);
-    },
-  };
 }

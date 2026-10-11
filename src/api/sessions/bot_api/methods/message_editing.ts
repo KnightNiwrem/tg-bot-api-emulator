@@ -51,6 +51,7 @@ import {
 import {
   resolveRequestedInputFile,
   SESSION_ENDED_RESOLUTION,
+  toWaitResult,
   type WebFileResolution,
 } from '../web_file_parameter.ts';
 
@@ -416,23 +417,6 @@ function readEditKeyboard<Edit extends EditReading>(
   return keyboardReading.read
     ? proceedWith({ ...edit, inlineKeyboard: keyboardReading.inlineKeyboard })
     : answerWith(keyboardReading.errorAnswer);
-}
-
-/**
- * What an edit's wait for its downloads produced, as `waitingCommandMethodOfSteps` reads it: the
- * edit `toReady` makes of the downloaded value, Telegram's error for a failed download, or
- * `SESSION_ENDED` once the session has ended.
- */
-function toWaitResult<Resolved, Ready>(
-  resolution: WebFileResolution<Resolved>,
-  toReady: (resolved: Resolved) => Ready,
-): BotApiStepResult<Ready> | typeof SESSION_ENDED {
-  if (resolution.resolved) {
-    return proceedWith(toReady(resolution.value));
-  }
-  return resolution.errorAnswer === SESSION_ENDED
-    ? SESSION_ENDED
-    : answerWith(resolution.errorAnswer);
 }
 
 /** The step that reads the new inline keyboard of `stopPoll`'s message. */

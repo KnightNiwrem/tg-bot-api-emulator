@@ -544,7 +544,7 @@ Deno.test('sendChatAction accepts Telegram actions in started private chats', as
   await expectDescription({ action: 'typing' }, 'Bad Request: chat_id is empty');
   await expectDescription(
     { chat_id: accountId, action: 'typing', message_thread_id: 1 },
-    'Bad Request: invalid sendChatAction parameters',
+    'Bad Request: invalid sendChatAction parameters: message_thread_id',
   );
 });
 
@@ -657,11 +657,11 @@ Deno.test('sendMessage replies to messages of the chat and accepts Telegram mess
     ],
     [
       { reply_parameters: { message_id: 1, checklist_task_id: 1 } },
-      'Bad Request: invalid sendMessage parameters',
+      'Bad Request: invalid sendMessage parameters: reply_parameters.checklist_task_id',
     ],
     [
       { link_preview_options: { is_disabled: 'yes' } },
-      'Bad Request: invalid sendMessage parameters',
+      'Bad Request: invalid sendMessage parameters: link_preview_options.is_disabled',
     ],
   ];
   for (const [parameters, expectedDescription] of rejections) {
@@ -1783,7 +1783,7 @@ Deno.test('bots add message effects to private messages only, as TDLib allows', 
     [
       'sendMessage',
       { chat_id: owner.id, text: 'Hi', message_effect_id: 'fireworks' },
-      'Bad Request: invalid sendMessage parameters',
+      'Bad Request: invalid sendMessage parameters: message_effect_id',
     ],
   ] as const;
   for (const [method, parameters, expectedDescription] of failures) {

@@ -1,11 +1,17 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION, resolveChatIdentifier } from './chat_access.ts';
+import { resolveChatIdentifier } from './chat_access.ts';
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';
 import { readFormattedTextParameters } from './formatted_text_reading.ts';
-import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
+import {
+  answerWith,
+  answerWithBadRequest,
+  type BotApiStepCall,
+  type BotApiStepResult,
+  proceedWith,
+} from './method_steps.ts';
 import { messageReplyMarkupParameter } from './reply_markup_parameter.ts';
 import { readMessageReplyMarkupParameter } from './reply_markup_reading.ts';
 import {
@@ -40,29 +46,28 @@ export const replyMarkupParametersShape = {
 type OmitFromEach<Type, Key extends PropertyKey> = Type extends unknown ? Omit<Type, Key> : never;
 
 /** Where and how a send method sends its message, which every send method takes alike. */
-type SendRequestOptions = OmitFromEach<
+export type SendRequestOptions = OmitFromEach<
   Parameters<EmulationSession['botApi']['sendMessage']>[1],
   'text' | 'entities'
 >;
 
 /** The send options of a request, with the reply markup of a method that reads one. */
-type SendOptionsParameters =
+export type SendOptionsParameters =
   & z.infer<z.ZodObject<typeof sendOptionsParametersShape>>
   & Partial<z.infer<z.ZodObject<typeof replyMarkupParametersShape>>>;
 
 /**
- * Reads where and how a send method sends its message, with its reply markup, if the method reads
- * one. As the official Bot API server's `get_reply_parameters` does, the formatting of a quote is
- * read before the chat; as its `check_reply_parameters` does, a reply naming the chat the message
- * is sent to replies in that chat.
+ * The step that reads where and how a send method sends its message, with its reply markup, if
+ * the method reads one: the formatting of a quote, then `chat_id`, then the reply markup, then the
+ * reply's chat. As the official Bot API server's `get_reply_parameters` does, the formatting of a
+ * quote is read before the chat; as its `check_reply_parameters` does, a reply naming the chat the
+ * message is sent to replies in that chat.
  */
-export function readSendOptions(
-  context: BotApiMethodContext,
-  parameters: SendOptionsParameters,
-  invalidParametersDescription: string,
-):
-  | { readonly read: true; readonly options: SendRequestOptions }
-  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
+export function readSendOptions<Send extends { readonly parameters: SendOptionsParameters }>(
+  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  send: Send,
+): BotApiStepResult<Send & { readonly options: SendRequestOptions }> {
+  const { parameters } = send;
   const {
     chat_id: chatId,
     disable_notification: isSilent,
@@ -78,23 +83,23 @@ export function readSendOptions(
     invalidParametersDescription,
   );
   if (quoteReading?.read === false) {
-    return { read: false, errorAnswer: botApiError(400, quoteReading.description) };
+    return answerWithBadRequest(quoteReading.description);
   }
   if (chatId === undefined) {
-    return { read: false, errorAnswer: botApiError(400, CHAT_ID_EMPTY_DESCRIPTION) };
+    return answerWith(presentFixedBotApiError(BOT_API_ERRORS.chatIdEmpty));
   }
   const markupReading = readMessageReplyMarkupParameter(context, replyMarkup ?? {}, chatId);
   if (!markupReading.read) {
-    return markupReading;
+    return answerWith(markupReading.errorAnswer);
   }
   const replyChatId = replyTarget?.chatId === undefined
     ? undefined
     : resolveChatIdentifier(context, replyTarget.chatId);
   if (replyTarget?.chatId !== undefined && replyChatId === undefined) {
-    return { read: false, errorAnswer: presentFixedBotApiError(BOT_API_ERRORS.chatNotFound) };
+    return answerWith(presentFixedBotApiError(BOT_API_ERRORS.chatNotFound));
   }
-  return {
-    read: true,
+  return proceedWith({
+    ...send,
     options: {
       ...markupReading.replyMarkup,
       chatId,
@@ -110,5 +115,5 @@ export function readSendOptions(
       isSilent,
       messageEffectId,
     },
-  };
+  });
 }

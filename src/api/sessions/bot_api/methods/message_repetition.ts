@@ -4,7 +4,7 @@ import type { BotApiMessageId } from '../../../../types/bot_api.ts';
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
 import { requireSpecifiedChatId } from '../chat_access.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
-import { presentFixedBotApiError } from '../errors/error_template.ts';
+import { presentBotApiError, presentFixedBotApiError } from '../errors/error_template.ts';
 import { presentMessageRepetitionFailure } from '../errors/message_repetition_failure_presenter.ts';
 import { readSpecifiedCaption, type SpecifiedFormattedText } from '../formatted_text_reading.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
@@ -90,12 +90,6 @@ const copyMessagesParametersSchema = z.strictObject({
 
 type RepeatMessagesParameters = z.output<z.ZodObject<typeof repeatMessagesParametersShape>>;
 
-/** Where and how a copied message is sent, as `readSendOptions` reads it. */
-type SendRequestOptions = Extract<
-  ReturnType<typeof readSendOptions>,
-  { readonly read: true }
->['options'];
-
 /** The messages that `forwardMessages` or `copyMessages` repeats, and the chat they go to. */
 type RepeatMessagesRequest = Parameters<EmulationSession['botApi']['forwardMessages']>[1];
 
@@ -115,7 +109,7 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
       startSteps(call.parameters)
         .andThen(requireFromChatId)
         .andThen((parameters) => readCopyCaption(call, parameters))
-        .andThen((copy) => readCopySendOptions(call, copy)),
+        .andThen((copy) => readSendOptions(call, copy)),
     execute: (context, { parameters, caption, options }) => {
       const result = context.session.botApi.copyMessage(
         context.bot,
@@ -207,7 +201,11 @@ function requireFromChatId<Parameters extends { readonly from_chat_id?: number }
 ): BotApiStepResult<WithFromChatId<Parameters>> {
   const { from_chat_id: fromChatId } = parameters;
   return fromChatId === undefined
-    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.fromChatIdRequired))
+    ? answerWith(
+      presentBotApiError(BOT_API_ERRORS.requiredParameterMissing, {
+        parameterName: 'from_chat_id',
+      }),
+    )
     : proceedWith({ ...parameters, from_chat_id: fromChatId });
 }
 
@@ -232,17 +230,6 @@ function readCopyCaption(
   return captionReading.read
     ? proceedWith({ parameters, caption: captionReading.formattedText })
     : answerWith(captionReading.errorAnswer);
-}
-
-/** The step that reads where and how a copy is sent, as `readSendOptions` does. */
-function readCopySendOptions<Copy extends { readonly parameters: CopyMessageParameters }>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
-  copy: Copy,
-): BotApiStepResult<Copy & { readonly options: SendRequestOptions }> {
-  const optionsReading = readSendOptions(context, copy.parameters, invalidParametersDescription);
-  return optionsReading.read
-    ? proceedWith({ ...copy, options: optionsReading.options })
-    : answerWith(optionsReading.errorAnswer);
 }
 
 /**

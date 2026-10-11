@@ -275,7 +275,7 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
     'Bad Request: wrong file identifier/HTTP URL specified',
     'Bad Request: file must be non-empty',
     'Bad Request: failed to send message #2 with the error message "WEBPAGE_CURL_FAILED"',
-    'Bad Request: invalid sendMediaGroup parameters',
+    'Bad Request: invalid sendMediaGroup parameters: reply_markup',
     'Bad Request: message to be replied not found',
     'Bad Request: chat_id is empty',
   ];

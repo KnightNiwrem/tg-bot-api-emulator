@@ -14,6 +14,7 @@ import {
   type BotApiMethodOutcome,
   SESSION_ENDED,
 } from './method_call.ts';
+import { answerWith, type BotApiStepResult, proceedWith } from './method_steps.ts';
 
 /**
  * The files of a rich message's media blocks in the shapes the service takes, each named as an
@@ -56,6 +57,23 @@ export type WebFileResolution<Resolved> =
  * session has ended.
  */
 export const SESSION_ENDED_RESOLUTION = { resolved: false, errorAnswer: SESSION_ENDED } as const;
+
+/**
+ * A resolution as the wait of a method of steps reports it, as `waitingCommandMethodOfSteps` reads
+ * it: what `toReady` makes of the downloaded value, Telegram's error for a failed download, or
+ * `SESSION_ENDED` once the session has ended.
+ */
+export function toWaitResult<Resolved, Ready>(
+  resolution: WebFileResolution<Resolved>,
+  toReady: (resolved: Resolved) => Ready,
+): BotApiStepResult<Ready> | typeof SESSION_ENDED {
+  if (resolution.resolved) {
+    return proceedWith(toReady(resolution.value));
+  }
+  return resolution.errorAnswer === SESSION_ENDED
+    ? SESSION_ENDED
+    : answerWith(resolution.errorAnswer);
+}
 
 /** What a request sends a file named by URL as, which decides how Telegram downloads it. */
 type WebFileKind = Parameters<EmulationSession['mediaFiles']['downloadWebFile']>[0]['fileKind'];
