@@ -181,12 +181,13 @@ import type {
 } from './message_reaction.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
-import type { StopBotPollInput, StopBotPollResult } from './private_messaging.ts';
 import type {
-  SendPermissionMissingFailure,
-  StopSupergroupBotPollInput,
-  StopSupergroupBotPollResult,
-} from './supergroup_messaging.ts';
+  BotCaptionEdit,
+  BotPrivateChatMessageTarget,
+  BotSupergroupMessageTarget,
+  MessageEditingService,
+} from './message_editing.ts';
+import type { SendPermissionMissingFailure } from './supergroup_messaging.ts';
 
 /** The most UTF-8 bytes of text the Bot API reads before applying its formatting. */
 const MAX_FORMATTED_TEXT_BYTES = 1 << 15;
@@ -1535,86 +1536,10 @@ interface BotPrivateChat {
   readonly accountId: number;
 }
 
-/** Why an edit of any kind can fail, apart from failures about the new content. */
-type BotMessageEditFailureReason =
-  | 'bot_not_found'
-  | 'account_not_found'
-  | 'conversation_not_started'
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'callback_data_invalid'
-  | 'message_not_modified';
-
-type BotMessageEditingResult<FailureReason extends string> =
-  | { readonly edited: true; readonly message: PrivateMessage }
-  | { readonly edited: false; readonly reason: FailureReason };
-
-/**
- * The message of a private chat that a bot edits: by its ID in the bot's chat, or by the inline
- * message identifier of a message sent through the bot.
- */
-type PrivateMessageEditTarget =
-  & { readonly fromBotId: number }
-  & (
-    | { readonly chat: BotPrivateChat; readonly botMessageId: number }
-    | { readonly inlineMessageId: InlineMessageId }
-  );
-
-/** The supergroup message that a bot edits, addressed as `PrivateMessageEditTarget` describes. */
-type SupergroupMessageEditTarget =
-  & { readonly fromBotId: number }
-  & (
-    | { readonly chatId: number; readonly messageId: number }
-    | { readonly inlineMessageId: InlineMessageId }
-  );
-
-/** A caption edit as the messaging services take it. */
-interface CaptionEdit {
-  readonly caption: string;
-  readonly captionEntities?: readonly TextEntity[];
-  readonly showsCaptionAboveMedia: boolean;
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
 interface BotMessaging {
   isPrivateConversationStarted(
     key: { readonly accountId: number; readonly botId: number },
   ): boolean;
-  editBotMessageText(
-    input: PrivateMessageEditTarget & {
-      readonly content: TextMessageReplacement;
-      readonly inlineKeyboard?: InlineKeyboard;
-    },
-  ):
-    | BotMessageEditingResult<
-      | BotMessageEditFailureReason
-      | 'message_text_empty'
-      | 'message_has_no_text'
-      | 'message_text_too_long'
-    >
-    | ({ readonly edited: false } & TextInvalidFailure);
-  editBotMessageCaption(input: CaptionEdit & PrivateMessageEditTarget):
-    | BotMessageEditingResult<
-      BotMessageEditFailureReason | 'message_has_no_caption' | 'caption_too_long'
-    >
-    | ({ readonly edited: false } & TextInvalidFailure);
-  editBotMessageMedia(
-    input: PrivateMessageEditTarget & {
-      readonly media: MediaContent;
-      readonly inlineKeyboard?: InlineKeyboard;
-    },
-  ):
-    | BotMessageEditingResult<
-      | BotMessageEditFailureReason
-      | 'message_media_not_editable'
-      | 'caption_too_long'
-      | 'album_media_kind_changed'
-    >
-    | ({ readonly edited: false } & TextInvalidFailure);
-  editBotMessageInlineKeyboard(
-    input: PrivateMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
-  ): BotMessageEditingResult<BotMessageEditFailureReason>;
-  stopBotPoll(input: StopBotPollInput): StopBotPollResult;
   checkBotChatActionAccess(input: {
     readonly fromBotId: number;
     readonly to: BotPrivateChat;
@@ -1640,57 +1565,7 @@ interface BotMessaging {
     };
 }
 
-type SupergroupBotMessageEditingResult<FailureReason extends string> =
-  | { readonly edited: true; readonly message: SupergroupMessage }
-  | { readonly edited: false; readonly reason: FailureReason };
-
-/** Why an edit of any kind can fail in a supergroup, apart from failures about the content. */
-type SupergroupBotMessageEditFailureReason =
-  | 'bot_not_found'
-  | 'chat_not_found'
-  | FormerSupergroupMemberFailureReason
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'callback_data_invalid'
-  | 'button_type_invalid'
-  | 'message_not_modified';
-
 interface SupergroupBotMessaging {
-  editBotMessageText(
-    input: SupergroupMessageEditTarget & {
-      readonly content: TextMessageReplacement;
-      readonly inlineKeyboard?: InlineKeyboard;
-    },
-  ):
-    | SupergroupBotMessageEditingResult<
-      | SupergroupBotMessageEditFailureReason
-      | 'message_text_empty'
-      | 'message_has_no_text'
-      | 'message_text_too_long'
-    >
-    | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
-  editBotMessageCaption(input: CaptionEdit & SupergroupMessageEditTarget):
-    | SupergroupBotMessageEditingResult<
-      SupergroupBotMessageEditFailureReason | 'message_has_no_caption' | 'caption_too_long'
-    >
-    | ({ readonly edited: false } & TextInvalidFailure);
-  editBotMessageMedia(
-    input: SupergroupMessageEditTarget & {
-      readonly media: MediaContent;
-      readonly inlineKeyboard?: InlineKeyboard;
-    },
-  ):
-    | SupergroupBotMessageEditingResult<
-      | SupergroupBotMessageEditFailureReason
-      | 'message_media_not_editable'
-      | 'caption_too_long'
-      | 'album_media_kind_changed'
-    >
-    | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
-  editBotMessageInlineKeyboard(
-    input: SupergroupMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
-  ): SupergroupBotMessageEditingResult<SupergroupBotMessageEditFailureReason>;
-  stopBotPoll(input: StopSupergroupBotPollInput): StopSupergroupBotPollResult;
   checkBotChatActionAccess(input: {
     readonly fromBotId: number;
     readonly chatId: number;
@@ -1715,6 +1590,29 @@ interface SupergroupBotMessaging {
         | 'message_not_deletable';
     };
 }
+
+/**
+ * The message editing that the edit methods and `stopPoll` carry out, by the target each addresses:
+ * a message of a private chat or a supergroup, or an inline message.
+ */
+type BotMessageEditing = Pick<
+  MessageEditingService,
+  | 'findBotInlineMessage'
+  | 'editPrivateChatMessageText'
+  | 'editSupergroupMessageText'
+  | 'editInlineMessageText'
+  | 'editPrivateChatMessageCaption'
+  | 'editSupergroupMessageCaption'
+  | 'editInlineMessageCaption'
+  | 'editPrivateChatMessageMedia'
+  | 'editSupergroupMessageMedia'
+  | 'editInlineMessageMedia'
+  | 'editPrivateChatMessageKeyboard'
+  | 'editSupergroupMessageKeyboard'
+  | 'editInlineMessageKeyboard'
+  | 'stopPrivateChatPoll'
+  | 'stopSupergroupPoll'
+>;
 
 interface ChatMemberships {
   leaveChat(input: { readonly memberId: number; readonly chatId: number }): LeaveChatResult;
@@ -2000,10 +1898,6 @@ interface InlineQueryAnswering {
   answerInlineQuery(input: AnswerInlineQueryInput): AnswerInlineQueryResult;
 }
 
-interface InlineMessageLookup {
-  getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
-}
-
 interface BotCaptionNormalizer {
   normalizeBotCaption(caption: SpecifiedCaption): CaptionNormalization;
 }
@@ -2072,6 +1966,10 @@ interface BotApiServiceDependencies {
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   /**
+   * Edits the bot's messages and the messages sent through its inline mode, and stops its polls.
+   */
+  readonly messageEditing: BotMessageEditing;
+  /**
    * Sends the bot's messages and albums to its chats, as every send method sends them, resolving
    * what they reply to in other chats.
    */
@@ -2098,7 +1996,6 @@ interface BotApiServiceDependencies {
   readonly mediaFiles: MediaFiles;
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
-  readonly inlineMessages: InlineMessageLookup;
   /**
    * Normalizes the captions of an album, which are checked before the album is handed to the
    * messaging services, as they normalize the caption of a bot's media.
@@ -2135,6 +2032,7 @@ export class BotApiService {
   readonly #updateConsumers: BotUpdateConsumers;
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
+  readonly #messageEditing: BotMessageEditing;
   readonly #messageSender: BotMessageSending;
   readonly #messageRepeater: BotMessageRepetition;
   readonly #chatMemberships: ChatMemberships;
@@ -2146,7 +2044,6 @@ export class BotApiService {
   readonly #mediaFiles: MediaFiles;
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
-  readonly #inlineMessages: InlineMessageLookup;
   readonly #botCaptions: BotCaptionNormalizer;
   readonly #botCommands: BotCommandLists;
   readonly #botDescriptions: BotDescriptions;
@@ -2164,6 +2061,7 @@ export class BotApiService {
       updateConsumers,
       botMessages,
       supergroupBotMessages,
+      messageEditing,
       messageSender,
       messageRepeater,
       chatMemberships,
@@ -2175,7 +2073,6 @@ export class BotApiService {
       mediaFiles,
       callbackQueries,
       inlineQueries,
-      inlineMessages,
       botCaptions,
       botCommands,
       botDescriptions,
@@ -2192,6 +2089,7 @@ export class BotApiService {
     this.#updateConsumers = updateConsumers;
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
+    this.#messageEditing = messageEditing;
     this.#messageSender = messageSender;
     this.#messageRepeater = messageRepeater;
     this.#chatMemberships = chatMemberships;
@@ -2203,7 +2101,6 @@ export class BotApiService {
     this.#mediaFiles = mediaFiles;
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
-    this.#inlineMessages = inlineMessages;
     this.#botCaptions = botCaptions;
     this.#botCommands = botCommands;
     this.#botDescriptions = botDescriptions;
@@ -3546,22 +3443,17 @@ export class BotApiService {
     if (!replacement.resolved) {
       return { edited: false, ...replacement.failure };
     }
+    const edit = { content: replacement.content, inlineKeyboard };
     const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#botMessages.editBotMessageText({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', accountId: chatId },
-        botMessageId: messageId,
-        content: replacement.content,
-        inlineKeyboard,
+      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageText({
+        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
+        ...edit,
       }))
       : this.#presentSupergroupEdit(
         authenticatedBot,
-        this.#supergroupBotMessages.editBotMessageText({
-          fromBotId: authenticatedBot.id,
-          chatId,
-          messageId,
-          content: replacement.content,
-          inlineKeyboard,
+        this.#messageEditing.editSupergroupMessageText({
+          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
+          ...edit,
         }),
       );
     if (result.edited) {
@@ -3586,26 +3478,22 @@ export class BotApiService {
     { chatId, messageId, caption, showsCaptionAboveMedia, inlineKeyboard }:
       EditMessageCaptionRequest,
   ): EditMessageCaptionResult {
-    const captionEdit: CaptionEdit = {
+    const captionEdit: BotCaptionEdit = {
       caption: caption.text,
       captionEntities: caption.entities,
       showsCaptionAboveMedia,
       inlineKeyboard,
     };
     const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#botMessages.editBotMessageCaption({
+      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageCaption({
+        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
         ...captionEdit,
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', accountId: chatId },
-        botMessageId: messageId,
       }))
       : this.#presentSupergroupEdit(
         authenticatedBot,
-        this.#supergroupBotMessages.editBotMessageCaption({
+        this.#messageEditing.editSupergroupMessageCaption({
+          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
           ...captionEdit,
-          fromBotId: authenticatedBot.id,
-          chatId,
-          messageId,
         }),
       );
     if (result.edited) {
@@ -3634,22 +3522,17 @@ export class BotApiService {
     if (!mediaResolution.resolved) {
       return { edited: false, ...mediaResolution.failure };
     }
+    const edit = { media: mediaResolution.file, inlineKeyboard };
     const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#botMessages.editBotMessageMedia({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', accountId: chatId },
-        botMessageId: messageId,
-        media: mediaResolution.file,
-        inlineKeyboard,
+      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageMedia({
+        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
+        ...edit,
       }))
       : this.#presentSupergroupEdit(
         authenticatedBot,
-        this.#supergroupBotMessages.editBotMessageMedia({
-          fromBotId: authenticatedBot.id,
-          chatId,
-          messageId,
-          media: mediaResolution.file,
-          inlineKeyboard,
+        this.#messageEditing.editSupergroupMessageMedia({
+          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
+          ...edit,
         }),
       );
     if (result.edited) {
@@ -3671,18 +3554,14 @@ export class BotApiService {
     { chatId, messageId, inlineKeyboard }: EditMessageReplyMarkupRequest,
   ): EditMessageResult<EditMessageReplyMarkupFailureReason> {
     const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#botMessages.editBotMessageInlineKeyboard({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', accountId: chatId },
-        botMessageId: messageId,
+      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageKeyboard({
+        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
         inlineKeyboard,
       }))
       : this.#presentSupergroupEdit(
         authenticatedBot,
-        this.#supergroupBotMessages.editBotMessageInlineKeyboard({
-          fromBotId: authenticatedBot.id,
-          chatId,
-          messageId,
+        this.#messageEditing.editSupergroupMessageKeyboard({
+          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
           inlineKeyboard,
         }),
       );
@@ -3703,16 +3582,12 @@ export class BotApiService {
     { chatId, messageId, inlineKeyboard }: StopPollRequest,
   ): StopPollResult {
     const result = isUserId(chatId)
-      ? this.#botMessages.stopBotPoll({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', accountId: chatId },
-        botMessageId: messageId,
+      ? this.#messageEditing.stopPrivateChatPoll({
+        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
         inlineKeyboard,
       })
-      : this.#supergroupBotMessages.stopBotPoll({
-        fromBotId: authenticatedBot.id,
-        chatId,
-        messageId,
+      : this.#messageEditing.stopSupergroupPoll({
+        ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
         inlineKeyboard,
       });
     if (result.stopped) {
@@ -3907,8 +3782,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { inlineMessageId, content, inlineKeyboard }: EditInlineMessageTextRequest,
   ): EditInlineMessageTextResult {
-    const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
-    if (message === undefined) {
+    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
       return { edited: false, reason: 'message_not_found' };
     }
     if (
@@ -3921,28 +3795,22 @@ export class BotApiService {
     if (!replacement.resolved) {
       return { edited: false, ...replacement.failure };
     }
-    const edit = {
+    const result = this.#messageEditing.editInlineMessageText({
       fromBotId: authenticatedBot.id,
       inlineMessageId,
       content: replacement.content,
       inlineKeyboard,
-    };
-    const result = message.kind === 'private_message'
-      ? this.#botMessages.editBotMessageText(edit)
-      : this.#supergroupBotMessages.editBotMessageText(edit);
+    });
     if (result.edited) {
       return { edited: true };
     }
     switch (result.reason) {
       case 'text_invalid':
         return result;
-      // TDLib checks no permission for a message addressed by its inline message identifier.
-      case 'send_permission_missing':
-        throw new Error(`Inline message ${inlineMessageId} was refused for a permission`);
       default:
         return {
           edited: false,
-          reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
+          reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
         };
     }
   }
@@ -3956,21 +3824,17 @@ export class BotApiService {
     { inlineMessageId, caption, showsCaptionAboveMedia, inlineKeyboard }:
       EditInlineMessageCaptionRequest,
   ): EditInlineMessageResult<EditInlineMessageCaptionFailureReason> {
-    const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
-    if (message === undefined) {
+    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
       return { edited: false, reason: 'message_not_found' };
     }
-    const edit = {
+    const result = this.#messageEditing.editInlineMessageCaption({
       fromBotId: authenticatedBot.id,
       inlineMessageId,
       caption: caption.text,
       captionEntities: caption.entities,
       showsCaptionAboveMedia,
       inlineKeyboard,
-    };
-    const result = message.kind === 'private_message'
-      ? this.#botMessages.editBotMessageCaption(edit)
-      : this.#supergroupBotMessages.editBotMessageCaption(edit);
+    });
     if (result.edited) {
       return { edited: true };
     }
@@ -3980,7 +3844,7 @@ export class BotApiService {
       default:
         return {
           edited: false,
-          reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
+          reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
         };
     }
   }
@@ -3996,8 +3860,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { inlineMessageId, media, inlineKeyboard }: EditInlineMessageMediaRequest,
   ): EditInlineMessageMediaResult {
-    const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
-    if (message === undefined) {
+    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
       return { edited: false, reason: 'message_not_found' };
     }
     if (getMediaReplacementFile(media).kind === 'upload') {
@@ -4007,30 +3870,24 @@ export class BotApiService {
     if (!mediaResolution.resolved) {
       return { edited: false, ...mediaResolution.failure };
     }
-    const edit = {
+    const result = this.#messageEditing.editInlineMessageMedia({
       fromBotId: authenticatedBot.id,
       inlineMessageId,
       media: mediaResolution.file,
       inlineKeyboard,
-    };
-    const result = message.kind === 'private_message'
-      ? this.#botMessages.editBotMessageMedia(edit)
-      : this.#supergroupBotMessages.editBotMessageMedia(edit);
+    });
     if (result.edited) {
       return { edited: true };
     }
     switch (result.reason) {
       case 'text_invalid':
         return result;
-      // TDLib checks no permission for a message addressed by its inline message identifier.
-      case 'send_permission_missing':
-        throw new Error(`Inline message ${inlineMessageId} was refused for a permission`);
       case 'album_media_kind_changed':
         throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
       default:
         return {
           edited: false,
-          reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
+          reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
         };
     }
   }
@@ -4040,17 +3897,17 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { inlineMessageId, inlineKeyboard }: EditInlineMessageReplyMarkupRequest,
   ): EditInlineMessageResult<EditInlineMessageReplyMarkupFailureReason> {
-    const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
-    if (message === undefined) {
+    if (!this.#isOwnInlineMessage(authenticatedBot, inlineMessageId)) {
       return { edited: false, reason: 'message_not_found' };
     }
-    const edit = { fromBotId: authenticatedBot.id, inlineMessageId, inlineKeyboard };
-    const result = message.kind === 'private_message'
-      ? this.#botMessages.editBotMessageInlineKeyboard(edit)
-      : this.#supergroupBotMessages.editBotMessageInlineKeyboard(edit);
+    const result = this.#messageEditing.editInlineMessageKeyboard({
+      fromBotId: authenticatedBot.id,
+      inlineMessageId,
+      inlineKeyboard,
+    });
     return result.edited ? { edited: true } : {
       edited: false,
-      reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
+      reason: excludeInlineMessageEditabilityFailure(authenticatedBot, result.reason),
     };
   }
 
@@ -4462,15 +4319,34 @@ export class BotApiService {
   }
 
   /**
-   * Finds a message sent through the bot's inline mode, whose chat decides which messaging service
-   * edits it. Another bot's inline message is not found.
+   * Whether an inline message identifier names a message sent through the bot's inline mode, which
+   * an inline edit checks before it reads the new content. Another bot's inline message is not the
+   * bot's own.
    */
-  #findOwnInlineMessage(
+  #isOwnInlineMessage(
     authenticatedBot: VirtualBotProfile,
     inlineMessageId: InlineMessageId,
-  ): ChatMessage | undefined {
-    const message = this.#inlineMessages.getMessageByInlineMessageId(inlineMessageId);
-    return message?.viaBot?.botId === authenticatedBot.id ? message : undefined;
+  ): boolean {
+    return this.#messageEditing.findBotInlineMessage(authenticatedBot.id, inlineMessageId) !==
+      undefined;
+  }
+
+  /** The message of the bot's private chat with a user that a chat message edit addresses. */
+  #privateChatMessageTarget(
+    authenticatedBot: VirtualBotProfile,
+    chatId: number,
+    messageId: number,
+  ): BotPrivateChatMessageTarget {
+    return { fromBotId: authenticatedBot.id, chat: { type: 'private', peerId: chatId }, messageId };
+  }
+
+  /** The supergroup message that a chat message edit addresses. */
+  #supergroupMessageTarget(
+    authenticatedBot: VirtualBotProfile,
+    chatId: number,
+    messageId: number,
+  ): BotSupergroupMessageTarget {
+    return { fromBotId: authenticatedBot.id, chat: { type: 'supergroup', chatId }, messageId };
   }
 
   #deleteChatMessages(
@@ -4993,28 +4869,18 @@ function excludeAccountPinChangeFailure<Reason extends string>(
 
 /**
  * Leaves out the failures of an edit of an inline message that cannot occur: the authenticated bot
- * exists, and the messaging services check an inline message only by its identifier, so failures
- * about its chat cannot occur.
+ * exists, and the bot may edit any message sent through its inline mode, which is neither a
+ * forward nor a message with a reply keyboard.
  */
-function excludeInlineMessageChatFailure<Reason extends string>(
+function excludeInlineMessageEditabilityFailure<Reason extends string>(
   authenticatedBot: VirtualBotProfile,
-  reason:
-    | Reason
-    | 'bot_not_found'
-    | BotPrivateChatAccessFailureReason
-    | SupergroupBotAccessFailureReason
-    | 'message_not_editable',
+  reason: Reason | 'bot_not_found' | 'message_not_editable',
 ): Reason {
   switch (reason) {
     case 'bot_not_found':
       throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    case 'account_not_found':
-    case 'conversation_not_started':
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
     case 'message_not_editable':
-      throw new Error(`Inline message edit failed for its chat: ${reason}`);
+      throw new Error(`Bot ${authenticatedBot.id} may not edit its own inline message`);
     default:
       return reason;
   }

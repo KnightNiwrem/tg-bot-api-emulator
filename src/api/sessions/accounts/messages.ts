@@ -365,10 +365,10 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
-    const result = supergroupMessaging.editAccountMessage({
+    const { messageEditing, botMessageViews } = context.get('emulationSession');
+    const result = messageEditing.editAccountSupergroupMessage({
       fromAccountId: accountId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       messageId,
       edit: readAccountMessageEdit(requestBody),
     });
@@ -422,11 +422,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const { privateMessaging, botMessageViews } = context.get('emulationSession');
-    const result = privateMessaging.editAccountMessage({
+    const { messageEditing, botMessageViews } = context.get('emulationSession');
+    const result = messageEditing.editAccountPrivateChatMessage({
       fromAccountId: accountId,
-      chat: { type: 'private', botId },
-      botMessageId: messageId,
+      chat: { type: 'private', peerId: botId },
+      messageId,
       edit: readAccountMessageEdit(requestBody),
     });
     if (!result.edited) {
@@ -611,7 +611,7 @@ function prepareAccountUpload(
 }
 
 type AccountMessageEdit = Parameters<
-  EmulationSession['privateMessaging']['editAccountMessage']
+  EmulationSession['messageEditing']['editAccountPrivateChatMessage']
 >[0]['edit'];
 
 function readAccountMessageEdit(
@@ -625,7 +625,7 @@ function readAccountMessageEdit(
 /** A missing account, bot, or message is not found; any other failure rejects the edit. */
 function privateMessageEditFailureStatus(
   reason: Extract<
-    ReturnType<EmulationSession['privateMessaging']['editAccountMessage']>,
+    ReturnType<EmulationSession['messageEditing']['editAccountPrivateChatMessage']>,
     { readonly edited: false }
   >['reason'],
 ): 400 | 404 {

@@ -1,7 +1,6 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import { privateChatMessagePolicy } from '../types/chat_policy.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
-import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
@@ -23,17 +22,11 @@ import type {
   PrivateConversationRole,
 } from '../types/virtual_chat.ts';
 import {
-  canBotEditMessage,
   type CanonicalMessageId,
-  type ChatMessage,
-  type InlineMessageId,
-  isPrivateContentMessage,
   type MediaGroupId,
-  type MessageEdit,
   type MessageForwardInfo,
   type MessagePinnedContent,
   type NewPrivateMessage,
-  type PrivateContentMessage,
   type PrivateMessage,
   type WebAppDataMessageContent,
 } from '../types/virtual_message.ts';
@@ -41,17 +34,11 @@ import type { FormattedTextFixingContext } from '../text_entities/formatted_text
 import {
   type AccountAlbumMediaContent,
   type AccountMessageContent,
-  type AccountMessageEdit,
-  checkBotMessageEdit,
   type ContentNormalizationFailure,
-  type ContentReplacement,
   type ContentTextNormalizationFailure,
   type FileUploadStore,
   getReplyQuoteSource,
   hasOnlyValidButtonCallbackData,
-  hasOnlyValidCallbackData,
-  isSameMessageContent,
-  isUnchangedContent,
   type MediaContent,
   type NewPollStore,
   type NormalizedOutgoingContent,
@@ -59,21 +46,12 @@ import {
   normalizeOutgoingContent,
   type OutgoingContentNormalization,
   type OutgoingMessageContent,
-  replaceAccountMessageContent,
-  replaceMessageCaption,
-  replaceMessageMedia,
-  replaceMessageText,
   resolveReplyQuote,
-  type SpecifiedCaption,
   type SpecifiedQuote,
   storeOutgoingContent,
-  type TextInvalidFailure,
-  type TextMessageReplacement,
-  toContentOfStoredFile,
   toOutgoingAccountContent,
   toOutgoingAccountMedia,
 } from './message_content.ts';
-import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
 import {
   resolveSharedChat,
   resolveSharedUsers,
@@ -291,151 +269,6 @@ export type SendBotAlbumResult =
     )
   );
 
-/**
- * The message a bot edits: one it sent to one of its private chats, or one an account sent to a
- * private chat through the bot's inline mode, which the bot addresses without being in the chat.
- */
-type EditBotMessageTarget =
-  | {
-    readonly fromBotId: number;
-    readonly chat: BotPrivateChat;
-    /** The message's ID in the bot's message box. */
-    readonly botMessageId: number;
-  }
-  | {
-    readonly fromBotId: number;
-    readonly inlineMessageId: InlineMessageId;
-  };
-
-export type EditBotMessageTextInput = EditBotMessageTarget & {
-  /**
-   * New text with the formatting the bot specified, which Telegram validates and normalizes, or a
-   * new rich message.
-   */
-  readonly content: TextMessageReplacement;
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditBotMessageCaptionInput = EditBotMessageTarget & SpecifiedCaption & {
-  /** Whether a photo or video shows its caption above itself; other media ignores it. */
-  readonly showsCaptionAboveMedia: boolean;
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditBotMessageMediaInput = EditBotMessageTarget & {
-  /** The new media and its caption with the formatting the bot specified. */
-  readonly media: MediaContent;
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditBotMessageInlineKeyboardInput = EditBotMessageTarget & {
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditBotMessageInlineKeyboardFailureReason =
-  | 'bot_not_found'
-  | 'account_not_found'
-  | 'conversation_not_started'
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'callback_data_invalid'
-  | 'message_not_modified';
-
-/** A poll a bot stops through its message in one of its private chats. */
-export interface StopBotPollInput {
-  readonly fromBotId: number;
-  readonly chat: BotPrivateChat;
-  /** The ID of the poll's message in the bot's message box. */
-  readonly botMessageId: number;
-  /** The keyboard the poll's message shows once stopped; omitting it removes the keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export type StopBotPollResult =
-  | { readonly stopped: true; readonly message: PrivateMessage; readonly poll: Poll }
-  | {
-    readonly stopped: false;
-    readonly reason:
-      | 'bot_not_found'
-      | 'account_not_found'
-      | 'conversation_not_started'
-      | 'message_not_found'
-      | PollStopFailureReason
-      | 'callback_data_invalid';
-  };
-
-export type EditBotMessageTextFailureReason =
-  | EditBotMessageInlineKeyboardFailureReason
-  | 'message_text_empty'
-  | 'message_has_no_text'
-  | 'message_text_too_long';
-
-export type EditBotMessageCaptionFailureReason =
-  | EditBotMessageInlineKeyboardFailureReason
-  | 'message_has_no_caption'
-  | 'caption_too_long';
-
-export type EditBotMessageMediaFailureReason =
-  | EditBotMessageInlineKeyboardFailureReason
-  /**
-   * The message is a voice note, a poll, a contact, or a location, whose media TDLib does not let
-   * anyone edit.
-   */
-  | 'message_media_not_editable'
-  | 'caption_too_long'
-  | 'album_media_kind_changed'
-  | 'message_media_not_editable';
-
-export type PrivateMessageEditResult<FailureReason extends string> =
-  | {
-    readonly edited: true;
-    readonly message: PrivateMessage;
-  }
-  | {
-    readonly edited: false;
-    readonly reason: FailureReason;
-  };
-
-export type EditBotMessageTextResult =
-  | PrivateMessageEditResult<EditBotMessageTextFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
-export type EditBotMessageCaptionResult =
-  | PrivateMessageEditResult<EditBotMessageCaptionFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
-export type EditBotMessageMediaResult =
-  | PrivateMessageEditResult<EditBotMessageMediaFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
-export interface EditAccountMessageInput {
-  readonly fromAccountId: number;
-  readonly chat: AccountPrivateChatAddress;
-  /** The message's ID in the bot's message box. */
-  readonly botMessageId: number;
-  readonly edit: AccountMessageEdit;
-}
-
-export type EditAccountMessageFailureReason =
-  | 'account_not_found'
-  | 'bot_not_found'
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'message_text_empty'
-  | 'message_has_no_text'
-  | 'message_text_too_long'
-  | 'message_has_no_caption'
-  | 'caption_too_long'
-  | 'message_not_modified';
-
-export type EditAccountMessageResult =
-  | PrivateMessageEditResult<EditAccountMessageFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
 export interface DeleteMessagesByBotInput {
   readonly fromBotId: number;
   readonly chat: BotPrivateChat;
@@ -608,20 +441,8 @@ interface PrivateMessageStore {
   createMediaGroupId(): MediaGroupId;
   addMessage(message: NewPrivateMessage): PrivateMessage;
   findChatMessage(chat: PrivateChatKey, messageId: CanonicalMessageId): PrivateMessage | undefined;
-  getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
-  editMessage(
-    chat: PrivateChatKey,
-    messageId: CanonicalMessageId,
-    edit: MessageEdit,
-  ): PrivateMessage;
   deleteMessage(messageId: CanonicalMessageId): void;
   getChatMessages(chat: PrivateChatKey): readonly PrivateMessage[];
-}
-
-/** Stores the polls bots send and closes the polls they stop. */
-interface PollStore extends NewPollStore {
-  getPoll(pollId: PollId): Poll | undefined;
-  closePoll(pollId: PollId): Poll;
 }
 
 interface MessageBoxStore {
@@ -661,7 +482,7 @@ interface PrivateMessagingServiceDependencies {
   readonly privateConversations: PrivateConversationStore;
   readonly messages: PrivateMessageStore;
   readonly files: FileUploadStore;
-  readonly polls: PollStore;
+  readonly polls: NewPollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly blockedUsers: BlockedUserLookup;
   readonly joinRequesterContacts: JoinRequesterContactGrants;
@@ -690,10 +511,11 @@ interface ParticipantMessage extends Omit<NewPrivateMessage, 'chat' | 'sentAtUni
  * Carries out exchanges of text, captioned media, and media albums between an
  * account and a bot in their private conversation, including forwards by either and copies by the
  * bot, and commits each accepted message: its upload stored, the message stored, numbered for both
- * participants, then published. Bots can attach inline keyboards to their messages, edit them afterward, and delete
+ * participants, then published. Bots can attach inline keyboards to their messages, and delete
  * messages of their chats. A bot's message can also change the reply interface the account's
- * client shows, such as a reply keyboard whose buttons the account presses. An account edits the text or caption of its messages, and sends inline
- * query results through inline bots, which edit the messages sent through them.
+ * client shows, such as a reply keyboard whose buttons the account presses. An account sends
+ * inline query results through inline bots. `MessageEditingService` edits the messages of private
+ * chats, as it edits those of every chat type.
  *
  * While an account blocks a bot, neither can write to the other, as on Telegram, where the bot's
  * sends fail and a client asks the user to unblock the bot before writing to it.
@@ -709,7 +531,7 @@ export class PrivateMessagingService {
   readonly #privateConversations: PrivateConversationStore;
   readonly #messages: PrivateMessageStore;
   readonly #files: FileUploadStore;
-  readonly #polls: PollStore;
+  readonly #polls: NewPollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #blockedUsers: BlockedUserLookup;
   readonly #joinRequesterContacts: JoinRequesterContactGrants;
@@ -1015,187 +837,6 @@ export class PrivateMessagingService {
         messageEffectId: input.messageEffectId,
       }),
     };
-  }
-
-  /**
-   * Replaces the text, entities, and inline keyboard of a text or rich message the bot sent, or
-   * that was sent through its inline mode, with new text or a rich message, which may change the
-   * message's kind. Only changed content dates the edit. As on Telegram, the bot receives no update
-   * for its own message's edit; an edit of an account's message sent through the bot reaches the
-   * chat's bot as the account's edited message.
-   *
-   * Checks follow Telegram's order: text is checked for emptiness before the message is resolved;
-   * the content is then normalized, and text is checked for length.
-   */
-  editBotMessageText(input: EditBotMessageTextInput): EditBotMessageTextResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    if (input.content.kind === 'text' && input.content.text.length === 0) {
-      return { edited: false, reason: 'message_text_empty' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-    const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageText(message.content, input.content, this.#textFixingContext),
-      input.inlineKeyboard,
-    );
-  }
-
-  /**
-   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot
-   * sent, or that was sent through its inline mode; an empty caption removes it. Only a changed
-   * caption dates the edit. Updates follow `editBotMessageText`.
-   */
-  editBotMessageCaption(input: EditBotMessageCaptionInput): EditBotMessageCaptionResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-    const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageCaption(message.content, input, 'bot', this.#textFixingContext),
-      input.inlineKeyboard,
-    );
-  }
-
-  /**
-   * Replaces the content, with its caption, and the inline keyboard of a message the bot sent, or
-   * that was sent through its inline mode, with new media, as `replaceMessageMedia` replaces it.
-   * Only changed content dates the edit. Updates follow `editBotMessageText`.
-   */
-  editBotMessageMedia(input: EditBotMessageMediaInput): EditBotMessageMediaResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-    const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageMedia(message, input.media, this.#textFixingContext),
-      input.inlineKeyboard,
-    );
-  }
-
-  /**
-   * Replaces the inline keyboard of a message the bot sent, or that was sent through its inline
-   * mode, leaving its content and edit date as they are. Updates follow `editBotMessageText`.
-   */
-  editBotMessageInlineKeyboard(
-    input: EditBotMessageInlineKeyboardInput,
-  ): PrivateMessageEditResult<EditBotMessageInlineKeyboardFailureReason> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-
-    const { message } = resolution;
-    return this.#editBotMessage(message, {
-      content: { kind: 'existing', content: message.content },
-      inlineKeyboard: input.inlineKeyboard,
-      contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
-    });
-  }
-
-  /**
-   * Stops a poll the bot sent to one of its private chats, as TDLib's `stop_poll` does: once the
-   * message is found, the poll is found as `findStoppablePoll` finds it, and the new keyboard's
-   * callback data must fit. The poll then accepts no more answers and keeps its votes, the message
-   * shows the new keyboard, and the bot that sent the poll learns of its closure.
-   */
-  stopBotPoll(input: StopBotPollInput): StopBotPollResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { stopped: false, reason: 'bot_not_found' };
-    }
-    const lookup = this.#findBotEditTarget(input);
-    if (!lookup.resolved) {
-      return { stopped: false, reason: lookup.reason };
-    }
-    const pollMessage = lookup.message;
-    // A service message shows no poll.
-    if (!isPrivateContentMessage(pollMessage)) {
-      return { stopped: false, reason: 'message_has_no_poll' };
-    }
-    const pollLookup = findStoppablePoll(pollMessage, input.fromBotId, this.#polls);
-    if (!pollLookup.found) {
-      return { stopped: false, reason: pollLookup.reason };
-    }
-    if (input.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(input.inlineKeyboard)) {
-      return { stopped: false, reason: 'callback_data_invalid' };
-    }
-
-    const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
-    const message = this.#messages.editMessage(pollMessage.chat, pollMessage.id, {
-      content: pollMessage.content,
-      inlineKeyboard: input.inlineKeyboard,
-      contentEditedAtUnixSeconds: pollMessage.contentEditedAtUnixSeconds,
-    });
-    this.#events.emit({ type: 'poll_closed', poll: stoppedPoll });
-    return { stopped: true, message, poll: stoppedPoll };
-  }
-
-  /**
-   * Replaces the text or caption of a message the account wrote to the bot, other than one sent
-   * through an inline bot, which, unlike a bot's own edit, sends the bot an `edited_message` update. As when sending, the text is normalized as
-   * a Telegram client does, which marks bot commands again.
-   */
-  editAccountMessage(input: EditAccountMessageInput): EditAccountMessageResult {
-    if (this.#accounts.getById(input.fromAccountId) === undefined) {
-      return { edited: false, reason: 'account_not_found' };
-    }
-    if (this.#bots.getById(input.chat.botId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const message = this.getPrivateMessageByBotMessageId(
-      { accountId: input.fromAccountId, botId: input.chat.botId },
-      input.botMessageId,
-    );
-    if (message === undefined) {
-      return { edited: false, reason: 'message_not_found' };
-    }
-    // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward
-    // or a service message.
-    if (
-      !isPrivateContentMessage(message) || message.sender !== 'account' ||
-      message.viaBot !== undefined || message.forwardInfo !== undefined
-    ) {
-      return { edited: false, reason: 'message_not_editable' };
-    }
-    const replacement = replaceAccountMessageContent(
-      message.content,
-      input.edit,
-      this.#textFixingContext,
-    );
-    if (!replacement.replaced) {
-      return { edited: false, ...replacement.failure };
-    }
-    // An account edits only the text or caption of its message, which uploads no file.
-    const content = toContentOfStoredFile(replacement.content);
-    if (isSameMessageContent(content, message.content)) {
-      return { edited: false, reason: 'message_not_modified' };
-    }
-
-    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
-      content,
-      inlineKeyboard: message.inlineKeyboard,
-      contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
-    });
-    this.#events.emit({ type: 'message_edited', message: editedMessage });
-    return { edited: true, message: editedMessage };
   }
 
   /**
@@ -1673,118 +1314,6 @@ export class PrivateMessagingService {
       throw new Error(`Reply interface message ${messageId} has no stored reply interface`);
     }
     return { message, replyInterface };
-  }
-
-  /**
-   * Resolves the message an edit targets, found as `#findBotEditTarget` does, which the bot must
-   * be allowed to edit. A service message has no content to edit.
-   */
-  #resolveEditableBotMessage(
-    target: EditBotMessageTarget,
-  ):
-    | { readonly resolved: true; readonly message: PrivateContentMessage }
-    | {
-      readonly resolved: false;
-      readonly reason:
-        | 'account_not_found'
-        | 'conversation_not_started'
-        | 'message_not_found'
-        | 'message_not_editable';
-    } {
-    const lookup = this.#findBotEditTarget(target);
-    if (!lookup.resolved) {
-      return lookup;
-    }
-    const { message } = lookup;
-    return isPrivateContentMessage(message) && canBotEditMessage(message, target.fromBotId)
-      ? { resolved: true, message }
-      : { resolved: false, reason: 'message_not_editable' };
-  }
-
-  /**
-   * Finds the message an edit targets: a message of one of the bot's private chats, or a message
-   * sent through the bot's inline mode, which only that bot finds by its inline message identifier.
-   */
-  #findBotEditTarget(
-    target: EditBotMessageTarget,
-  ):
-    | { readonly resolved: true; readonly message: PrivateMessage }
-    | {
-      readonly resolved: false;
-      readonly reason: 'account_not_found' | 'conversation_not_started' | 'message_not_found';
-    } {
-    if ('inlineMessageId' in target) {
-      const message = this.#findInlineMessage(target.inlineMessageId);
-      return message?.viaBot?.botId === target.fromBotId
-        ? { resolved: true, message }
-        : { resolved: false, reason: 'message_not_found' };
-    }
-    const { fromBotId, chat, botMessageId } = target;
-    if (this.#accounts.getById(chat.accountId) === undefined) {
-      return { resolved: false, reason: 'account_not_found' };
-    }
-    const conversation: PrivateConversationKey = { accountId: chat.accountId, botId: fromBotId };
-    if (!this.#privateConversations.isPrivateConversationStarted(conversation)) {
-      return { resolved: false, reason: 'conversation_not_started' };
-    }
-    const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
-    return message === undefined
-      ? { resolved: false, reason: 'message_not_found' }
-      : { resolved: true, message };
-  }
-
-  /**
-   * Applies a bot's replacement of its message's content with the given keyboard; only changed
-   * content dates the edit.
-   */
-  #editBotMessageContent<FailureReason extends string>(
-    message: PrivateContentMessage,
-    replacement: ContentReplacement<FailureReason>,
-    inlineKeyboard: InlineKeyboard | undefined,
-  ):
-    | PrivateMessageEditResult<FailureReason | 'callback_data_invalid' | 'message_not_modified'>
-    | ({ readonly edited: false } & TextInvalidFailure) {
-    if (!replacement.replaced) {
-      return { edited: false, ...replacement.failure };
-    }
-    return this.#editBotMessage(message, {
-      content: replacement.content,
-      inlineKeyboard,
-      contentEditedAtUnixSeconds: isUnchangedContent(replacement.content, message.content)
-        ? message.contentEditedAtUnixSeconds
-        : this.#currentUnixTimeSeconds(),
-    });
-  }
-
-  /**
-   * Validates, stores, and publishes a bot's edit of its message, which must change the message.
-   * The new content's upload is stored only once the edit passes its checks.
-   */
-  #editBotMessage(
-    message: PrivateContentMessage,
-    { content, ...edit }: {
-      readonly content: NormalizedOutgoingContent;
-      readonly inlineKeyboard: InlineKeyboard | undefined;
-      readonly contentEditedAtUnixSeconds: number | undefined;
-    },
-  ): PrivateMessageEditResult<'callback_data_invalid' | 'message_not_modified'> {
-    const editFailure = checkBotMessageEdit(message, { content, ...edit });
-    if (editFailure !== undefined) {
-      return { edited: false, reason: editFailure };
-    }
-
-    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
-      ...edit,
-      content: storeOutgoingContent(content, this.#files, this.#polls),
-    });
-    this.#events.emit({ type: 'message_edited', message: editedMessage });
-    return { edited: true, message: editedMessage };
-  }
-
-  /** Finds a private message sent through a bot's inline mode by its inline message identifier. */
-  #findInlineMessage(inlineMessageId: InlineMessageId): PrivateMessage | undefined {
-    const message = this.#messages.getMessageByInlineMessageId(inlineMessageId);
-    return message?.kind === 'private_message' ? message : undefined;
   }
 
   /**

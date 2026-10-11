@@ -35,6 +35,7 @@ import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
 import { normalizeBotDraftText, normalizeCaption } from '../src/services/message_content.ts';
 import { MessageDraftService } from '../src/services/message_draft.ts';
+import { MessageEditingService } from '../src/services/message_editing.ts';
 import { MessagePinningService } from '../src/services/message_pinning.ts';
 import { MessageReactionService } from '../src/services/message_reaction.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
@@ -526,22 +527,20 @@ function createBotApiFixture() {
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers,
+    joinRequesterContacts,
+    privateMessages: privateMessaging,
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
   const callbackQueries = new CallbackQueryService({
-    accountChatMessages: createAccountChatMessageReader({
-      accounts,
-      privateChats: new PrivateChatPolicy({
-        accounts,
-        bots,
-        privateConversations,
-        blockedUsers,
-        joinRequesterContacts,
-        privateMessages: privateMessaging,
-      }),
-      supergroups: new SupergroupChatPolicy({
-        sharedChats,
-        supergroupMessages: supergroupMessaging,
-      }),
-    }),
+    accountChatMessages: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
     bots,
     callbackQueries: new CallbackQueryRepository(),
     events,
@@ -597,6 +596,17 @@ function createBotApiFixture() {
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     messageSender,
+    messageEditing: new MessageEditingService({
+      accounts,
+      bots,
+      privateChats,
+      supergroups,
+      messages,
+      files,
+      polls,
+      events,
+      currentUnixTimeSeconds: () => 1_700_000_000,
+    }),
     messageRepeater: new BotMessageRepeater({
       messageSender,
       mediaGroups: messages,
@@ -648,7 +658,6 @@ function createBotApiFixture() {
       webMediaFiles: mediaFiles,
       events,
     }),
-    inlineMessages: messages,
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', textFixingContext),
     },
