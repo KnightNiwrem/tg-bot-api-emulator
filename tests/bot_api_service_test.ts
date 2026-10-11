@@ -35,6 +35,7 @@ import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
 import { normalizeBotDraftText, normalizeCaption } from '../src/services/message_content.ts';
 import { MessageDraftService } from '../src/services/message_draft.ts';
+import { MessageDeletionService } from '../src/services/message_deletion.ts';
 import { MessageEditingService } from '../src/services/message_editing.ts';
 import { MessagePinningService } from '../src/services/message_pinning.ts';
 import { MessageReactionService } from '../src/services/message_reaction.ts';
@@ -606,6 +607,14 @@ function createBotApiFixture() {
       polls,
       events,
       currentUnixTimeSeconds: () => 1_700_000_000,
+    }),
+    messageDeletion: new MessageDeletionService({
+      accounts,
+      bots,
+      privateChats,
+      supergroups,
+      messages,
+      privateReplyInterfaces: privateConversations,
     }),
     messageRepeater: new BotMessageRepeater({
       messageSender,

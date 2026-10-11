@@ -9,6 +9,7 @@ import { PollRepository } from '../src/repositories/poll.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
+import { MessageDeletionService } from '../src/services/message_deletion.ts';
 import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
@@ -80,7 +81,7 @@ Deno.test('private chats number messages in one box per participant, across its 
 });
 
 Deno.test('a private chat finds its messages by bot box ID, but not by the IDs of other chats', () => {
-  const { privateMessaging, privateChats, messageBoxes, ada, grace, bot } =
+  const { privateMessaging, messageDeletion, privateChats, messageBoxes, ada, grace, bot } =
     createChatPolicyFixture();
   const adaChat = privateChatKey(ada, bot);
   const graceChat = privateChatKey(grace, bot);
@@ -98,10 +99,10 @@ Deno.test('a private chat finds its messages by bot box ID, but not by the IDs o
     [adaMessage.id, graceMessage.id, undefined, undefined],
   );
 
-  const deletion = privateMessaging.deleteAccountMessage({
+  const deletion = messageDeletion.deleteAccountPrivateChatMessage({
     fromAccountId: ada,
-    botId: bot,
-    botMessageId: botBoxId(adaMessage),
+    chat: { type: 'private', peerId: bot },
+    messageId: botBoxId(adaMessage),
   });
   const laterMessage = sendAccountText(privateMessaging, ada, bot, 'Ada again');
   assertEquals(
@@ -402,18 +403,31 @@ function createChatPolicyFixture() {
     }
   }
 
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers,
+    joinRequesterContacts,
+    privateMessages: privateMessaging,
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
   return {
     privateMessaging,
     supergroupMessaging,
-    privateChats: new PrivateChatPolicy({
+    messageDeletion: new MessageDeletionService({
       accounts,
       bots,
-      privateConversations,
-      blockedUsers,
-      joinRequesterContacts,
-      privateMessages: privateMessaging,
+      privateChats,
+      supergroups,
+      messages,
+      privateReplyInterfaces: privateConversations,
     }),
-    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    privateChats,
+    supergroups,
     sharedChats,
     blockedUsers,
     messageBoxes,

@@ -392,9 +392,9 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, chatId, messageId } = messagePath.value;
 
-    const result = context.get('emulationSession').supergroupMessaging.deleteAccountMessage({
+    const result = context.get('emulationSession').messageDeletion.deleteAccountSupergroupMessage({
       fromAccountId: accountId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       messageId,
     });
     if (result.deleted) {
@@ -447,10 +447,10 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, botId, messageId } = messagePath.value;
 
-    const result = context.get('emulationSession').privateMessaging.deleteAccountMessage({
+    const result = context.get('emulationSession').messageDeletion.deleteAccountPrivateChatMessage({
       fromAccountId: accountId,
-      botId,
-      botMessageId: messageId,
+      chat: { type: 'private', peerId: botId },
+      messageId,
     });
     return result.deleted
       ? context.body(null, 204)

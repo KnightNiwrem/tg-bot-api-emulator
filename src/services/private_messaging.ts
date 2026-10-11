@@ -269,43 +269,6 @@ export type SendBotAlbumResult =
     )
   );
 
-export interface DeleteMessagesByBotInput {
-  readonly fromBotId: number;
-  readonly chat: BotPrivateChat;
-  /** The messages' IDs in the bot's message box. */
-  readonly botMessageIds: readonly number[];
-}
-
-export type DeleteMessagesByBotFailureReason =
-  | 'bot_not_found'
-  | 'account_not_found'
-  | 'conversation_not_started';
-
-export type DeleteMessagesByBotResult =
-  | {
-    readonly deleted: true;
-    /** How many of the IDs identified a message of the chat, each deleted once. */
-    readonly deletedMessageCount: number;
-  }
-  | {
-    readonly deleted: false;
-    readonly reason: DeleteMessagesByBotFailureReason;
-  };
-
-export interface DeleteAccountMessageInput {
-  readonly fromAccountId: number;
-  readonly botId: number;
-  /** The message's ID in the bot's message box. */
-  readonly botMessageId: number;
-}
-
-export type DeleteAccountMessageResult =
-  | { readonly deleted: true }
-  | {
-    readonly deleted: false;
-    readonly reason: 'account_not_found' | 'bot_not_found' | 'message_not_found';
-  };
-
 export interface CheckBotChatActionAccessInput {
   readonly fromBotId: number;
   readonly to: BotPrivateChat;
@@ -441,7 +404,6 @@ interface PrivateMessageStore {
   createMediaGroupId(): MediaGroupId;
   addMessage(message: NewPrivateMessage): PrivateMessage;
   findChatMessage(chat: PrivateChatKey, messageId: CanonicalMessageId): PrivateMessage | undefined;
-  deleteMessage(messageId: CanonicalMessageId): void;
   getChatMessages(chat: PrivateChatKey): readonly PrivateMessage[];
 }
 
@@ -511,11 +473,11 @@ interface ParticipantMessage extends Omit<NewPrivateMessage, 'chat' | 'sentAtUni
  * Carries out exchanges of text, captioned media, and media albums between an
  * account and a bot in their private conversation, including forwards by either and copies by the
  * bot, and commits each accepted message: its upload stored, the message stored, numbered for both
- * participants, then published. Bots can attach inline keyboards to their messages, and delete
- * messages of their chats. A bot's message can also change the reply interface the account's
- * client shows, such as a reply keyboard whose buttons the account presses. An account sends
- * inline query results through inline bots. `MessageEditingService` edits the messages of private
- * chats, as it edits those of every chat type.
+ * participants, then published. Bots can attach inline keyboards to their messages. A bot's
+ * message can also change the reply interface the account's client shows, such as a reply
+ * keyboard whose buttons the account presses. An account sends inline query results through
+ * inline bots. `MessageEditingService` edits, and `MessageDeletionService` deletes, the messages
+ * of private chats, as they do those of every chat type.
  *
  * While an account blocks a bot, neither can write to the other, as on Telegram, where the bot's
  * sends fail and a client asks the user to unblock the bot before writing to it.
@@ -837,76 +799,6 @@ export class PrivateMessagingService {
         messageEffectId: input.messageEffectId,
       }),
     };
-  }
-
-  /**
-   * Deletes messages of the bot's private chat for both participants. As on Telegram, a bot can
-   * delete messages either participant wrote, and receives no update for the deletion. IDs that
-   * identify no message of the chat, including messages already deleted, are skipped.
-   *
-   * A deleted message keeps its ID in each message box, because Telegram never reuses message IDs.
-   * The emulator does not age messages, so Telegram's 48-hour deletion limit never applies.
-   */
-  deleteMessagesByBot(input: DeleteMessagesByBotInput): DeleteMessagesByBotResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { deleted: false, reason: 'bot_not_found' };
-    }
-    if (this.#accounts.getById(input.chat.accountId) === undefined) {
-      return { deleted: false, reason: 'account_not_found' };
-    }
-    const conversation: PrivateConversationKey = {
-      accountId: input.chat.accountId,
-      botId: input.fromBotId,
-    };
-    if (!this.#privateConversations.isPrivateConversationStarted(conversation)) {
-      return { deleted: false, reason: 'conversation_not_started' };
-    }
-
-    let deletedMessageCount = 0;
-    for (const botMessageId of input.botMessageIds) {
-      const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
-      if (message === undefined) {
-        continue;
-      }
-      this.#deleteMessage(conversation, message);
-      deletedMessageCount++;
-    }
-    return { deleted: true, deletedMessageCount };
-  }
-
-  /**
-   * Deletes a message of an account's private chat with a bot for both participants, as the
-   * account's client does when it deletes a message for everyone. As TDLib's `can_revoke_message`
-   * allows users in private chats, the account deletes the messages either participant wrote,
-   * without a time limit. As for a bot's deletion, the bot receives no update for it.
-   */
-  deleteAccountMessage(
-    { fromAccountId, botId, botMessageId }: DeleteAccountMessageInput,
-  ): DeleteAccountMessageResult {
-    if (this.#accounts.getById(fromAccountId) === undefined) {
-      return { deleted: false, reason: 'account_not_found' };
-    }
-    if (this.#bots.getById(botId) === undefined) {
-      return { deleted: false, reason: 'bot_not_found' };
-    }
-    const conversation: PrivateConversationKey = { accountId: fromAccountId, botId };
-    const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
-    if (message === undefined) {
-      return { deleted: false, reason: 'message_not_found' };
-    }
-    this.#deleteMessage(conversation, message);
-    return { deleted: true };
-  }
-
-  /**
-   * Deletes a message of a conversation. As TDLib does, deleting the message whose reply interface
-   * the client shows removes the interface.
-   */
-  #deleteMessage(conversation: PrivateConversationKey, message: PrivateMessage): void {
-    if (this.#privateConversations.getReplyInterfaceMessageId(conversation) === message.id) {
-      this.#privateConversations.setReplyInterfaceMessageId(conversation, undefined);
-    }
-    this.#messages.deleteMessage(message.id);
   }
 
   /**

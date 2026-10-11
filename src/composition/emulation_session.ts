@@ -50,6 +50,7 @@ import { ChatAdmissionService } from '../services/chat_admission.ts';
 import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
 import { normalizeBotDraftText, normalizeCaption } from '../services/message_content.ts';
+import { MessageDeletionService } from '../services/message_deletion.ts';
 import { MessageDraftService } from '../services/message_draft.ts';
 import { MessageEditingService } from '../services/message_editing.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
@@ -230,6 +231,14 @@ export function createEmulationSession(
     events: transactions,
     currentUnixTimeSeconds,
   });
+  const messageDeletion = new MessageDeletionService({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    messages,
+    privateReplyInterfaces: privateConversations,
+  });
   const accountChatMessages = createAccountChatMessageReader({
     accounts,
     privateChats,
@@ -383,6 +392,7 @@ export function createEmulationSession(
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     messageEditing,
+    messageDeletion,
     messageSender: botMessageSender,
     messageRepeater: new BotMessageRepeater({
       messageSender: botMessageSender,
@@ -425,6 +435,7 @@ export function createEmulationSession(
     privateMessaging,
     supergroupMessaging,
     messageEditing,
+    messageDeletion,
     messageForwarding,
     messagePinning,
     messageReactions,

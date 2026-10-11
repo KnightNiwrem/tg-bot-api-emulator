@@ -16,12 +16,12 @@ import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import {
   type BotMessageReplyTarget,
-  type DeleteMessagesByBotFailureReason,
   type PressReplyKeyboardButtonResult,
   PrivateMessagingService,
   type SendBotMessageResult,
 } from '../src/services/private_messaging.ts';
 import type { MediaContent } from '../src/services/message_content.ts';
+import { MessageDeletionService } from '../src/services/message_deletion.ts';
 import { MessageEditingService } from '../src/services/message_editing.ts';
 import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
@@ -408,7 +408,7 @@ Deno.test('PrivateMessagingService validates bot messages in Telegram order befo
 });
 
 Deno.test('PrivateMessagingService stores replies only to messages of the same chat', () => {
-  const { virtualUsers, messages, publishedEvents, privateMessaging } =
+  const { virtualUsers, messages, publishedEvents, privateMessaging, messageDeletion } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const otherAccount = createAccount(virtualUsers, 'Grace');
@@ -462,10 +462,10 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
     throw new Error('Expected replies to messages outside the chat to fail without a message');
   }
 
-  privateMessaging.deleteMessagesByBot({
+  messageDeletion.deletePrivateChatMessages({
     fromBotId: bot.profile.id,
-    chat: { type: 'private', accountId: account.profile.id },
-    botMessageIds: [questionId],
+    chat: { type: 'private', peerId: account.profile.id },
+    messageIds: [questionId],
   });
   const replyToDeletedMessage = privateMessaging.sendBotMessage({
     fromBotId: bot.profile.id,
@@ -484,7 +484,8 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
 });
 
 Deno.test('PrivateMessagingService shows the reply interface the latest bot message set', () => {
-  const { virtualUsers, messageBoxes, privateMessaging } = createPrivateMessagingFixture();
+  const { virtualUsers, messageBoxes, privateMessaging, messageDeletion } =
+    createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
   const chat = { accountId: account.profile.id, botId: bot.profile.id };
@@ -551,10 +552,10 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
   }
 
   const replacedKeyboardMessage = sendWithReplyInterfaceMarkup(COLOR_KEYBOARD);
-  privateMessaging.deleteMessagesByBot({
+  messageDeletion.deletePrivateChatMessages({
     fromBotId: bot.profile.id,
-    chat: { type: 'private', accountId: account.profile.id },
-    botMessageIds: [expectBotMessageId(messageBoxes, bot, replacedKeyboardMessage.id)],
+    chat: { type: 'private', peerId: account.profile.id },
+    messageIds: [expectBotMessageId(messageBoxes, bot, replacedKeyboardMessage.id)],
   });
   if (shownReplyInterface() !== undefined) {
     throw new Error("Expected deleting the keyboard's message to clear it");
@@ -948,6 +949,7 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
     publishedEvents,
     privateMessaging,
     messageEditing,
+    messageDeletion,
   } = createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const otherAccount = createAccount(virtualUsers, 'Grace');
@@ -961,10 +963,10 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
   const otherChatMessageId = expectBotMessageId(messageBoxes, bot, otherChatMessage.id);
   const publishedEventCount = publishedEvents.length;
 
-  const deletion = privateMessaging.deleteMessagesByBot({
+  const deletion = messageDeletion.deletePrivateChatMessages({
     fromBotId: bot.profile.id,
-    chat: { type: 'private', accountId: account.profile.id },
-    botMessageIds: [accountMessageId, botMessageId, botMessageId, otherChatMessageId, 999],
+    chat: { type: 'private', peerId: account.profile.id },
+    messageIds: [accountMessageId, botMessageId, botMessageId, otherChatMessageId, 999],
   });
   if (!deletion.deleted || deletion.deletedMessageCount !== 2) {
     throw new Error(
@@ -988,10 +990,10 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
     throw new Error('Expected deletions not to publish chat events');
   }
 
-  const repeatedDeletion = privateMessaging.deleteMessagesByBot({
+  const repeatedDeletion = messageDeletion.deletePrivateChatMessages({
     fromBotId: bot.profile.id,
-    chat: { type: 'private', accountId: account.profile.id },
-    botMessageIds: [botMessageId],
+    chat: { type: 'private', peerId: account.profile.id },
+    messageIds: [botMessageId],
   });
   if (!repeatedDeletion.deleted || repeatedDeletion.deletedMessageCount !== 0) {
     throw new Error('Expected an already deleted message to be skipped');
@@ -1015,7 +1017,7 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
 });
 
 Deno.test('PrivateMessagingService validates message deletions before changing state', () => {
-  const { virtualUsers, messageBoxes, messages, privateMessaging } =
+  const { virtualUsers, messageBoxes, messages, privateMessaging, messageDeletion } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const strangerAccount = createAccount(virtualUsers, 'Grace');
@@ -1025,7 +1027,10 @@ Deno.test('PrivateMessagingService validates message deletions before changing s
   const cases: {
     fromBotId: number;
     accountId: number;
-    expectedReason: DeleteMessagesByBotFailureReason;
+    expectedReason: Extract<
+      ReturnType<MessageDeletionService['deletePrivateChatMessages']>,
+      { readonly deleted: false }
+    >['reason'];
   }[] = [
     { fromBotId: 999, accountId: 999, expectedReason: 'bot_not_found' },
     { fromBotId: bot.profile.id, accountId: 999, expectedReason: 'account_not_found' },
@@ -1037,10 +1042,10 @@ Deno.test('PrivateMessagingService validates message deletions before changing s
   ];
 
   for (const { fromBotId, accountId, expectedReason } of cases) {
-    const result = privateMessaging.deleteMessagesByBot({
+    const result = messageDeletion.deletePrivateChatMessages({
       fromBotId,
-      chat: { type: 'private', accountId },
-      botMessageIds: [botMessageId],
+      chat: { type: 'private', peerId: accountId },
+      messageIds: [botMessageId],
     });
     if (result.deleted || result.reason !== expectedReason) {
       throw new Error(`Expected the deletion to fail with ${expectedReason}`);
@@ -2086,6 +2091,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     publishedEvents,
     privateMessaging,
     messageEditing,
+    messageDeletion,
   } = createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Grace');
   const bot = createBot(virtualUsers, 'Gatekeeper', 'gatekeeper_bot');
@@ -2152,10 +2158,10 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     messageId: promptId,
     content: { kind: 'text', text: 'Solved' },
   });
-  const deletion = privateMessaging.deleteMessagesByBot({
+  const deletion = messageDeletion.deletePrivateChatMessages({
     fromBotId: bot.profile.id,
-    chat: to,
-    botMessageIds: [promptId],
+    chat: { type: 'private', peerId: to.accountId },
+    messageIds: [promptId],
   });
   const chatActionAccess = privateMessaging.checkBotChatActionAccess({
     fromBotId: bot.profile.id,
@@ -2814,27 +2820,37 @@ function createPrivateMessagingFixture() {
     messageDrafts: { clearBotDraft: () => {} },
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
   });
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers,
+    joinRequesterContacts,
+    privateMessages: privateMessaging,
+  });
+  // These tests send no supergroup messages, so none is found.
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: { getMessageByChatMessageId: () => undefined },
+  });
   const messageEditing = new MessageEditingService({
     accounts,
     bots,
-    privateChats: new PrivateChatPolicy({
-      accounts,
-      bots,
-      privateConversations,
-      blockedUsers,
-      joinRequesterContacts,
-      privateMessages: privateMessaging,
-    }),
-    // These tests send no supergroup messages, so none is found.
-    supergroups: new SupergroupChatPolicy({
-      sharedChats,
-      supergroupMessages: { getMessageByChatMessageId: () => undefined },
-    }),
+    privateChats,
+    supergroups,
     messages,
     files: uploadRecordingFiles,
     polls,
     events,
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
+  });
+  const messageDeletion = new MessageDeletionService({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    messages,
+    privateReplyInterfaces: privateConversations,
   });
   const advanceClockSeconds = (seconds: number) => {
     currentUnixTimeSeconds += seconds;
@@ -2852,6 +2868,7 @@ function createPrivateMessagingFixture() {
     publishedEvents,
     privateMessaging,
     messageEditing,
+    messageDeletion,
     advanceClockSeconds,
   };
 }

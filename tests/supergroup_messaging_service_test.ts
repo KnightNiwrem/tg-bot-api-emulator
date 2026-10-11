@@ -10,6 +10,7 @@ import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import type { MediaContent } from '../src/services/message_content.ts';
+import { MessageDeletionService } from '../src/services/message_deletion.ts';
 import { MessageEditingService } from '../src/services/message_editing.ts';
 import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
@@ -316,6 +317,7 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     bot,
     supergroup,
     messageEditing,
+    messageDeletion,
   } = createSupergroupMessagingFixture();
   const otherBot = createBot(virtualUsers, 'other_bot');
   sharedChatAdministration.addChatMember({
@@ -378,14 +380,14 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     }),
   ].map((result) => result.edited ? 'edited' : result.reason);
   const deletionFailures = [
-    supergroupMessaging.deleteMessagesByBot({
+    messageDeletion.deleteSupergroupMessages({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageIds: [4, 3],
     }),
-    supergroupMessaging.deleteMessagesByBot({
+    messageDeletion.deleteSupergroupMessages({
       fromBotId: otherBot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageIds: [4],
     }),
   ].map((result) => result.deleted ? 'deleted' : result.reason);
@@ -414,9 +416,9 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     messageId: 3,
     edit: { kind: 'text', text: 'Hello /help' },
   });
-  const deletion = supergroupMessaging.deleteMessagesByBot({
+  const deletion = messageDeletion.deleteSupergroupMessages({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     messageIds: [4, 4, 99],
   });
   const history = supergroupMessaging.getMessageHistory({
@@ -522,7 +524,7 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
 });
 
 Deno.test('SupergroupMessagingService lets bots with the right delete any message', () => {
-  const { supergroupMessaging, sharedChatAdministration, owner, bot, supergroup } =
+  const { supergroupMessaging, sharedChatAdministration, owner, bot, supergroup, messageDeletion } =
     createSupergroupMessagingFixture();
   expectSent(supergroupMessaging.sendAccountMessage({
     fromAccountId: owner.profile.id,
@@ -530,9 +532,9 @@ Deno.test('SupergroupMessagingService lets bots with the right delete any messag
     content: { kind: 'text', text: 'Spam' },
   }));
   const deleteAccountMessages = () => {
-    const result = supergroupMessaging.deleteMessagesByBot({
+    const result = messageDeletion.deleteSupergroupMessages({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       // The bot's join message, then the account's message.
       messageIds: [1, 2],
     });
@@ -575,6 +577,7 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
     bot,
     supergroup,
     messageEditing,
+    messageDeletion,
   } = createSupergroupMessagingFixture();
   const removedBot = createBot(virtualUsers, 'removed_bot');
   sharedChatAdministration.addChatMember({
@@ -607,9 +610,9 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
         chat: { type: 'supergroup', chatId: supergroup.id },
         messageId: 3,
       }),
-      supergroupMessaging.deleteMessagesByBot({
+      messageDeletion.deleteSupergroupMessages({
         fromBotId,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         messageIds: [3],
       }),
     ].map((result) => 'reason' in result ? result.reason : 'succeeded')
@@ -847,24 +850,38 @@ function createSupergroupMessagingFixture() {
     events,
     currentUnixTimeSeconds,
   });
+  const privateConversations = new PrivateConversationRepository();
+  // These tests send no private messages, so none is found.
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers: new BlockedUserRepository(),
+    joinRequesterContacts: { mayContactJoinRequester: () => false },
+    privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
   const messageEditing = new MessageEditingService({
     accounts,
     bots,
-    // These tests send no private messages, so none is found.
-    privateChats: new PrivateChatPolicy({
-      accounts,
-      bots,
-      privateConversations: new PrivateConversationRepository(),
-      blockedUsers: new BlockedUserRepository(),
-      joinRequesterContacts: { mayContactJoinRequester: () => false },
-      privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
-    }),
-    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    privateChats,
+    supergroups,
     messages,
     files,
     polls,
     events,
     currentUnixTimeSeconds,
+  });
+  const messageDeletion = new MessageDeletionService({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    messages,
+    privateReplyInterfaces: privateConversations,
   });
   const sharedChatAdministration = new SharedChatAdministrationService({
     identities,
@@ -901,6 +918,7 @@ function createSupergroupMessagingFixture() {
     sharedChatAdministration,
     supergroupMessaging,
     messageEditing,
+    messageDeletion,
     messageBoxes,
     publishedEvents,
     owner,
