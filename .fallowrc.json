@@ -298,6 +298,7 @@
           "src/services/message_forwarding.ts",
           "src/services/message_pinning.ts",
           "src/services/message_reaction.ts",
+          "src/services/reply_interface.ts",
           "src/services/media_file.ts",
           "src/services/shared_chat_administration.ts",
           "src/services/chat_admission.ts",

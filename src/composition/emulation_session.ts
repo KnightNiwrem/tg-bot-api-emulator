@@ -59,6 +59,7 @@ import { MessageReactionService } from '../services/message_reaction.ts';
 import { PollService } from '../services/poll.ts';
 import { PrivateChatPolicy } from '../services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
+import { ReplyInterfaceService } from '../services/reply_interface.ts';
 import { SessionLifetime } from '../services/session_lifetime.ts';
 import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
@@ -176,7 +177,6 @@ export function createEmulationSession(
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
-    sharedChats,
     privateConversations,
     messages,
     files,
@@ -238,6 +238,18 @@ export function createEmulationSession(
     messages,
     privateReplyInterfaces: privateConversations,
     transactions,
+  });
+  const replyInterfaces = new ReplyInterfaceService({
+    accounts,
+    privateChats,
+    supergroups,
+    messages,
+    messageBoxes,
+    privateReplyInterfaces: privateConversations,
+    supergroupReplyInterfaces: sharedChats,
+    privateMessages: privateMessaging,
+    supergroupMessages: supergroupMessaging,
+    sharedPeers: { accounts, bots, sharedChats },
   });
   const accountChatMessages = createAccountChatMessageReader({
     accounts,
@@ -439,6 +451,7 @@ export function createEmulationSession(
     messageForwarding,
     messagePinning,
     messageReactions,
+    replyInterfaces,
     botBlocking,
     callbackQueries,
     polls: pollService,

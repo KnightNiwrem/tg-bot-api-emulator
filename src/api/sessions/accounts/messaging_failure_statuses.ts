@@ -6,7 +6,7 @@ import type { EmulationSession } from '../../../types/emulation_session.ts';
  */
 type AccountMessageFailureReason =
   | Extract<
-    ReturnType<EmulationSession['privateMessaging']['pressReplyKeyboardButton']>,
+    ReturnType<EmulationSession['replyInterfaces']['pressPrivateChatReplyKeyboardButton']>,
     { readonly sent: false }
   >['reason']
   | Extract<
@@ -45,7 +45,7 @@ type SupergroupAccountFailureReason =
   | Extract<ReturnType<SupergroupMessaging['sendAccountMessage']>, { sent: false }>['reason']
   | Extract<ReturnType<SupergroupMessaging['sendAccountAlbum']>, { sent: false }>['reason']
   | Extract<
-    ReturnType<SupergroupMessaging['pressReplyKeyboardButton']>,
+    ReturnType<EmulationSession['replyInterfaces']['pressSupergroupReplyKeyboardButton']>,
     { sent: false }
   >['reason']
   | Extract<

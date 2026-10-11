@@ -322,9 +322,9 @@ function readPrivateMessageCount({ session, adaId, alpha }: EditingFixture): num
 }
 
 function readsShownReplyKeyboard({ session, adaId, alpha }: EditingFixture): boolean | string {
-  const replyInterface = session.privateMessaging.getPrivateChatReplyInterface({
+  const replyInterface = session.replyInterfaces.getPrivateChatReplyInterface({
     accountId: adaId,
-    botId: alpha.id,
+    chat: { type: 'private', peerId: alpha.id },
   });
   return replyInterface.found
     ? replyInterface.shownReplyInterface !== undefined

@@ -16,13 +16,7 @@ import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
-import {
-  appliesReplyInterfaceTo,
-  type BotMessageReplyMarkup,
-  type ReplyInterface,
-  type ReplyKeyboardButtonSelectionFailureReason,
-  selectReplyKeyboardButton,
-} from '../types/reply_interface.ts';
+import { appliesReplyInterfaceTo, type BotMessageReplyMarkup } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { ChatActor, Supergroup, SupergroupChatKey } from '../types/virtual_chat.ts';
@@ -279,39 +273,6 @@ export type SendSupergroupBotAlbumResult =
     )
   );
 
-/** The reply interface a member's client shows in a supergroup, with the message that set it. */
-export interface ShownSupergroupReplyInterface {
-  readonly message: SupergroupMessage;
-  readonly replyInterface: ReplyInterface;
-}
-
-export interface GetSupergroupReplyInterfaceInput {
-  readonly accountId: number;
-  readonly chatId: number;
-}
-
-export type GetSupergroupReplyInterfaceResult =
-  | {
-    readonly found: true;
-    /** Omitted when the client shows its usual input. */
-    readonly shownReplyInterface?: ShownSupergroupReplyInterface;
-  }
-  | {
-    readonly found: false;
-    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member';
-  };
-
-export interface PressSupergroupReplyKeyboardButtonInput {
-  readonly fromAccountId: number;
-  readonly chatId: number;
-  /** The text of the button to press. */
-  readonly text: string;
-}
-
-export type PressSupergroupReplyKeyboardButtonResult =
-  | SendSupergroupAccountMessageResult
-  | { readonly sent: false; readonly reason: ReplyKeyboardButtonSelectionFailureReason };
-
 export interface CheckSupergroupBotChatActionAccessInput {
   readonly fromBotId: number;
   readonly chatId: number;
@@ -426,9 +387,10 @@ interface SupergroupMessagingServiceDependencies {
  * messages.
  *
  * Bots attach inline keyboards to their messages, and show reply keyboards and forced replies to
- * all members or to chosen ones, which account members press or answer. Accounts send inline query
- * results through inline bots. `MessageEditingService` edits, and `MessageDeletionService`
- * deletes, the messages of supergroups, as they do those of every chat type.
+ * all members or to chosen ones, which account members answer, or press through
+ * `ReplyInterfaceService`. Accounts send inline query results through inline bots.
+ * `MessageEditingService` edits, and `MessageDeletionService` deletes, the messages of
+ * supergroups, as they do those of every chat type.
  *
  * Results carry canonical messages; presenting them to an observer is left to the caller.
  */
@@ -826,55 +788,6 @@ export class SupergroupMessagingService {
     });
   }
 
-  /** Returns the reply interface a member's client shows in the supergroup. */
-  getReplyInterface(
-    { accountId, chatId }: GetSupergroupReplyInterfaceInput,
-  ): GetSupergroupReplyInterfaceResult {
-    const memberResolution = this.#resolveAccountMember(accountId, chatId);
-    if (!memberResolution.resolved) {
-      return { found: false, reason: memberResolution.reason };
-    }
-    const shownReplyInterface = this.#findShownReplyInterface(chatId, accountId);
-    return shownReplyInterface === undefined
-      ? { found: true }
-      : { found: true, shownReplyInterface };
-  }
-
-  /**
-   * Presses a button of the reply keyboard a member's client shows, which sends the button's text
-   * as the member's message. As Telegram Desktop's `HistoryWidget::sendBotCommand` does outside
-   * private chats, the message replies to the keyboard's message, so that the bot that sent it
-   * receives it even in privacy mode. The keyboard stays shown, as in a private chat. The press
-   * answers no request, as only private chats show buttons with one, and selects its button as a
-   * private chat's press does.
-   */
-  pressReplyKeyboardButton(
-    { fromAccountId, chatId, text }: PressSupergroupReplyKeyboardButtonInput,
-  ): PressSupergroupReplyKeyboardButtonResult {
-    const memberResolution = this.#resolveAccountMember(fromAccountId, chatId);
-    if (!memberResolution.resolved) {
-      return { sent: false, reason: memberResolution.reason };
-    }
-    const shownReplyInterface = this.#findShownReplyInterface(chatId, fromAccountId);
-    if (shownReplyInterface?.replyInterface.kind !== 'reply_keyboard') {
-      return { sent: false, reason: 'reply_keyboard_button_not_found' };
-    }
-    const selection = selectReplyKeyboardButton(
-      shownReplyInterface.replyInterface,
-      text,
-      undefined,
-    );
-    if (!selection.selected) {
-      return { sent: false, reason: selection.reason };
-    }
-    return this.sendAccountMessage({
-      fromAccountId,
-      chatId,
-      content: { kind: 'text', text },
-      replyToMessageId: this.#messageBoxes.getMessageId(chatId, shownReplyInterface.message.id),
-    });
-  }
-
   /** Returns the supergroup's messages, oldest first, to an account that is a member of it. */
   getMessageHistory(
     { accountId, chatId }: GetSupergroupMessageHistoryInput,
@@ -1098,28 +1011,6 @@ export class SupergroupMessagingService {
     if (shownMessage === undefined || getMessageSenderId(shownMessage) === setterId) {
       this.#sharedChats.setReplyInterfaceMessageId(chatId, accountId, undefined);
     }
-  }
-
-  /**
-   * Finds the reply interface a member's client shows: the one the latest message that set it
-   * asked for, unless a later message removed it or that message was deleted.
-   */
-  #findShownReplyInterface(
-    chatId: number,
-    accountId: number,
-  ): ShownSupergroupReplyInterface | undefined {
-    const messageId = this.#sharedChats.getReplyInterfaceMessageId(chatId, accountId);
-    const message = messageId === undefined
-      ? undefined
-      : this.#messages.findChatMessage({ type: 'supergroup', chatId }, messageId);
-    const replyInterface = message?.replyInterfaceMarkup;
-    if (
-      message === undefined || replyInterface === undefined ||
-      replyInterface.kind === 'reply_keyboard_removal'
-    ) {
-      return undefined;
-    }
-    return { message, replyInterface };
   }
 }
 
