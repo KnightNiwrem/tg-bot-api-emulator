@@ -881,7 +881,11 @@ function createInlineQueryFixture() {
     messageSending,
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
-    transactions: { ...events, withinTransaction: (command) => command() },
+    transactions: {
+      ...events,
+      withinTransaction: (command) => command(),
+      execute: (command) => ({ executed: true, result: command() }),
+    },
   });
   const account = createAccount(virtualUsers, 'Ada');
   const inlineBot = createBot(virtualUsers, 'inline_bot', { supports_inline_queries: true });

@@ -45,9 +45,11 @@ or whose request is still arriving, is answered at once with no updates, and con
 other Bot API call still in progress at that moment, whether its request body is still arriving, its
 download is running, or it is a webhook reply's method, has its downloads stopped and is refused
 before it changes or records anything: an HTTP call is answered with a bodyless `404`, as a request
-to a session that does not exist is. Control API requests are not gated this way yet: one still
-reading its body when the session ends can still change the ended session, which no later request
-can reach. State lives in memory and is lost on process restart. There is no account login, Telegram
+to a session that does not exist is. A control action is gated the same way: one whose request is
+still arriving when the session ends, or that ends a wait such as a download afterwards, changes
+nothing and is answered `404` with `session_not_found`, as for an unknown session. A control action
+that does not wait commits as one transaction, together with the view of its result it answers with.
+State lives in memory and is lost on process restart. There is no account login, Telegram
 connection, persistence, clock advancement API, or snapshot/restore facility. Individual bot/account
 resource paths marked unimplemented in [the OpenAPI description](../../openapi/openapi.yaml) have no
 profile read, update or deletion operations; use the profiles returned at creation.

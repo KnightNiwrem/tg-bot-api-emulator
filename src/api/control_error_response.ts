@@ -40,6 +40,17 @@ export function controlErrorResponse(
   return context.json({ reason }, status);
 }
 
+/** The reason a control route gives for a session that does not exist or has ended. */
+export const SESSION_NOT_FOUND_REASON = 'session_not_found';
+
+/**
+ * Answers a control request for a session that does not exist, or that ended before the request
+ * could act in it.
+ */
+export function sessionNotFoundResponse(context: Context): Response {
+  return controlErrorResponse(context, 404, SESSION_NOT_FOUND_REASON);
+}
+
 /** Answers a control request whose input breaks the operation's contract, listing every issue. */
 export function invalidControlRequestResponse(
   context: Context,

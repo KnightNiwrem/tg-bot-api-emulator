@@ -6,7 +6,7 @@ import {
   deleteSessionContract,
 } from '../../../control_contracts/sessions.ts';
 import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
-import { controlErrorResponse } from '../control_error_response.ts';
+import { SESSION_NOT_FOUND_REASON, sessionNotFoundResponse } from '../control_error_response.ts';
 import { registerControlOperation } from '../control_operation_route.ts';
 import { createAccountRoutes } from './accounts/mod.ts';
 import { createBotActivityRoutes } from './bot_activity/mod.ts';
@@ -33,9 +33,6 @@ const SUPERGROUP_COLLECTION_PATH = `${SESSION_PATH}/supergroups` as const;
 
 /** The method Hono records for middleware, which `use` registers for every method. */
 const MIDDLEWARE_METHOD = 'ALL';
-
-/** The reason a control route gives for a session that does not exist or has ended. */
-const SESSION_NOT_FOUND_REASON = 'session_not_found';
 
 /** Where the session routes are mounted within the server, as a contract path template. */
 const SESSION_COLLECTION_MOUNT_PATH = '/sessions';
@@ -94,7 +91,7 @@ export function createSessionRoutes(
   );
   const requireControlSession = createSessionRequirement(
     sessionLifecycle,
-    (context) => controlErrorResponse(context, 404, SESSION_NOT_FOUND_REASON),
+    sessionNotFoundResponse,
   );
   sessionRoutes.use(`${BOT_API_PATH}/*`, requireBotApiSession);
   sessionRoutes.route(BOT_API_PATH, createBotApiRoutes());

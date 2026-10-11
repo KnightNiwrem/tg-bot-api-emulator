@@ -288,9 +288,16 @@ type InlineResultWebMediaFailureReason = 'web_media_unavailable' | 'web_media_in
  */
 type InlineResultPermissionFailureReason = 'inline_bots_not_permitted' | 'send_permission_missing';
 
+/**
+ * The outcome of choosing a result: its message, why it was refused, or `session_ended` when the
+ * session ended while its media was downloaded, which sent and reported nothing.
+ */
 export type ChooseInlineQueryResultResult =
   | { readonly chosen: true; readonly message: ChatMessage }
-  | { readonly chosen: false; readonly reason: ChooseInlineQueryResultFailureReason };
+  | {
+    readonly chosen: false;
+    readonly reason: ChooseInlineQueryResultFailureReason | 'session_ended';
+  };
 
 interface AccountLookup {
   getById(accountId: number): VirtualAccount | undefined;
@@ -339,6 +346,15 @@ interface InlineQueryStore {
 interface InlineQueryTransactions {
   /** Runs a command in the transaction of the command executing, or in one of its own. */
   withinTransaction<Result>(command: () => Result): Result;
+  /**
+   * Executes a command at its commit boundary, after a wait, in a transaction of its own, unless
+   * the session has ended.
+   */
+  execute<Result>(
+    command: () => Result,
+  ):
+    | { readonly executed: true; readonly result: Result }
+    | { readonly executed: false; readonly reason: 'session_ended' };
   emit(event: ChatDomainEvent): void;
 }
 
@@ -587,11 +603,13 @@ export class InlineQueryService {
       result.messageContent,
       input.signal,
     );
-    if (!contentPreparation.prepared) {
-      return { chosen: false, reason: contentPreparation.reason };
-    }
-    // The result's message and the bot's news of the choice commit together, or neither does.
-    return this.#transactions.withinTransaction(() => {
+    // Once the download has ended, the choice executes as a command of the session: the result's
+    // message and the bot's news of the choice commit together, or neither does, and nothing is
+    // sent or reported once the session has ended.
+    const choice = this.#transactions.execute((): ChooseInlineQueryResultResult => {
+      if (!contentPreparation.prepared) {
+        return { chosen: false, reason: contentPreparation.reason };
+      }
       const sending = this.#sendResult(inlineQuery, result, contentPreparation.content);
       if (!sending.sent) {
         return { chosen: false, reason: sending.reason };
@@ -604,6 +622,7 @@ export class InlineQueryService {
       });
       return { chosen: true, message: sending.message };
     });
+    return choice.executed ? choice.result : { chosen: false, reason: 'session_ended' };
   }
 
   /**

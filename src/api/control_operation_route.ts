@@ -13,7 +13,10 @@ import {
 } from '../../control_contracts/operation_contract.ts';
 import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
 import type { EmulationSession } from '../types/emulation_session.ts';
-import { invalidControlRequestResponse } from './control_error_response.ts';
+import {
+  invalidControlRequestResponse,
+  sessionNotFoundResponse,
+} from './control_error_response.ts';
 import {
   type ActionReceipt,
   captureActionReceipt,
@@ -63,6 +66,10 @@ const JSON_MEDIA_TYPE = 'application/json';
  * before it first waits gives its effects no chance to be recorded before the receipt. A handler
  * that waits first still answers with a receipt that its effects follow, only an earlier one.
  *
+ * Such an acting operation's handler executes as a command of its session, as
+ * `answerWithActionReceipt` describes, and a session that ended while the request was decoded
+ * answers as one that does not exist.
+ *
  * @throws {Error} when the contract's path is not within `mountPath`, or a path or query parameter
  * takes a value that no parameter text writes.
  */
@@ -83,10 +90,18 @@ export function registerControlOperation<Contract extends ControlOperationContra
     if (!request.valid) {
       return invalidControlRequestResponse(context, request.issues);
     }
-    const receiptBeforeAction = contract.success.actionReceipt === 'before_action'
-      ? captureActionReceipt(readActionSession(contract, context))
-      : undefined;
-    const response: SerializableResponse = await handle(request.value, context);
+    if (contract.success.actionReceipt !== 'before_action') {
+      const response: SerializableResponse = await handle(request.value, context);
+      return serializeControlResponse(contract, response, undefined);
+    }
+    const session = readActionSession(contract, context);
+    const receiptBeforeAction = captureActionReceipt(session);
+    // The action executes as a command of its session, as `answerWithActionReceipt` describes.
+    const action = session.transactions.execute(() => handle(request.value, context));
+    if (!action.executed) {
+      return sessionNotFoundResponse(context);
+    }
+    const response: SerializableResponse = await action.result;
     return serializeControlResponse(contract, response, receiptBeforeAction);
   });
 }
