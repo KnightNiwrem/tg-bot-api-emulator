@@ -1,4 +1,4 @@
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
+import { BlockedUserRepository } from '../src/repositories/blocked_user/blocked_user.ts';
 
 Deno.test("BlockedUserRepository keeps each account's block list and reports changes", () => {
   const blockedUsers = new BlockedUserRepository();

@@ -1,8 +1,8 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
+import { AccountRepository } from '../src/repositories/account/account.ts';
+import { BlockedUserRepository } from '../src/repositories/blocked_user/blocked_user.ts';
+import { BotRepository } from '../src/repositories/bot/bot.ts';
+import { TelegramIdentityRepository } from '../src/repositories/telegram_identity/telegram_identity.ts';
 import { BotBlockingService } from '../src/services/domain/bot_blocking.ts';
 import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';

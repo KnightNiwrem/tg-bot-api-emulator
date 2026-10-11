@@ -5,7 +5,7 @@ import {
   type ChatMemberAdditionFailureReason,
   type ChatMemberAdditionResult,
   SharedChatRepository,
-} from '../src/repositories/shared_chat.ts';
+} from '../src/repositories/shared_chat/shared_chat.ts';
 import { ALL_CHAT_PERMISSIONS, CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 
 Deno.test('SharedChatRepository atomically registers a basic group and its initial memberships', () => {

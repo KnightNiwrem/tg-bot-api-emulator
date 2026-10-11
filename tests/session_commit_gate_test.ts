@@ -7,7 +7,7 @@ import {
   rejectUndecodableBotApiCall,
 } from '../src/api/sessions/bot_api/method_invocation.ts';
 import { runWebhookReply } from '../src/api/sessions/bot_api/webhook_reply.ts';
-import { FileRepository } from '../src/repositories/file.ts';
+import { FileRepository } from '../src/repositories/file/file.ts';
 import {
   MediaFileService,
   type WebFileDownloadRequest,

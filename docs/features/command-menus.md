@@ -111,7 +111,7 @@ Changing supported BotFather-style settings after bot creation is also a
 
 [Command service](../../src/services/domain/bot_command.ts),
 [scope/command parsing](../../src/api/sessions/bot_api/bot_command_parameters.ts),
-[command repository](../../src/repositories/bot_command.ts),
+[command repository](../../src/repositories/bot_command/bot_command.ts),
 [command tests](../../tests/bot_command_service_test.ts),
 [description service](../../src/services/domain/bot_description.ts),
 [description tests](../../tests/bot_description_service_test.ts),

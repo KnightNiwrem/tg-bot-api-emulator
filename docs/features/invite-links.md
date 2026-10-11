@@ -451,8 +451,8 @@ in part:
 
 [Domain model](../../src/types/chat_invite_link.ts),
 [admission service](../../src/services/domain/chat_admission.ts),
-[storage](../../src/repositories/chat_invite_link.ts),
-[membership and request storage](../../src/repositories/shared_chat.ts),
+[storage](../../src/repositories/chat_invite_link/chat_invite_link.ts),
+[membership and request storage](../../src/repositories/shared_chat/shared_chat.ts),
 [update delivery](../../src/services/update_delivery/bot_update_delivery.ts),
 [invite link handlers](../../src/api/sessions/bot_api/methods/chat_invite_links.ts),
 [join request handlers](../../src/api/sessions/bot_api/methods/chat_join_requests.ts),

@@ -1,6 +1,6 @@
 import { assertEquals } from '@std/assert';
-import type { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import type { SharedChatRepository } from '../src/repositories/shared_chat.ts';
+import type { MessageBoxRepository } from '../src/repositories/message_box/message_box.ts';
+import type { SharedChatRepository } from '../src/repositories/shared_chat/shared_chat.ts';
 import type { MessageSendingService } from '../src/services/domain/message_sending.ts';
 import type { PrivateChatPolicy } from '../src/services/domain/private_chat_policy.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';

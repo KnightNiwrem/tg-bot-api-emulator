@@ -2,7 +2,7 @@
 // combinations a chat type permits, and that the message repository returns each chat type's own
 // messages. `deno task check` fails when a rejected combination starts to type-check.
 
-import { MessageRepository } from '../src/repositories/message.ts';
+import { MessageRepository } from '../src/repositories/message/message.ts';
 import type { ChatActor, PrivateChatKey, SupergroupChatKey } from '../src/types/virtual_chat.ts';
 import type {
   NewPrivateMessage,

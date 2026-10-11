@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
+import { CallbackQueryRepository } from '../src/repositories/callback_query/callback_query.ts';
 
 const CALLBACK_QUERY_INPUT = {
   accountId: 1,

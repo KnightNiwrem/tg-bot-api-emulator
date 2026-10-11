@@ -1,0 +1,295 @@
+import type {
+  BotApiCallbackQuery,
+  BotApiChatJoinRequest,
+  BotApiChatMemberUpdated,
+  BotApiChosenInlineResult,
+  BotApiInlineQuery,
+  BotApiMessage,
+  BotApiMessageGenerationStopped,
+  BotApiMessageReactionUpdated,
+  BotApiMyChatMemberUpdated,
+  BotApiUpdate,
+} from '../../types/bot_api.ts';
+import type { BotApiPoll, BotApiPollAnswer } from '../../types/bot_api_poll.ts';
+import {
+  type NotificationWaitEnd,
+  type Unsubscribe,
+  waitForNotification,
+} from '../../timing/session/notification_wait.ts';
+import type { Deadline } from '../../timing/session/session_timing.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../../transactions/staging/change_staging.ts';
+import { TransactionalMap } from '../../transactions/staging/transactional_collections.ts';
+
+/**
+ * How far beyond the ID of the next update an offset can be before Telegram ignores it. From the
+ * "from_id is in the future" check in TDLib's `TQueue::get`, which the official Bot API server
+ * answers by reading from the queue head instead.
+ */
+const MAX_OFFSET_BEYOND_NEXT_UPDATE_ID = 10;
+
+interface ConfirmAndReadPendingUpdatesInput {
+  /**
+   * Updates with a lower ID are confirmed and forgotten; `undefined` confirms none. As on Telegram,
+   * an ID more than 10 beyond the ID the next update will receive also confirms none.
+   */
+  readonly firstUnconfirmedUpdateId?: number;
+  readonly limit: number;
+}
+
+interface WaitForUpdateInput {
+  /**
+   * The ID of the update to wait for: the bot's next update ID, as `getNextUpdateId` read it when
+   * the caller last looked at the bot's queue.
+   */
+  readonly awaitedUpdateId: number;
+  /** Omitted to wait without a time limit. */
+  readonly deadline?: Deadline;
+  readonly signal?: AbortSignal;
+}
+
+interface BotUpdateMailbox {
+  nextUpdateId: number;
+  readonly updates: BotApiUpdate[];
+}
+
+/**
+ * Owns each bot's independently sequenced pending Bot API updates. Enqueueing an update in a
+ * transaction allocates its ID there, and the bot's waits learn of it once the transaction is
+ * published.
+ */
+export class BotUpdateRepository {
+  readonly #staging: ChangeStaging;
+  readonly #mailboxesByBotId: TransactionalMap<number, BotUpdateMailbox>;
+  readonly #waitersByBotId = new Map<number, Set<() => void>>();
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#mailboxesByBotId = new TransactionalMap(staging);
+  }
+
+  enqueueMessageUpdate(botId: number, message: BotApiMessage): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, message }));
+  }
+
+  enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiMessage): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, edited_message: editedMessage }),
+    );
+  }
+
+  enqueueInlineQueryUpdate(botId: number, inlineQuery: BotApiInlineQuery): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, inline_query: inlineQuery }));
+  }
+
+  enqueueChosenInlineResultUpdate(
+    botId: number,
+    chosenInlineResult: BotApiChosenInlineResult,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, chosen_inline_result: chosenInlineResult }),
+    );
+  }
+
+  enqueueCallbackQueryUpdate(botId: number, callbackQuery: BotApiCallbackQuery): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, callback_query: callbackQuery }),
+    );
+  }
+
+  enqueuePollUpdate(botId: number, poll: BotApiPoll): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, poll }));
+  }
+
+  enqueuePollAnswerUpdate(botId: number, pollAnswer: BotApiPollAnswer): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, poll_answer: pollAnswer }));
+  }
+
+  enqueueMyChatMemberUpdate(botId: number, myChatMember: BotApiMyChatMemberUpdated): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, my_chat_member: myChatMember }),
+    );
+  }
+
+  enqueueChatMemberUpdate(botId: number, chatMember: BotApiChatMemberUpdated): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, chat_member: chatMember }));
+  }
+
+  enqueueChatJoinRequestUpdate(
+    botId: number,
+    chatJoinRequest: BotApiChatJoinRequest,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, chat_join_request: chatJoinRequest }),
+    );
+  }
+
+  enqueueMessageReactionUpdate(
+    botId: number,
+    messageReaction: BotApiMessageReactionUpdated,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, message_reaction: messageReaction }),
+    );
+  }
+
+  enqueueStoppedMessageGenerationUpdate(
+    botId: number,
+    stoppedMessageGeneration: BotApiMessageGenerationStopped,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, stopped_message_generation: stoppedMessageGeneration }),
+    );
+  }
+
+  /**
+   * Converts a Bot API offset, which may count back from the queue tail, into the ID of the first
+   * update to keep. The result depends on the current queue, so resolve it once per request.
+   */
+  resolveFirstUnconfirmedUpdateId(botId: number, offset: number | undefined): number | undefined {
+    if (offset === undefined || offset >= 0) {
+      return offset;
+    }
+
+    const mailbox = this.#getOrCreateMailbox(botId);
+    const retainedUpdateCount = Math.min(-offset, mailbox.updates.length);
+    const firstRetainedUpdate = mailbox.updates[mailbox.updates.length - retainedUpdateCount];
+    return firstRetainedUpdate?.update_id ?? mailbox.nextUpdateId;
+  }
+
+  /** Confirms updates preceding `firstUnconfirmedUpdateId`, then reads pending updates. */
+  confirmAndReadPendingUpdates(
+    botId: number,
+    { firstUnconfirmedUpdateId, limit }: ConfirmAndReadPendingUpdatesInput,
+  ): readonly BotApiUpdate[] {
+    this.confirmUpdatesBefore(botId, firstUnconfirmedUpdateId);
+    return this.#getOrCreateMailbox(botId).updates.slice(0, limit);
+  }
+
+  /**
+   * Confirms and forgets the pending updates with a lower ID than `firstUnconfirmedUpdateId`, and
+   * returns them, oldest first. `undefined` confirms none; as on Telegram, so does an ID more than
+   * 10 beyond the ID the next update will receive.
+   */
+  confirmUpdatesBefore(
+    botId: number,
+    firstUnconfirmedUpdateId: number | undefined,
+  ): readonly BotApiUpdate[] {
+    const mailbox = this.#getOrCreateMailbox(botId);
+    if (
+      firstUnconfirmedUpdateId === undefined ||
+      firstUnconfirmedUpdateId > mailbox.nextUpdateId + MAX_OFFSET_BEYOND_NEXT_UPDATE_ID
+    ) {
+      return [];
+    }
+    const firstUnconfirmedUpdateIndex = mailbox.updates.findIndex((update) =>
+      update.update_id >= firstUnconfirmedUpdateId
+    );
+    const confirmedUpdates = mailbox.updates.splice(
+      0,
+      firstUnconfirmedUpdateIndex === -1 ? mailbox.updates.length : firstUnconfirmedUpdateIndex,
+    );
+    this.#staging.recordRevert(() => mailbox.updates.unshift(...confirmedUpdates));
+    return confirmedUpdates;
+  }
+
+  /** Returns the bot's pending updates, oldest first, without confirming any. */
+  readPendingUpdates(botId: number): readonly BotApiUpdate[] {
+    return [...this.#getOrCreateMailbox(botId).updates];
+  }
+
+  /**
+   * Confirms and forgets one pending update, whatever updates precede it, as TDLib's
+   * `TQueue::forget` does for an update a webhook accepted.
+   */
+  confirmPendingUpdate(botId: number, updateId: number): void {
+    const { updates } = this.#getOrCreateMailbox(botId);
+    const updateIndex = updates.findIndex((update) => update.update_id === updateId);
+    if (updateIndex !== -1) {
+      const [confirmedUpdate] = updates.splice(updateIndex, 1);
+      this.#staging.recordRevert(() => updates.splice(updateIndex, 0, confirmedUpdate));
+    }
+  }
+
+  countPendingUpdates(botId: number): number {
+    return this.#getOrCreateMailbox(botId).updates.length;
+  }
+
+  /** Forgets every pending update; later updates continue the bot's update ID sequence. */
+  discardPendingUpdates(botId: number): void {
+    const { updates } = this.#getOrCreateMailbox(botId);
+    const discardedUpdates = updates.splice(0);
+    this.#staging.recordRevert(() => updates.push(...discardedUpdates));
+  }
+
+  /** The ID the bot's next update will receive, which grows with each update enqueued for it. */
+  getNextUpdateId(botId: number): number {
+    return this.#getOrCreateMailbox(botId).nextUpdateId;
+  }
+
+  /**
+   * Resolves once the bot's update with ID `awaitedUpdateId`, or a later one, has been enqueued, at
+   * once if it already has, or when the deadline arrives or `signal` aborts.
+   */
+  waitForUpdate(
+    botId: number,
+    { awaitedUpdateId, deadline, signal }: WaitForUpdateInput,
+  ): Promise<NotificationWaitEnd> {
+    return waitForNotification({
+      subscribe: (notify) => this.#subscribeToEnqueues(botId, notify),
+      hasChanged: () => this.getNextUpdateId(botId) > awaitedUpdateId,
+      deadline,
+      signal,
+    });
+  }
+
+  #enqueueUpdate(botId: number, createUpdate: (updateId: number) => BotApiUpdate): BotApiUpdate {
+    const mailbox = this.#getOrCreateMailbox(botId);
+    const update = createUpdate(mailbox.nextUpdateId++);
+    mailbox.updates.push(update);
+    // Every later write of the transaction is reverted first, so the update is the newest again.
+    this.#staging.recordRevert(() => {
+      mailbox.updates.pop();
+      mailbox.nextUpdateId -= 1;
+    });
+    this.#staging.notifyAfterPublication(() => this.#notifyWaiters(botId));
+    return update;
+  }
+
+  #getOrCreateMailbox(botId: number): BotUpdateMailbox {
+    const existingMailbox = this.#mailboxesByBotId.get(botId);
+    if (existingMailbox !== undefined) {
+      return existingMailbox;
+    }
+
+    const mailbox: BotUpdateMailbox = { nextUpdateId: 1, updates: [] };
+    this.#mailboxesByBotId.set(botId, mailbox);
+    return mailbox;
+  }
+
+  /** Calls `notify` each time an update is enqueued for the bot, until unsubscribed. */
+  #subscribeToEnqueues(botId: number, notify: () => void): Unsubscribe {
+    const waiters = this.#waitersByBotId.get(botId) ?? new Set<() => void>();
+    waiters.add(notify);
+    this.#waitersByBotId.set(botId, waiters);
+    return () => {
+      waiters.delete(notify);
+      if (waiters.size === 0 && this.#waitersByBotId.get(botId) === waiters) {
+        this.#waitersByBotId.delete(botId);
+      }
+    };
+  }
+
+  #notifyWaiters(botId: number): void {
+    for (const notify of [...(this.#waitersByBotId.get(botId) ?? [])]) {
+      notify();
+    }
+  }
+}

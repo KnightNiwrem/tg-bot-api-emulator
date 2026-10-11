@@ -30,159 +30,9 @@
         ]
       },
       {
-        "name": "account-repository",
-        "patterns": [
-          "src/repositories/account.ts"
-        ]
-      },
-      {
-        "name": "bot-repository",
-        "patterns": [
-          "src/repositories/bot.ts"
-        ]
-      },
-      {
-        "name": "private-conversation-repository",
-        "patterns": [
-          "src/repositories/private_conversation.ts"
-        ]
-      },
-      {
-        "name": "shared-chat-repository",
-        "patterns": [
-          "src/repositories/shared_chat.ts"
-        ]
-      },
-      {
-        "name": "chat-invite-link-repository",
-        "patterns": [
-          "src/repositories/chat_invite_link.ts"
-        ]
-      },
-      {
-        "name": "message-repository",
-        "patterns": [
-          "src/repositories/message.ts"
-        ]
-      },
-      {
-        "name": "file-repository",
-        "patterns": [
-          "src/repositories/file.ts"
-        ]
-      },
-      {
-        "name": "message-box-repository",
-        "patterns": [
-          "src/repositories/message_box.ts"
-        ]
-      },
-      {
-        "name": "bot-update-repository",
-        "patterns": [
-          "src/repositories/bot_update.ts"
-        ]
-      },
-      {
-        "name": "bot-update-subscription-repository",
-        "patterns": [
-          "src/repositories/bot_update_subscription.ts"
-        ]
-      },
-      {
-        "name": "bot-webhook-repository",
-        "patterns": [
-          "src/repositories/bot_webhook.ts"
-        ]
-      },
-      {
-        "name": "callback-query-repository",
-        "patterns": [
-          "src/repositories/callback_query.ts"
-        ]
-      },
-      {
-        "name": "inline-query-repository",
-        "patterns": [
-          "src/repositories/inline_query.ts"
-        ]
-      },
-      {
-        "name": "last-message-sending-bot-repository",
-        "patterns": [
-          "src/repositories/last_message_sending_bot.ts"
-        ]
-      },
-      {
-        "name": "bot-command-repository",
-        "patterns": [
-          "src/repositories/bot_command.ts"
-        ]
-      },
-      {
-        "name": "bot-description-repository",
-        "patterns": [
-          "src/repositories/bot_description.ts"
-        ]
-      },
-      {
-        "name": "bot-default-administrator-rights-repository",
-        "patterns": [
-          "src/repositories/bot_default_administrator_rights.ts"
-        ]
-      },
-      {
-        "name": "bot-menu-button-repository",
-        "patterns": [
-          "src/repositories/bot_menu_button.ts"
-        ]
-      },
-      {
-        "name": "queued-bot-api-answer-repository",
-        "patterns": [
-          "src/repositories/queued_bot_api_answer.ts"
-        ]
-      },
-      {
-        "name": "bot-activity-log-repository",
-        "patterns": [
-          "src/repositories/bot_activity_log.ts"
-        ]
-      },
-      {
-        "name": "blocked-user-repository",
-        "patterns": [
-          "src/repositories/blocked_user.ts"
-        ]
-      },
-      {
-        "name": "chat-action-repository",
-        "patterns": [
-          "src/repositories/chat_action.ts"
-        ]
-      },
-      {
-        "name": "message-draft-repository",
-        "patterns": [
-          "src/repositories/message_draft.ts"
-        ]
-      },
-      {
-        "name": "identity-repository",
-        "patterns": [
-          "src/repositories/telegram_identity.ts"
-        ]
-      },
-      {
-        "name": "web-resource-repository",
-        "patterns": [
-          "src/repositories/web_resource.ts"
-        ]
-      },
-      {
-        "name": "poll-repository",
-        "patterns": [
-          "src/repositories/poll.ts"
+        "name": "repositories",
+        "autoDiscover": [
+          "src/repositories"
         ]
       },
       {
@@ -207,12 +57,6 @@
         "name": "session",
         "patterns": [
           "src/session/**/*.ts"
-        ]
-      },
-      {
-        "name": "session-repository",
-        "patterns": [
-          "src/repositories/session.ts"
         ]
       },
       {
@@ -367,61 +211,26 @@
         ]
       },
       {
-        "from": "account-repository",
+        "from": "repositories",
+        "allow": [
+          "domain",
+          "change-staging"
+        ]
+      },
+      {
+        "from": "repositories/account",
         "allow": [
           "domain"
         ]
       },
       {
-        "from": "bot-repository",
+        "from": "repositories/bot",
         "allow": [
           "domain"
         ]
       },
       {
-        "from": "private-conversation-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "shared-chat-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "chat-invite-link-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "message-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "file-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "message-box-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-update-repository",
+        "from": "repositories/bot_update",
         "allow": [
           "domain",
           "session-timing",
@@ -429,77 +238,7 @@
         ]
       },
       {
-        "from": "bot-update-subscription-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-webhook-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "callback-query-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "inline-query-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "last-message-sending-bot-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-command-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-description-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-default-administrator-rights-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-menu-button-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "queued-bot-api-answer-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "bot-activity-log-repository",
+        "from": "repositories/bot_activity_log",
         "allow": [
           "domain",
           "session-timing",
@@ -507,44 +246,9 @@
         ]
       },
       {
-        "from": "blocked-user-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "chat-action-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "message-draft-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "identity-repository",
-        "allow": [
-          "domain",
-          "change-staging"
-        ]
-      },
-      {
-        "from": "web-resource-repository",
+        "from": "repositories/web_resource",
         "allow": [
           "domain"
-        ]
-      },
-      {
-        "from": "poll-repository",
-        "allow": [
-          "domain",
-          "change-staging"
         ]
       },
       {
@@ -577,7 +281,7 @@
         ]
       },
       {
-        "from": "session-repository",
+        "from": "repositories/session",
         "allow": [],
         "allowTypeOnly": [
           "session"
@@ -610,11 +314,11 @@
           "media-inspection"
         ],
         "allowTypeOnly": [
-          "account-repository",
-          "bot-repository",
-          "shared-chat-repository",
-          "chat-invite-link-repository",
-          "identity-repository",
+          "repositories/account",
+          "repositories/bot",
+          "repositories/shared_chat",
+          "repositories/chat_invite_link",
+          "repositories/telegram_identity",
           "session-timing"
         ]
       },
@@ -728,33 +432,7 @@
           "session-lifetime",
           "change-staging",
           "session-transactions",
-          "account-repository",
-          "bot-repository",
-          "private-conversation-repository",
-          "shared-chat-repository",
-          "chat-invite-link-repository",
-          "message-repository",
-          "file-repository",
-          "message-box-repository",
-          "bot-update-repository",
-          "bot-update-subscription-repository",
-          "bot-webhook-repository",
-          "callback-query-repository",
-          "inline-query-repository",
-          "last-message-sending-bot-repository",
-          "bot-command-repository",
-          "bot-description-repository",
-          "bot-default-administrator-rights-repository",
-          "bot-menu-button-repository",
-          "queued-bot-api-answer-repository",
-          "bot-activity-log-repository",
-          "blocked-user-repository",
-          "chat-action-repository",
-          "message-draft-repository",
-          "identity-repository",
-          "web-resource-repository",
-          "poll-repository",
-          "session-repository",
+          "repositories",
           "bot-api-projection",
           "domain-services",
           "bot-message-view",

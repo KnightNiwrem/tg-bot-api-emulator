@@ -8,11 +8,11 @@ import type {
   JoiningMemberStatus,
   NonOwnerMemberStatus,
   SharedChatRegistrationResult,
-} from '../../repositories/shared_chat.ts';
+} from '../../repositories/shared_chat/shared_chat.ts';
 import type {
   IdentityReservationResult,
   TelegramIdentity,
-} from '../../repositories/telegram_identity.ts';
+} from '../../repositories/telegram_identity/telegram_identity.ts';
 import {
   cleanInputString,
   cleanName,

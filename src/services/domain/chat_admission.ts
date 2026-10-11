@@ -2,7 +2,7 @@ import type {
   NewChatInviteLink,
   NewPrimaryChatInviteLink,
   PrimaryChatInviteLinkReplacement,
-} from '../../repositories/chat_invite_link.ts';
+} from '../../repositories/chat_invite_link/chat_invite_link.ts';
 import { cleanInputString, cleanName } from '../../text_entities/input_string.ts';
 import {
   type ChatInviteLink,

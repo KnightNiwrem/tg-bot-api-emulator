@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
+import { BotUpdateRepository } from '../src/repositories/bot_update/bot_update.ts';
 import type { BotApiPrivateMessage } from '../src/types/bot_api.ts';
 
 Deno.test('BotUpdateRepository confirms one update a webhook accepted, out of order', () => {

@@ -5,9 +5,9 @@
 import { assertEquals } from '@std/assert';
 import { createEmulationApi } from '../src/api/mod.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { SessionRepository } from '../src/repositories/session.ts';
+import { AccountRepository } from '../src/repositories/account/account.ts';
+import { BotRepository } from '../src/repositories/bot/bot.ts';
+import { SessionRepository } from '../src/repositories/session/session.ts';
 import { SessionLifecycleService } from '../src/services/application/session_lifecycle.ts';
 import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import {

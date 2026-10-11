@@ -5,13 +5,13 @@
  * attempt at each stage of the webhook's answer.
  */
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
-import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
+import { AccountRepository } from '../src/repositories/account/account.ts';
+import { BotRepository } from '../src/repositories/bot/bot.ts';
+import { BotActivityLogRepository } from '../src/repositories/bot_activity_log/bot_activity_log.ts';
+import { BotUpdateRepository } from '../src/repositories/bot_update/bot_update.ts';
+import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription/bot_update_subscription.ts';
+import { BotWebhookRepository } from '../src/repositories/bot_webhook/bot_webhook.ts';
+import { TelegramIdentityRepository } from '../src/repositories/telegram_identity/telegram_identity.ts';
 import { BotActivityService } from '../src/services/bot_activity/bot_activity.ts';
 import { BotUpdateConsumerService } from '../src/services/update_consumers/bot_update_consumer.ts';
 import { BotUpdatePollingService } from '../src/services/update_polling/bot_update_polling.ts';

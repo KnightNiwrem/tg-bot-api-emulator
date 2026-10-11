@@ -1,6 +1,6 @@
 import { assertEquals } from '@std/assert';
 
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
+import { PrivateConversationRepository } from '../src/repositories/private_conversation/private_conversation.ts';
 import { SessionChangeJournal } from '../src/transactions/staging/change_staging.ts';
 
 Deno.test('PrivateConversationRepository stores one private conversation per account and bot pair', () => {

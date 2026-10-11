@@ -1,8 +1,8 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { BotDefaultAdministratorRightsRepository } from '../src/repositories/bot_default_administrator_rights.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
+import { AccountRepository } from '../src/repositories/account/account.ts';
+import { BotRepository } from '../src/repositories/bot/bot.ts';
+import { BotDefaultAdministratorRightsRepository } from '../src/repositories/bot_default_administrator_rights/bot_default_administrator_rights.ts';
+import { TelegramIdentityRepository } from '../src/repositories/telegram_identity/telegram_identity.ts';
 import {
   BotDefaultAdministratorRightsService,
   type GetBotDefaultAdministratorRightsResult,

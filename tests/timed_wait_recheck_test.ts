@@ -1,5 +1,5 @@
-import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
-import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
+import { BotActivityLogRepository } from '../src/repositories/bot_activity_log/bot_activity_log.ts';
+import { BotUpdateRepository } from '../src/repositories/bot_update/bot_update.ts';
 import { BotActivityService } from '../src/services/bot_activity/bot_activity.ts';
 import { BotUpdatePollingService } from '../src/services/update_polling/bot_update_polling.ts';
 import { SessionLifetime } from '../src/services/session_lifetime/session_lifetime.ts';

@@ -1,4 +1,4 @@
-import { SessionRepository } from '../src/repositories/session.ts';
+import { SessionRepository } from '../src/repositories/session/session.ts';
 import { buildSessionServices } from './support/session_services.ts';
 
 Deno.test('SessionRepository stores and retrieves a session without overwriting its ID', () => {

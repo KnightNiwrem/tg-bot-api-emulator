@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { SessionRepository } from '../src/repositories/session.ts';
+import { SessionRepository } from '../src/repositories/session/session.ts';
 import { SessionLifecycleService } from '../src/services/application/session_lifecycle.ts';
 import type { EmulationSessionOptions } from '../src/session/emulation_session.ts';
 import { buildSessionServices } from './support/session_services.ts';

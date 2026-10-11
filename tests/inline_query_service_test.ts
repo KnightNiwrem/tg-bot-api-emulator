@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
+import { InlineQueryRepository } from '../src/repositories/inline_query/inline_query.ts';
 import {
   type AnswerInlineQueryInput,
   InlineQueryService,

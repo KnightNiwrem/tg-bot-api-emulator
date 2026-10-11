@@ -1,8 +1,8 @@
 import { assertEquals } from '@std/assert';
-import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
-import type { MessageBoxRepository } from '../src/repositories/message_box.ts';
+import { BotUpdateRepository } from '../src/repositories/bot_update/bot_update.ts';
+import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription/bot_update_subscription.ts';
+import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot/last_message_sending_bot.ts';
+import type { MessageBoxRepository } from '../src/repositories/message_box/message_box.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../src/services/update_delivery/bot_update_delivery.ts';
 import type {
