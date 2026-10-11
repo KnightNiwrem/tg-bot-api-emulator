@@ -20,8 +20,10 @@ interface BlockList {
   unblock(accountId: number, userId: number): boolean;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each change of a block runs in one, and emits its event into it. */
+interface BotBlockingTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -29,7 +31,8 @@ interface BotBlockingServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly blockedUsers: BlockList;
-  readonly events: ChatDomainEventSink;
+  /** Runs each change of a block as one transaction, which receives the change's event. */
+  readonly transactions: BotBlockingTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -39,22 +42,25 @@ interface BotBlockingServiceDependencies {
  *
  * Only a change is published, because Telegram notifies the bot only when the block changes;
  * blocking a blocked bot, or unblocking a bot that is not blocked, succeeds without effect.
+ *
+ * Each change runs as one transaction: the block list and the update the bot receives are
+ * published together, or, should any step fail, not at all.
  */
 export class BotBlockingService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #blockedUsers: BlockList;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: BotBlockingTransactions;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
-    { accounts, bots, blockedUsers, events, currentUnixTimeSeconds }:
+    { accounts, bots, blockedUsers, transactions, currentUnixTimeSeconds }:
       BotBlockingServiceDependencies,
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
     this.#blockedUsers = blockedUsers;
-    this.#events = events;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -70,25 +76,27 @@ export class BotBlockingService {
     { accountId, botId }: PrivateConversationKey,
     isBlocked: boolean,
   ): ChangeBotBlockResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { applied: false, reason: 'account_not_found' };
-    }
-    if (this.#bots.getById(botId) === undefined) {
-      return { applied: false, reason: 'bot_not_found' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(accountId) === undefined) {
+        return { applied: false, reason: 'account_not_found' };
+      }
+      if (this.#bots.getById(botId) === undefined) {
+        return { applied: false, reason: 'bot_not_found' };
+      }
 
-    const changed = isBlocked
-      ? this.#blockedUsers.block(accountId, botId)
-      : this.#blockedUsers.unblock(accountId, botId);
-    if (changed) {
-      this.#events.emit({
-        type: 'bot_block_changed',
-        accountId,
-        botId,
-        isBlocked,
-        changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
-      });
-    }
-    return { applied: true };
+      const changed = isBlocked
+        ? this.#blockedUsers.block(accountId, botId)
+        : this.#blockedUsers.unblock(accountId, botId);
+      if (changed) {
+        this.#transactions.emit({
+          type: 'bot_block_changed',
+          accountId,
+          botId,
+          isBlocked,
+          changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+        });
+      }
+      return { applied: true };
+    });
   }
 }

@@ -587,7 +587,8 @@
       {
         "from": "blocked-user-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
