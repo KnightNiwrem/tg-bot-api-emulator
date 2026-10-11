@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { BotCommand, BotCommandScope } from '../types/bot_command.ts';
 import type { BotLanguageCode } from '../types/bot_language_code.ts';
 
@@ -13,12 +15,22 @@ export interface BotCommandListKey {
  * commands, as Telegram treats an empty list as no list.
  */
 export class BotCommandRepository {
-  readonly #commandListsByBotId = new Map<number, Map<string, readonly BotCommand[]>>();
+  readonly #staging: ChangeStaging;
+  readonly #commandListsByBotId: TransactionalMap<
+    number,
+    TransactionalMap<string, readonly BotCommand[]>
+  >;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#commandListsByBotId = new TransactionalMap(staging);
+  }
 
   /** Replaces a command list; an empty list removes it. */
   setCommands(key: BotCommandListKey, commands: readonly BotCommand[]): void {
     const commandListsByKey = this.#commandListsByBotId.get(key.botId) ??
-      new Map<string, readonly BotCommand[]>();
+      new TransactionalMap<string, readonly BotCommand[]>(this.#staging);
     const listKey = serializeListKey(key);
     if (commands.length === 0) {
       commandListsByKey.delete(listKey);

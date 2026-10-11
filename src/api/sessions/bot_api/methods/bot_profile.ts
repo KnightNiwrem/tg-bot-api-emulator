@@ -12,6 +12,8 @@ import { readChatAdministratorRightsParameter } from '../chat_administrator_righ
 import { presentBotProfileFailure } from '../errors/bot_profile_failure_presenter.ts';
 import { readMenuButtonParameter } from '../menu_button_parameter.ts';
 import {
+  answeredPreparation,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -24,9 +26,13 @@ import {
   integerParameter,
 } from '../request_parameters.ts';
 
-/** The methods that read or change how the bot presents itself: its identity, commands, default administrator rights, menu button and descriptions. */
+/**
+ * The methods that read or change how the bot presents itself: its identity, commands, default
+ * administrator rights, menu button and descriptions. Each change is executed as a command in its
+ * call's transaction; the reads change nothing, and answer from their handlers.
+ */
 export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
-  { name: 'deleteMyCommands', recordsActivity: true, handler: handleDeleteMyCommands },
+  { name: 'deleteMyCommands', recordsActivity: true, prepare: prepareDeleteMyCommands },
   { name: 'getChatMenuButton', recordsActivity: true, handler: handleGetChatMenuButton },
   { name: 'getMe', recordsActivity: true, handler: handleGetMe },
   { name: 'getMyCommands', recordsActivity: true, handler: handleGetMyCommands },
@@ -37,15 +43,15 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
   },
   { name: 'getMyDescription', recordsActivity: true, handler: handleGetMyDescription },
   { name: 'getMyShortDescription', recordsActivity: true, handler: handleGetMyShortDescription },
-  { name: 'setChatMenuButton', recordsActivity: true, handler: handleSetChatMenuButton },
-  { name: 'setMyCommands', recordsActivity: true, handler: handleSetMyCommands },
+  { name: 'setChatMenuButton', recordsActivity: true, prepare: prepareSetChatMenuButton },
+  { name: 'setMyCommands', recordsActivity: true, prepare: prepareSetMyCommands },
   {
     name: 'setMyDefaultAdministratorRights',
     recordsActivity: true,
-    handler: handleSetMyDefaultAdministratorRights,
+    prepare: prepareSetMyDefaultAdministratorRights,
   },
-  { name: 'setMyDescription', recordsActivity: true, handler: handleSetMyDescription },
-  { name: 'setMyShortDescription', recordsActivity: true, handler: handleSetMyShortDescription },
+  { name: 'setMyDescription', recordsActivity: true, prepare: prepareSetMyDescription },
+  { name: 'setMyShortDescription', recordsActivity: true, prepare: prepareSetMyShortDescription },
 ];
 
 /** Telegram's description for a menu button `chat_id` that names no user. */
@@ -114,14 +120,14 @@ function handleGetMe(
   return botApiResult(context.bot);
 }
 
-function handleSetMyCommands(
+function prepareSetMyCommands(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid setMyCommands parameters';
   const parsedParameters = setMyCommandsParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return answeredPreparation(botApiError(400, invalidParametersDescription));
   }
   const { commands, scope, language_code: languageCode } = parsedParameters.data;
   const targetReading = readMyCommandsTarget(
@@ -130,14 +136,19 @@ function handleSetMyCommands(
     invalidParametersDescription,
   );
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
-  const result = context.session.botApi.setMyCommands(
-    context.bot,
-    { commands, ...targetReading.target },
-  );
-  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.setMyCommands(
+        context.bot,
+        { commands, ...targetReading.target },
+      );
+      return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+    },
+  };
 }
 
 function handleGetMyCommands(
@@ -164,28 +175,33 @@ function handleGetMyCommands(
   return result.found ? botApiResult(result.commands) : presentBotProfileFailure(result);
 }
 
-function handleDeleteMyCommands(
+function prepareDeleteMyCommands(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid deleteMyCommands parameters';
   const parsedParameters = myCommandsTargetParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return answeredPreparation(botApiError(400, invalidParametersDescription));
   }
   const targetReading = readMyCommandsTarget(context, {
     scope: parsedParameters.data.scope,
     languageCode: parsedParameters.data.language_code,
   }, invalidParametersDescription);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
-  const result = context.session.botApi.deleteMyCommands(
-    context.bot,
-    targetReading.target,
-  );
-  return result.deleted ? botApiResult(true) : presentBotProfileFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.deleteMyCommands(
+        context.bot,
+        targetReading.target,
+      );
+      return result.deleted ? botApiResult(true) : presentBotProfileFailure(result);
+    },
+  };
 }
 
 /** Reads the scope and language that address one of the bot's command lists. */
@@ -207,28 +223,33 @@ function readMyCommandsTarget(
   return { read: true, target: { scope: scopeReading.scope, languageCode } };
 }
 
-function handleSetMyDefaultAdministratorRights(
+function prepareSetMyDefaultAdministratorRights(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription =
     'Bad Request: invalid setMyDefaultAdministratorRights parameters';
   const parsedParameters = setMyDefaultAdministratorRightsParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return answeredPreparation(botApiError(400, invalidParametersDescription));
   }
   const rightsReading = readChatAdministratorRightsParameter(
     parsedParameters.data.rights,
     invalidParametersDescription,
   );
   if (!rightsReading.read) {
-    return botApiError(400, rightsReading.description);
+    return answeredPreparation(botApiError(400, rightsReading.description));
   }
-  context.session.botApi.setMyDefaultAdministratorRights(context.bot, {
-    kind: parsedParameters.data.for_channels ? 'channel' : 'group',
-    requestedRights: rightsReading.requestedRights,
-  });
-  return botApiResult(true);
+  return {
+    kind: 'command',
+    execute: () => {
+      context.session.botApi.setMyDefaultAdministratorRights(context.bot, {
+        kind: parsedParameters.data.for_channels ? 'channel' : 'group',
+        requestedRights: rightsReading.requestedRights,
+      });
+      return botApiResult(true);
+    },
+  };
 }
 
 function handleGetMyDefaultAdministratorRights(
@@ -252,32 +273,37 @@ function handleGetMyDefaultAdministratorRights(
  * user. The button is read before the chat, as the official server's
  * `process_set_chat_menu_button_query` does.
  */
-function handleSetChatMenuButton(
+function prepareSetChatMenuButton(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid setChatMenuButton parameters';
   const parsedParameters = setChatMenuButtonParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return answeredPreparation(botApiError(400, invalidParametersDescription));
   }
   const menuButtonReading = readMenuButtonParameter(
     parsedParameters.data.menu_button,
     invalidParametersDescription,
   );
   if (!menuButtonReading.read) {
-    return botApiError(400, menuButtonReading.description);
+    return answeredPreparation(botApiError(400, menuButtonReading.description));
   }
   const { chat_id: userId } = parsedParameters.data;
   if (userId !== undefined && userId <= 0) {
-    return botApiError(400, CHAT_ID_INVALID_DESCRIPTION);
+    return answeredPreparation(botApiError(400, CHAT_ID_INVALID_DESCRIPTION));
   }
 
-  const result = context.session.botApi.setChatMenuButton(context.bot, {
-    userId,
-    menuButton: menuButtonReading.menuButton,
-  });
-  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.setChatMenuButton(context.bot, {
+        userId,
+        menuButton: menuButtonReading.menuButton,
+      });
+      return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+    },
+  };
 }
 
 function handleGetChatMenuButton(
@@ -296,42 +322,52 @@ function handleGetChatMenuButton(
   return result.found ? botApiResult(result.menuButton) : presentBotProfileFailure(result);
 }
 
-function handleSetMyDescription(
+function prepareSetMyDescription(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = setMyDescriptionParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setMyDescription parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid setMyDescription parameters'),
+    );
   }
-  return setMyDescription(context, {
+  return setMyDescriptionCommand(context, {
     kind: 'description',
     text: parsedParameters.data.description,
     languageCode: parsedParameters.data.language_code,
   });
 }
 
-function handleSetMyShortDescription(
+function prepareSetMyShortDescription(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = setMyShortDescriptionParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setMyShortDescription parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid setMyShortDescription parameters'),
+    );
   }
-  return setMyDescription(context, {
+  return setMyDescriptionCommand(context, {
     kind: 'short_description',
     text: parsedParameters.data.short_description,
     languageCode: parsedParameters.data.language_code,
   });
 }
 
-function setMyDescription(
+/** The command that sets one of the bot's descriptions, as `setMyDescription` asks for it. */
+function setMyDescriptionCommand(
   context: BotApiMethodContext,
   request: Parameters<EmulationSession['botApi']['setMyDescription']>[1],
-): BotApiMethodAnswer {
-  const result = context.session.botApi.setMyDescription(context.bot, request);
-  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+): BotApiCallPreparation {
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.setMyDescription(context.bot, request);
+      return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+    },
+  };
 }
 
 function handleGetMyDescription(
