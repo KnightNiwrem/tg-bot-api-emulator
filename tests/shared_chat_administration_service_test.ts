@@ -1583,7 +1583,11 @@ function createSharedChatAdministrationFixture() {
     supergroupMessages: {
       recordServiceMessage: (change) => recordedServiceMessages.push(change),
     },
-    events: { emit: (event) => publishedEvents.push(event) },
+    // The repositories are not staged, so each command runs as it is called.
+    transactions: {
+      withinTransaction: (command) => command(),
+      emit: (event) => publishedEvents.push(event),
+    },
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   return {

@@ -97,7 +97,7 @@ export function createEmulationSession(
     reportNotificationFailure: (error) =>
       console.error('A consumer failed on being notified of a published change', error),
   });
-  const identities = new TelegramIdentityRepository();
+  const identities = new TelegramIdentityRepository(journal);
   const accounts = new AccountRepository();
   const bots = new BotRepository();
   const virtualUsers = new VirtualUserService({ identities, accounts, bots });
@@ -153,7 +153,7 @@ export function createEmulationSession(
     bots,
     sharedChats,
     supergroupMessages: supergroupMessaging,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const chatAdmission = new ChatAdmissionService({

@@ -6,6 +6,7 @@ import { presentChatInfoChangeFailure } from '../errors/chat_info_failure_presen
 import { type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
   answerWithBadRequest,
+  commandMethodOfSteps,
   handledMethodOfSteps,
   proceedWith,
   startSteps,
@@ -34,7 +35,11 @@ const getChatParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
 });
 
-/** The methods that read a chat, or change its title, description or permissions. */
+/**
+ * The methods that read a chat, or change its title, description or permissions. Each change is
+ * executed as a command in its call's transaction; `getChat` changes nothing, and answers from its
+ * handler.
+ */
 export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
   handledMethodOfSteps({
     name: 'getChat',
@@ -46,7 +51,7 @@ export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
       return result.found ? botApiResult(result.chat) : botChatAccessFailureAnswer(result.reason);
     },
   }),
-  handledMethodOfSteps({
+  commandMethodOfSteps({
     name: 'setChatDescription',
     recordsActivity: true,
     parameters: setChatDescriptionParametersSchema,
@@ -62,7 +67,7 @@ export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
     },
   }),
   // Telegram reads the permissions before it looks at the chat.
-  handledMethodOfSteps({
+  commandMethodOfSteps({
     name: 'setChatPermissions',
     recordsActivity: true,
     parameters: setChatPermissionsParametersSchema,
@@ -88,7 +93,7 @@ export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
         : presentChatInfoChangeFailure('chat_permissions_change', result);
     },
   }),
-  handledMethodOfSteps({
+  commandMethodOfSteps({
     name: 'setChatTitle',
     recordsActivity: true,
     parameters: setChatTitleParametersSchema,
