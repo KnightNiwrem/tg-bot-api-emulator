@@ -1,26 +1,12 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import {
   MAX_DISTINCT_REACTIONS_PER_MESSAGE,
   MessageReactionService,
 } from '../src/services/message_reaction.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { MessageDeletionService } from '../src/services/message_deletion.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
-import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
+import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import type { ChatPermission } from '../src/types/chat_permissions.ts';
 import { REACTION_EMOJIS } from '../src/types/message_reaction.ts';
@@ -236,7 +222,7 @@ Deno.test('MessageReactionService limits a message to eleven distinct reactions'
     createReactionFixture();
   const message = sendText(owner.profile.id, 'Vote with emoji');
   const reactors = Array.from({ length: MAX_DISTINCT_REACTIONS_PER_MESSAGE + 1 }, (_, index) => {
-    const account = createAccount(virtualUsers, `Reactor ${index}`);
+    const account = createVirtualAccount(virtualUsers, { first_name: `Reactor ${index}` });
     sharedChatAdministration.addChatMember({
       actorAccountId: owner.profile.id,
       chatId: supergroup.id,
@@ -287,8 +273,11 @@ Deno.test('MessageReactionService finds messages only for members and bots of th
     sendText,
   } = createReactionFixture();
   const message = sendText(ada.profile.id, 'Members only');
-  const outsider = createAccount(virtualUsers, 'Outsider');
-  const outsiderBot = createBot(virtualUsers, 'outsider_bot');
+  const outsider = createVirtualAccount(virtualUsers, { first_name: 'Outsider' });
+  const outsiderBot = createVirtualBot(virtualUsers, {
+    first_name: 'Reaction Bot',
+    username: 'outsider_bot',
+  });
   const chatKey = { chatId: supergroup.id, messageId: message.messageId };
   publishedEvents.splice(0);
 
@@ -345,84 +334,36 @@ Deno.test('MessageReactionService loses the reactions of a deleted message', () 
 });
 
 function createReactionFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const sharedChats = new SharedChatRepository();
-  const messages = new MessageRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const publishedEvents: ChatDomainEvent[] = [];
-  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
-  const currentUnixTimeSeconds = () => 1_700_000_000;
-  const supergroupMessaging = new SupergroupMessagingService({
+  const services = createChatMessagingServices();
+  const {
+    virtualUsers,
     accounts,
     bots,
     sharedChats,
     messages,
     messageBoxes,
-  });
-  const privateConversations = new PrivateConversationRepository();
-  // These tests send no private messages, so none is found.
-  const privateChats = new PrivateChatPolicy({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers: new BlockedUserRepository(),
-    joinRequesterContacts: { mayContactJoinRequester: () => false },
-    privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
-  });
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-  });
-  const { messageCommitter, messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    privateConversations,
-    sharedChats,
-    messages,
-    files: new FileRepository(),
-    polls: new PollRepository(),
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds,
-  });
-  const sharedChatAdministration = new SharedChatAdministrationService({
-    identities,
-    accounts,
-    bots,
-    sharedChats,
-    serviceMessages: messageCommitter,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds,
-  });
-  const messageDeletion = new MessageDeletionService({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    messages,
-    privateReplyInterfaces: privateConversations,
-    transactions: { withinTransaction: (command) => command() },
-  });
+    publishedEvents,
+    supergroupMessaging,
+    sharedChatAdministration,
+    messageSending,
+  } = services;
   const messageReactions = new MessageReactionService({
     accounts,
     bots,
     sharedChats,
     supergroupMessages: supergroupMessaging,
     messages,
-    // The repositories are not staged, so each choice runs as it is called.
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds,
+    transactions: services.transactions,
+    currentUnixTimeSeconds: () => TEST_UNIX_TIME_SECONDS,
   });
 
-  const owner = createAccount(virtualUsers, 'Owner');
-  const ada = createAccount(virtualUsers, 'Ada');
-  const grace = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'reaction_bot');
+  const owner = createVirtualAccount(virtualUsers, { first_name: 'Owner' });
+  const ada = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, {
+    first_name: 'Reaction Bot',
+    username: 'reaction_bot',
+  });
   const creation = sharedChatAdministration.createSupergroup({
     title: 'Team',
     creatorAccountId: owner.profile.id,
@@ -471,14 +412,8 @@ function createReactionFixture() {
   };
 
   return {
-    virtualUsers,
-    sharedChatAdministration,
-    supergroupMessaging,
-    messageDeletion,
-    messages,
-    messageBoxes,
+    ...services,
     messageReactions,
-    publishedEvents,
     owner,
     ada,
     grace,
@@ -502,20 +437,4 @@ function setDefaultPermissions(
   if (!result.changed) {
     throw new Error(`Expected the default permissions to change, received ${result.reason}`);
   }
-}
-
-function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
-}
-
-function createBot(virtualUsers: VirtualUserService, username: string) {
-  const result = virtualUsers.createBot({ first_name: 'Reaction Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
 }

@@ -51,27 +51,27 @@ Deno.test('sendMessage attaches an inline keyboard from every request encoding',
     text: 'No buttons',
     reply_markup: { inline_keyboard: [] },
   });
-  const expectedMarkup = JSON.stringify({ inline_keyboard: inlineKeyboard });
-  if (
-    jsonReply.status !== 200 ||
-    JSON.stringify(botApiResult(jsonReply.body)?.reply_markup) !== expectedMarkup ||
-    formReply.status !== 200 ||
-    JSON.stringify(botApiResult(await formReply.json())?.reply_markup) !== expectedMarkup ||
-    emptyKeyboardReply.status !== 200 ||
-    botApiResult(emptyKeyboardReply.body)?.reply_markup !== undefined
-  ) {
-    throw new Error('Expected the keyboard in replies, and no keyboard for an empty one');
-  }
+  const expectedMarkup = { inline_keyboard: inlineKeyboard };
+  assertEqualsInFieldOrder(
+    [
+      [jsonReply.status, botApiResult(jsonReply.body)?.reply_markup],
+      [formReply.status, botApiResult(await formReply.json())?.reply_markup],
+      [emptyKeyboardReply.status, botApiResult(emptyKeyboardReply.body)?.reply_markup],
+    ],
+    [[200, expectedMarkup], [200, expectedMarkup], [200, undefined]],
+    'Expected the keyboard in replies, and no keyboard for an empty one',
+  );
   const historyBody: unknown = await (await api.request(
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/messages`,
   )).json();
-  if (
-    !isMessageHistoryResponse(historyBody) ||
-    JSON.stringify(historyBody.messages[1].reply_markup) !==
-      expectedMarkup
-  ) {
-    throw new Error('Expected history to show the inline keyboard');
+  if (!isMessageHistoryResponse(historyBody)) {
+    throw new Error('Expected the message history');
   }
+  assertEqualsInFieldOrder(
+    historyBody.messages[1].reply_markup,
+    expectedMarkup,
+    'Expected history to show the inline keyboard',
+  );
 
   const invalidMarkups: unknown[] = [
     { inline_keyboard: [[{ text: 'Plain' }]] },

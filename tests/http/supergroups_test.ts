@@ -358,12 +358,11 @@ Deno.test('Bot API methods follow Telegram checks in supergroups', async () => {
     chat_id: supergroup.id,
     message_ids: [botMessageId, 99],
   });
-  const successBody = JSON.stringify({ ok: true, result: true });
-  if (
-    JSON.stringify(chatAction.body) !== successBody || JSON.stringify(deletion.body) !== successBody
-  ) {
-    throw new Error('Expected a chat action and the deletion of its own message to succeed');
-  }
+  assertEqualsInFieldOrder(
+    [chatAction.body, deletion.body],
+    [{ ok: true, result: true }, { ok: true, result: true }],
+    'Expected a chat action and the deletion of its own message to succeed',
+  );
   const history = await (await api.request(`${supergroupPath(owner.id)}/messages`)).json() as {
     messages: Array<{ text?: string }>;
   };

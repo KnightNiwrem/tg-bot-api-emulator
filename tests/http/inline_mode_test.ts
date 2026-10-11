@@ -514,12 +514,13 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
     input_message_content: { message_text: `Result ${id}` },
     ...extra,
   });
+  /** Answers the query, returning a refusal's description, or the body of an accepted answer. */
   const answer = async (parameters: Record<string, unknown>) => {
     const { body } = await callBotApi(api, `${inlineBot.botApiPath}/answerInlineQuery`, {
       inline_query_id: inlineQueryId,
       ...parameters,
     });
-    return isBadRequestResponse(body) ? body.description : JSON.stringify(body);
+    return isBadRequestResponse(body) ? body.description : body;
   };
   const answerFailures = [
     await answer({ results: [article('1'), article('1')] }),
@@ -578,14 +579,17 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
     'Bad Request: query is too old and response timeout expired or query ID is invalid',
   ], "Expected Telegram's answerInlineQuery errors");
 
-  if (
-    (await answer({ results: [article('1')], cache_time: 100_000, is_personal: true })) !==
-      JSON.stringify({ ok: true, result: true }) ||
-    (await answer({ results: [article('2')] })) !==
-      'Bad Request: query is too old and response timeout expired or query ID is invalid'
-  ) {
-    throw new Error('Expected the query to be answered only once');
-  }
+  assertEqualsInFieldOrder(
+    [
+      await answer({ results: [article('1')], cache_time: 100_000, is_personal: true }),
+      await answer({ results: [article('2')] }),
+    ],
+    [
+      { ok: true, result: true },
+      'Bad Request: query is too old and response timeout expired or query ID is invalid',
+    ],
+    'Expected the query to be answered only once',
+  );
   const answeredBody = await (await api.request(inlineQueryPath)).json() as {
     inline_query: { answer: { cache_time: number; is_personal: boolean } };
   };

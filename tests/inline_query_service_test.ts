@@ -1,15 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
 import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import {
   type AnswerInlineQueryInput,
   InlineQueryService,
@@ -17,16 +7,10 @@ import {
   type SpecifiedInlineQueryResult,
 } from '../src/services/inline_query.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { PrivateMessagingService } from '../src/services/private_messaging.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
 import type { WebFileDownload } from '../src/services/web_file_download.ts';
-import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
-import type { FileUpload } from '../src/types/stored_file.ts';
 import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
@@ -802,63 +786,9 @@ function article(
 }
 
 function createInlineQueryFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const sharedChats = new SharedChatRepository();
-  const blockedUsers = new BlockedUserRepository();
-  const publishedEvents: ChatDomainEvent[] = [];
-  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
-  // The uploads the sent messages store, in order.
-  const storedUploads: FileUpload[] = [];
-  const messageFiles = {
-    addFile: (upload: FileUpload) => {
-      storedUploads.push(upload);
-      return files.addFile(upload);
-    },
-  };
-  const privateConversations = new PrivateConversationRepository();
-  const privateMessaging = new PrivateMessagingService({
-    accounts,
-    bots,
-    privateConversations,
-    messages,
-    messageBoxes,
-    blockedUsers,
-  });
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
-    sharedChats,
-    messages,
-    messageBoxes,
-  });
-  const { messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    privateChats: new PrivateChatPolicy({
-      accounts,
-      bots,
-      privateConversations,
-      blockedUsers,
-      joinRequesterContacts: { mayContactJoinRequester: () => false },
-      privateMessages: privateMessaging,
-    }),
-    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
-    privateConversations,
-    sharedChats,
-    messages,
-    files: messageFiles,
-    polls,
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds: () => 1_700_000_000,
-  });
+  const services = createChatMessagingServices();
+  const { virtualUsers, accounts, bots, sharedChats, files, messageSending, transactions } =
+    services;
   // What the emulated web serves at each URL, as `formatHttpUrl` spells it; other URLs fail.
   const webResources = new Map<string, WebFileDownload>();
   const downloadedUrls: string[] = [];
@@ -882,8 +812,7 @@ function createInlineQueryFixture() {
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
     transactions: {
-      ...events,
-      withinTransaction: (command) => command(),
+      ...transactions,
       execute: (command) => ({ executed: true, result: command() }),
     },
   });
@@ -938,15 +867,10 @@ function createInlineQueryFixture() {
   };
 
   return {
-    virtualUsers,
-    files,
+    ...services,
     webResources,
     downloadedUrls,
-    storedUploads,
-    sharedChats,
-    blockedUsers,
     inlineQueries,
-    publishedEvents,
     account,
     inlineBot,
     sendQuery,
