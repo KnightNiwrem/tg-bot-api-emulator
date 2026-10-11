@@ -13,10 +13,9 @@ import {
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
 } from '../../types/chat_membership.ts';
-import { isUserId } from '../../types/telegram_identity.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
-import type { PrivateConversationKey } from '../../types/virtual_chat.ts';
+import { getBotApiChatAddress, type PrivateConversationKey } from '../../types/virtual_chat.ts';
 
 /** A command as a bot specified it, before Telegram cleans and checks it. */
 export interface SpecifiedBotCommand {
@@ -305,11 +304,12 @@ export class BotCommandService {
       case 'chat':
       case 'chat_administrators':
       case 'chat_member': {
-        if (!isUserId(scope.chatId)) {
+        const chat = getBotApiChatAddress(scope.chatId);
+        if (chat.type === 'supergroup') {
           const access = resolveSupergroupBotMembership(
             this.#supergroupMembers,
             botId,
-            scope.chatId,
+            chat.chatId,
           );
           if (!access.resolved) {
             return access.reason;
@@ -318,7 +318,7 @@ export class BotCommandService {
         }
         if (
           !this.#privateConversations.isPrivateConversationStarted({
-            accountId: scope.chatId,
+            accountId: chat.peerId,
             botId,
           })
         ) {
