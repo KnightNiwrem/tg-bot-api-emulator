@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import {
@@ -208,25 +209,6 @@ async function expectStatus(
 }
 
 /** Compares JSON values by content: object keys in any order, array items in order. */
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (toCanonicalJson(actual) !== toCanonicalJson(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
-function toCanonicalJson(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_key, nested: unknown) =>
-      typeof nested === 'object' && nested !== null && !Array.isArray(nested)
-        ? Object.fromEntries(
-          Object.entries(nested).sort(([first], [second]) => first < second ? -1 : 1),
-        )
-        : nested,
-  );
-}
 
 Deno.test('bots see the administrators the owner promoted as ones they may not edit', async () => {
   const { ada, grace, delegatingBot, otherBot, supergroup, callBot, getChatMember, readUpdates } =
@@ -240,7 +222,7 @@ Deno.test('bots see the administrators the owner promoted as ones they may not e
     return_bots: true,
   });
 
-  expectEqual(
+  assertEquals(
     promotion,
     {
       my_chat_member: {
@@ -255,12 +237,12 @@ Deno.test('bots see the administrators the owner promoted as ones they may not e
     },
     'Expected the promoted bot to see that it may not edit itself',
   );
-  expectEqual(
+  assertEquals(
     await getChatMember(delegatingBot, grace.id),
     administratorMember(grace, ['can_promote_members'], { canBeEdited: false }),
     'Expected a bot that may promote to see that it may not edit what the owner promoted',
   );
-  expectEqual(
+  assertEquals(
     (administrators.body.result as Array<{ can_be_edited?: boolean }>).map((member) =>
       member.can_be_edited
     ),
@@ -307,22 +289,22 @@ Deno.test('members inspect who promoted each administrator and whom they may edi
       canBeEdited,
     }),
   ];
-  expectEqual(
+  assertEquals(
     [asOwner.status, asOwner.body.administrators],
     [200, administrators(true)],
     'Expected the owner to edit every administrator',
   );
-  expectEqual(
+  assertEquals(
     asAdministrator.body.administrators,
     administrators(false),
     'Expected an administrator that may promote to edit nobody the owner promoted, itself included',
   );
-  expectEqual(
+  assertEquals(
     asMember.body.administrators,
     administrators(false),
     'Expected a member to edit none',
   );
-  expectEqual(
+  assertEquals(
     [
       (await getAdministratorsAsAccount(linus.id)).status,
       (await requestJson(
@@ -400,12 +382,12 @@ Deno.test('a bot promotes a member, changes its rights and demotes it, as observ
   const repeatedDemotion = await promote({});
   const demoted = await getChatMember(delegatingBot, hopper.id);
 
-  expectEqual(
+  assertEquals(
     [promotion.body, repeatedPromotion.body, rightsChange.body, demotion.body],
     Array(4).fill({ ok: true, result: true }),
     'Expected every promotion and the demotion to succeed',
   );
-  expectEqual(
+  assertEquals(
     [promoted, promotedAsOtherBotSees],
     [
       administratorMember(hopper, ['can_delete_messages'], { canBeEdited: true }),
@@ -415,7 +397,7 @@ Deno.test('a bot promotes a member, changes its rights and demotes it, as observ
   );
   const findHopper = (administrators: ReadonlyArray<Record<string, unknown>>) =>
     administrators.find(({ user_id }) => user_id === hopper.id);
-  expectEqual(
+  assertEquals(
     [
       findHopper(inspectedByOwner.body.administrators),
       findHopper(inspectedByGrace.body.administrators),
@@ -432,12 +414,12 @@ Deno.test('a bot promotes a member, changes its rights and demotes it, as observ
     ],
     'Expected accounts to see the bot as the promoter, and only the owner to edit it',
   );
-  expectEqual(
+  assertEquals(
     [repeatedDemotion.body, demoted],
     [{ ok: true, result: true }, { user: hopper, status: 'member' }],
     'Expected the demoted administrator to be a member, and demoting it again to change nothing',
   );
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(await readUpdates(delegatingBot)),
     [
       `chat_member ${hopper.id}: member -> administrator(editable)`,
@@ -446,7 +428,7 @@ Deno.test('a bot promotes a member, changes its rights and demotes it, as observ
     ],
     'Expected the promoting bot to observe each change once, as its editor',
   );
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(await readUpdates(otherBot)),
     [
       `chat_member ${hopper.id}: member -> administrator(fixed)`,
@@ -487,13 +469,13 @@ Deno.test('a delegated chain of bots edits only its descendants, within its own 
   // The delegating bot demotes Hopper, whom it promoted indirectly.
   const indirectDemotion = await promote(delegatingBot, hopper.id, {});
 
-  expectEqual(chain, [true, true], 'Expected each bot to promote the next one');
-  expectEqual(
+  assertEquals(chain, [true, true], 'Expected each bot to promote the next one');
+  assertEquals(
     editabilityInChain,
     [true, true, true, false],
     'Expected each bot to edit its descendants only',
   );
-  expectEqual(
+  assertEquals(
     escalations,
     [
       'Bad Request: RIGHT_FORBIDDEN',
@@ -504,7 +486,7 @@ Deno.test('a delegated chain of bots edits only its descendants, within its own 
     ],
     'Expected every escalation to be refused',
   );
-  expectEqual(
+  assertEquals(
     [indirectDemotion, (await getChatMember(otherBot, hopper.id)).status],
     [true, 'member'],
     'Expected the delegating bot to demote an indirect appointee',
@@ -527,8 +509,8 @@ Deno.test('a broken chain leaves the appointee to the owner', async () => {
   const hopperAsOwnerSees = (await getAdministratorsAsAccount(ada.id)).body.administrators
     .find(({ user_id }) => user_id === hopper.id);
 
-  expectEqual(setup, [true, true, true], 'Expected the chain to be built and broken');
-  expectEqual(
+  assertEquals(setup, [true, true, true], 'Expected the chain to be built and broken');
+  assertEquals(
     [
       editByFormerAncestor,
       hopperAsOwnerSees?.promoted_by_user_id,
@@ -579,13 +561,13 @@ Deno.test('a demoted promoter loses its privileges, and bots act on administrato
     await call(otherBot, 'promoteChatMember', { user_id: hopper.id, can_restrict_members: true }),
   ];
 
-  expectEqual(delegation, [true, true], 'Expected the delegation to succeed');
-  expectEqual(
+  assertEquals(delegation, [true, true], 'Expected the delegation to succeed');
+  assertEquals(
     [restrictionOfAppointee, await statusOf(hopper.id), banOfOwnersAdministrator],
     [true, 'restricted', 'Bad Request: user is an administrator of the chat'],
     'Expected a bot to restrict only an administrator it promoted, which then loses its rights',
   );
-  expectEqual(
+  assertEquals(
     [demotion, await statusOf(otherBot.bot.id), afterDemotion],
     [true, 'member', [
       'Bad Request: not enough rights to restrict/unrestrict chat member',
@@ -670,7 +652,7 @@ Deno.test('promoteChatMember refuses what Telegram refuses, without changing any
   ];
   const administratorsAfter = await getAdministratorsAsAccount(ada.id);
 
-  expectEqual(
+  assertEquals(
     failures,
     [
       [400, 'Bad Request: invalid user_id specified'],
@@ -689,8 +671,8 @@ Deno.test('promoteChatMember refuses what Telegram refuses, without changing any
     ],
     'Expected Telegram errors',
   );
-  expectEqual(administratorsAfter.body, administratorsBefore.body, 'Expected no change');
-  expectEqual(
+  assertEquals(administratorsAfter.body, administratorsBefore.body, 'Expected no change');
+  assertEquals(
     [await readUpdates(delegatingBot), await readUpdates(otherBot)],
     [[], []],
     'Expected no update for a refused promotion',
@@ -701,7 +683,7 @@ Deno.test('promoteChatMember refuses what Telegram refuses, without changing any
     can_promote_members: true,
     can_restrict_members: true,
   });
-  expectEqual(
+  assertEquals(
     [
       await describe(delegatingBot, { chat_id: supergroup.id, user_id: grace.id }),
       (await callBot(delegatingBot, 'getChatMember', { chat_id: supergroup.id, user_id: grace.id }))
@@ -784,8 +766,8 @@ Deno.test('an administrator account promotes and demotes within its rights, as b
     await demote(grace.id, otherBot.bot.id),
   ];
 
-  expectEqual(promotions, [204, 204], 'Expected Grace to promote the bot');
-  expectEqual(
+  assertEquals(promotions, [204, 204], 'Expected Grace to promote the bot');
+  assertEquals(
     promotedAsDelegatingBotSees,
     administratorMember(botUser(otherBot, 'other_bot'), ['can_delete_messages'], {
       canBeEdited: false,
@@ -794,7 +776,7 @@ Deno.test('an administrator account promotes and demotes within its rights, as b
   );
   const findOtherBot = (administrators: ReadonlyArray<Record<string, unknown>>) =>
     administrators.find(({ user_id }) => user_id === otherBot.bot.id);
-  expectEqual(
+  assertEquals(
     [findOtherBot(promotedAsOwnerSees), findOtherBot(promotedAsGraceSees)],
     [true, true].map((canBeEdited) =>
       administratorForAccount(otherBot.bot.id, ['can_delete_messages'], {
@@ -804,7 +786,7 @@ Deno.test('an administrator account promotes and demotes within its rights, as b
     ),
     'Expected Grace to be the promoter, whom the owner and Grace may edit',
   );
-  expectEqual(
+  assertEquals(
     promotionUpdates.map(describeAttributedUpdates),
     [
       [`chat_member by ${grace.id} ${otherBot.bot.id}: member -> administrator`],
@@ -812,18 +794,18 @@ Deno.test('an administrator account promotes and demotes within its rights, as b
     ],
     'Expected the promotion to reach both bots once, from Grace',
   );
-  expectEqual(
+  assertEquals(
     refusals,
     [403, 403, 403, 403, 403, 409, 409, 403, 403, 404, 400],
     'Expected each refusal',
   );
-  expectEqual(
+  assertEquals(
     [administratorsAfterRefusals.body.administrators, refusalUpdates],
     [promotedAsOwnerSees, [[], []]],
     'Expected refusals to change nothing and to send no update',
   );
-  expectEqual(demotions, [204, 204], 'Expected Grace to demote the bot');
-  expectEqual(
+  assertEquals(demotions, [204, 204], 'Expected Grace to demote the bot');
+  assertEquals(
     [
       describeAttributedUpdates(await readUpdates(delegatingBot)),
       describeAttributedUpdates(await readUpdates(otherBot)),
@@ -886,8 +868,8 @@ Deno.test('accounts and bots edit administrators along one chain of promotions',
     (await hopperAs(ada.id))?.promoted_by_user_id,
   ];
 
-  expectEqual(chain, [204, true], 'Expected the chain to be built');
-  expectEqual(
+  assertEquals(chain, [204, true], 'Expected the chain to be built');
+  assertEquals(
     hopperInChain,
     administratorForAccount(hopper.id, ['can_promote_members'], {
       promotedById: otherBot.bot.id,
@@ -895,7 +877,7 @@ Deno.test('accounts and bots edit administrators along one chain of promotions',
     }),
     'Expected Grace to edit the appointee of the bot she promoted',
   );
-  expectEqual(
+  assertEquals(
     [indirectChange, hopperAfterGraceChange],
     [
       204,
@@ -903,12 +885,12 @@ Deno.test('accounts and bots edit administrators along one chain of promotions',
     ],
     'Expected Grace to become the promoter of Hopper',
   );
-  expectEqual(
+  assertEquals(
     [botAfterGraceChange, hopperOnGrace],
     ['Bad Request: user is an administrator of the chat', 403],
     'Expected neither the bot nor Hopper to edit what Grace promoted or Grace herself',
   );
-  expectEqual(
+  assertEquals(
     afterNewTenure,
     [403, 403, grace.id],
     'Expected Grace to edit none of the appointees of her earlier tenure',
@@ -933,7 +915,7 @@ Deno.test('administrator accounts act only within their own session', async () =
     'Expected Grace to promote Hopper in the first session',
   );
 
-  expectEqual(
+  assertEquals(
     [
       second.grace.id === first.grace.id && second.hopper.id === first.hopper.id,
       (await second.getAdministratorsAsAccount(second.ada.id)).body,
@@ -1006,12 +988,12 @@ Deno.test('a grammY bot promotes a member through its webhook, as the activity l
       'GET',
       `${sessionPath}/bot-activity?method=promoteChatMember`,
     );
-    expectEqual(
+    assertEquals(
       [observed.status, observed.can_be_edited],
       ['administrator', true],
       'Expected the bot to observe its promotion of the member, as its editor',
     );
-    expectEqual(
+    assertEquals(
       activity.body.entries.map(({ via, parameters, answer }) => [via, parameters, answer]),
       [[
         'http',
@@ -1094,27 +1076,27 @@ Deno.test('a bot titles an administrator it promoted, which every read shows, wi
   const titledByOwner = await titleOf();
   const ownerTitleUpdates = describeMembershipUpdates(await readUpdates(otherBot));
 
-  expectEqual(
+  assertEquals(
     [titling, rightsChange, longestTitling, removal, demotion],
     [true, true, true, true, true],
     'Expected each call to succeed',
   );
-  expectEqual(titled, ['Janitor', 'Janitor', 'Janitor'], 'Expected every read to show the title');
-  expectEqual(updatesAfterTitling, [[], []], 'Expected no update for a title change');
-  expectEqual(
+  assertEquals(titled, ['Janitor', 'Janitor', 'Janitor'], 'Expected every read to show the title');
+  assertEquals(updatesAfterTitling, [[], []], 'Expected no update for a title change');
+  assertEquals(
     titledAfterRightsChange,
     ['Janitor', 'Janitor', 'Janitor'],
     'Expected the title to outlast a change of rights',
   );
-  expectEqual(longestTitled, longestTitle, 'Expected the longest title to be kept whole');
-  expectEqual(untitled, [undefined, undefined, undefined], 'Expected the title to be removed');
-  expectEqual(
+  assertEquals(longestTitled, longestTitle, 'Expected the longest title to be kept whole');
+  assertEquals(untitled, [undefined, undefined, undefined], 'Expected the title to be removed');
+  assertEquals(
     titleAfterDemotion,
     [undefined, undefined, undefined],
     'Expected a demotion to drop the title',
   );
-  expectEqual(titledByOwner, ['Lead', 'Lead', 'Lead'], 'Expected the owner to title Hopper');
-  expectEqual(
+  assertEquals(titledByOwner, ['Lead', 'Lead', 'Lead'], 'Expected the owner to title Hopper');
+  assertEquals(
     ownerTitleUpdates,
     [`chat_member ${hopper.id}: administrator(fixed) -> administrator(fixed)`],
     "Expected the owner's title to reach administrator bots",
@@ -1167,7 +1149,7 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
     await setTitle(delegatingBot, forHopper('Broken \ud800')),
   ];
 
-  expectEqual(
+  assertEquals(
     refusals,
     [
       [400, 'Bad Request: invalid user_id specified'],
@@ -1187,7 +1169,7 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
     ],
     'Expected Telegram errors',
   );
-  expectEqual(
+  assertEquals(
     [
       (await getChatMember(delegatingBot, hopper.id)).custom_title,
       (await getChatMember(delegatingBot, grace.id)).custom_title,
@@ -1205,7 +1187,7 @@ Deno.test('custom titles keep the symbols Telegram Desktop keeps and lose its em
     user_id: hopper.id,
     can_promote_members: true,
   });
-  expectEqual(promotion.body.result, true, 'Expected the bot to promote Hopper');
+  assertEquals(promotion.body.result, true, 'Expected the bot to promote Hopper');
   const setTitle = async (customTitle: string) => {
     const { body } = await callBot(delegatingBot, 'setChatAdministratorCustomTitle', {
       chat_id: supergroup.id,
@@ -1249,18 +1231,18 @@ Deno.test('custom titles keep the symbols Telegram Desktop keeps and lose its em
   // The length is checked before the emoji.
   const tooLongWithEmoji = await setTitle('🙂'.repeat(17));
 
-  expectEqual(
+  assertEquals(
     accepted,
     acceptedTitles.map((title) => [true, title]),
     'Expected symbols without emoji to be kept',
   );
-  expectEqual(
+  assertEquals(
     refused,
     refusedTitles.map(() => 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'),
     'Expected emoji to be refused',
   );
-  expectEqual(tooLongWithEmoji, 'Bad Request: CUSTOM_TITLE_INVALID', 'Expected length first');
-  expectEqual(
+  assertEquals(tooLongWithEmoji, 'Bad Request: CUSTOM_TITLE_INVALID', 'Expected length first');
+  assertEquals(
     (await getChatMember(delegatingBot, hopper.id)).custom_title,
     '123#*',
     'Expected refused titles to change nothing',
@@ -1349,10 +1331,10 @@ for (const withObserver of [false, true]) {
       const otherBotId = otherBot.bot.id;
       const bots = [delegatingBotId, otherBotId];
 
-      expectEqual(steps, Array(3).fill([200, true]), 'Expected every step to succeed');
+      assertEquals(steps, Array(3).fill([200, true]), 'Expected every step to succeed');
       // The delegating bot's link to its promoter is new; the other bot's link names the tenure the
       // delegating bot ended, so only the other bot edits, and nobody edits itself.
-      expectEqual(
+      assertEquals(
         [
           await readEditabilityAsBot(callBot, delegatingBot, supergroup.id, bots),
           await readEditabilityAsBot(callBot, otherBot, supergroup.id, bots),
@@ -1370,13 +1352,13 @@ for (const withObserver of [false, true]) {
           promoted_by_user_id,
           can_be_edited,
         ]);
-      expectEqual(
+      assertEquals(
         asOwnerSees,
         [[delegatingBotId, otherBotId, true], [otherBotId, delegatingBotId, true]],
         'Expected each promoted_by to name who promoted the bot, and the owner to edit both',
       );
       if (observerBot !== undefined) {
-        expectEqual(
+        assertEquals(
           describeMembershipUpdates(await readUpdates(observerBot)),
           [
             `chat_member ${otherBotId}: member -> administrator(fixed)`,
@@ -1389,7 +1371,7 @@ for (const withObserver of [false, true]) {
 
       // The delegating bot may no longer demote the other bot, and the refusal changes nothing.
       const administratorsBefore = (await getAdministratorsAsAccount(ada.id)).body;
-      expectEqual(
+      assertEquals(
         [
           await promote(delegatingBot, otherBotId, {}),
           await promote(delegatingBot, otherBotId, { can_promote_members: true }),
@@ -1402,13 +1384,13 @@ for (const withObserver of [false, true]) {
         ],
         'Expected the stale link to grant nothing',
       );
-      expectEqual(
+      assertEquals(
         (await getAdministratorsAsAccount(ada.id)).body,
         administratorsBefore,
         'Expected the refusals to change nothing',
       );
       if (observerBot !== undefined) {
-        expectEqual(await readUpdates(observerBot), [], 'Expected no update for a refusal');
+        assertEquals(await readUpdates(observerBot), [], 'Expected no update for a refusal');
       }
     },
   );

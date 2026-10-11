@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { ChatInviteLinkRepository } from '../src/repositories/chat_invite_link.ts';
@@ -162,14 +163,6 @@ function createRequesterContactFixture() {
   };
 }
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 Deno.test('ChatAdmissionService accepts only expiry dates after the session clock', () => {
   const { clock, chatAdmission, chatId, botId } = createAdmissionFixture();
   const create = (expiresAtUnixSeconds: number) => {
@@ -188,7 +181,7 @@ Deno.test('ChatAdmissionService accepts only expiry dates after the session cloc
   clock.nowUnixSeconds += 60;
   const afterTheClockMoved = create(CREATION_TIME_UNIX_SECONDS + 30);
 
-  expectEqual(
+  assertEquals(
     [atCreationTime, justAfter, afterTheClockMoved],
     ['expiry_date_invalid', CREATION_TIME_UNIX_SECONDS + 1, 'expiry_date_invalid'],
     'Expected the expiry date to need to lie after the current time',
@@ -215,7 +208,7 @@ Deno.test('ChatAdmissionService keeps a link usable after its expiry date passes
     inviteLinkUrl: creation.link.url,
   });
 
-  expectEqual(
+  assertEquals(
     [
       joining,
       publishedEvents.map((event) =>
@@ -250,7 +243,7 @@ Deno.test('ChatAdmissionService lets only the owner inspect invite links and joi
     ];
   };
 
-  expectEqual(
+  assertEquals(
     [
       inspect(adaId, chatId),
       inspect(graceId, chatId),
@@ -297,7 +290,7 @@ Deno.test('ChatAdmissionService lets the bots that received a request contact it
     competingClaim = 'refused';
   }
 
-  expectEqual(
+  assertEquals(
     [
       requestEvent?.type === 'chat_join_requested' ? requestEvent.request.recipientBotIds : [],
       beforeClaim,
@@ -317,7 +310,7 @@ Deno.test('ChatAdmissionService lets the bots that received a request contact it
   promote(observerBotId, 'can_invite_users');
   promote(coInviterBotId, 'can_delete_messages');
 
-  expectEqual(
+  assertEquals(
     [describeContacts(), mayContact(graceId)],
     [[[graceId, 'claimed', []]], [false, false, false]],
     'Expected a bot promoted after the request to stay unrelated, and a demoted claimant to stop',
@@ -372,7 +365,7 @@ Deno.test('ChatAdmissionService claims every request whose contact the bot may c
     chatId: labChatId,
   });
 
-  expectEqual(
+  assertEquals(
     [
       labRequests.found
         ? labRequests.requests.map(({ request, contactBotIds }) => [
@@ -418,7 +411,7 @@ Deno.test('ChatAdmissionService ends a requester contact with its request or whe
     chatAdmission.mayContactJoinRequester(coInviterBotId, graceId),
   ];
 
-  expectEqual(
+  assertEquals(
     [
       linkExpiry.expired,
       afterLinkExpiry,
@@ -448,7 +441,7 @@ Deno.test('ChatAdmissionService ends a requester contact with its request or whe
     userId: hopperId,
   });
 
-  expectEqual(
+  assertEquals(
     [
       approval.decided,
       decline.decided,
@@ -591,7 +584,7 @@ Deno.test('ChatAdmissionService lets the owner and administrator accounts with t
   // Ada, the owner, declines Hopper, which publishes nothing.
   const decline = decideAsAccount(adaId, hopperId, 'decline');
 
-  expectEqual(
+  assertEquals(
     [
       approval,
       afterApproval,
@@ -622,7 +615,7 @@ Deno.test('ChatAdmissionService lets the owner and administrator accounts with t
 
   // Hopper may request again, with a new contact, after the decline.
   chatAdmission.joinChatByInviteLink({ accountId: hopperId, inviteLinkUrl });
-  expectEqual(
+  assertEquals(
     describeContacts(),
     [[hopperId, 'open', [botId, coInviterBotId]]],
     'Expected a declined account to be able to request again',
@@ -678,7 +671,7 @@ Deno.test('ChatAdmissionService refuses account decisions by rights at decision 
   sharedChatAdministration.demoteChatMember({ actorAccountId: adaId, chatId, memberId: kayId });
   const afterDemotion = decideAsAccount(kayId, hopperId, 'decline');
 
-  expectEqual(
+  assertEquals(
     [refusals, afterLosingRight, afterDemotion],
     [
       [
@@ -701,7 +694,7 @@ Deno.test('ChatAdmissionService refuses account decisions by rights at decision 
     ],
     'Expected each refusal in the order TDLib and then Telegram check them',
   );
-  expectEqual(
+  assertEquals(
     [
       describeContacts(),
       publishedEvents.filter((event) =>
@@ -760,7 +753,7 @@ Deno.test('ChatAdmissionService decides each request once among accounts and bot
     decideAsAccount(kayId, linusId, 'decline'),
   ];
 
-  expectEqual(
+  assertEquals(
     [outcomes, describeMembershipEvents(), describeContacts(), describeLinkUsage()],
     [
       [
@@ -909,7 +902,7 @@ Deno.test('ChatAdmissionService replaces every setting of a link its creator edi
     hasExpired: false,
     isRevoked: false,
   };
-  expectEqual(
+  assertEquals(
     [renamed, afterRename, cleared, afterClearing].map(toCanonicalJson),
     [renamedLink, renamedLink, clearedLink, clearedLink].map(toCanonicalJson),
     'Expected each edit to replace the name, expiry date, member limit and request setting',
@@ -1006,7 +999,7 @@ Deno.test('ChatAdmissionService refuses an invalid edit or revocation without ch
     revoke(inviteLinkUrl),
   ];
 
-  expectEqual(
+  assertEquals(
     [
       editRefusals,
       revocationRefusals,
@@ -1083,7 +1076,7 @@ Deno.test('ChatAdmissionService revokes a link for good, keeping its members and
     userId: graceId,
   });
 
-  expectEqual(
+  assertEquals(
     [
       revocations,
       afterRevocation,
@@ -1150,7 +1143,7 @@ Deno.test('ChatAdmissionService applies an edit to later uses only, and revives 
   edit({ inviteLinkUrl, expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 60, memberLimit: 5 });
   const secondExpiry = chatAdmission.expireInviteLink({ chatId, inviteLinkUrl });
 
-  expectEqual(
+  assertEquals(
     [
       whileExpired,
       typeof revival === 'string'
@@ -1236,7 +1229,7 @@ Deno.test('ChatAdmissionService replaces a bot primary link in one step when it 
     createsJoinRequest: false,
   });
 
-  expectEqual(
+  assertEquals(
     [
       { ...first, url: '' },
       afterSecondExport === second.url,
@@ -1292,7 +1285,7 @@ Deno.test('ChatAdmissionService shows a primary link while its creator holds can
   promote('can_invite_users');
   const afterRepromotion = chatAdmission.findPrimaryInviteLinkOfBot({ botId, chatId })?.url;
 
-  expectEqual(
+  assertEquals(
     [whileDemoted, afterRepromotion],
     [
       [
