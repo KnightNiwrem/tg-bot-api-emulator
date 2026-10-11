@@ -18,8 +18,11 @@ properties:
         const: supergroup
       title:
         type: string
+        minLength: 1
       username:
         type: string
+        minLength: 1
         description: The username of a public supergroup; omitted for a private one.
       description:
         type: string
+        minLength: 1

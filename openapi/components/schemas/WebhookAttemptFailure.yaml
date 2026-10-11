@@ -20,6 +20,7 @@ oneOf:
         maximum: 599
       error_message:
         type: string
+        minLength: 1
         examples:
           - 'Wrong response from the webhook: 500 Internal Server Error'
   - type: object
@@ -38,6 +39,7 @@ oneOf:
           - timed_out
       error_message:
         type: string
+        minLength: 1
         examples:
           - Read timeout expired
   - type: object
