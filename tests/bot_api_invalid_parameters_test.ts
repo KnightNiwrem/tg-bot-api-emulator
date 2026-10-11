@@ -506,7 +506,8 @@ Deno.test('the sending methods name the parameter that does not fit their schema
 });
 
 Deno.test('the pinning methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
       'pinChatMessage',
