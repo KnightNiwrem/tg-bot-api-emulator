@@ -65,6 +65,40 @@ export const telegramUsernameSchema = z.string()
   .regex(TELEGRAM_USERNAME_PATTERN);
 
 /**
+ * The chat an account writes in: its private chat with a bot, or a supergroup it is a member of.
+ */
+export const messageTargetSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('private'), botId: telegramUserIdSchema }),
+  z.strictObject({ type: z.literal('supergroup'), chatId: supergroupChatIdSchema }),
+]);
+
+/** The widest radius of uncertainty of a location, in meters, that TDLib's `Location` keeps. */
+export const MAX_HORIZONTAL_ACCURACY_METERS = 1500;
+
+/** A latitude, from -90 to 90 degrees, and a longitude, from -180 to 180. */
+const coordinatesShape = {
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+};
+
+/** A point on Earth an account shares, with the accuracy its client reports. */
+export const accountLocationInputSchema = z.strictObject({
+  ...coordinatesShape,
+  /**
+   * The radius of uncertainty, from 0 to 1500 meters, which Telegram rounds up to whole meters;
+   * omitted or 0 when unknown.
+   */
+  horizontal_accuracy: z.number().min(0).max(MAX_HORIZONTAL_ACCURACY_METERS).optional(),
+});
+
+/** A point on Earth an account shared, as the Bot API shows it. */
+export const sharedLocationSchema = z.strictObject({
+  ...coordinatesShape,
+  /** The radius of uncertainty in whole meters; omitted when unknown. */
+  horizontal_accuracy: z.int().min(1).max(MAX_HORIZONTAL_ACCURACY_METERS).optional(),
+});
+
+/**
  * The annotation that names the Telegram type of an object a control response carries unchanged,
  * such as an `Update`, whose fields are Telegram's rather than the control API's. The OpenAPI
  * document gives its description of the emulator's subset of that type the same annotation.

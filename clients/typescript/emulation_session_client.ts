@@ -4,6 +4,11 @@ import { createAccountContract } from '../../control_contracts/accounts.ts';
 import { createBotContract } from '../../control_contracts/bots.ts';
 import { downloadFileContract } from '../../control_contracts/files.ts';
 import {
+  expireInlineAnswerCacheContract,
+  getInlineQueryContract,
+  sendInlineQueryContract,
+} from '../../control_contracts/inline_queries.ts';
+import {
   listRateLimitResponsesContract,
   listServerErrorResponsesContract,
   queueRateLimitResponsesContract,
@@ -60,7 +65,6 @@ import {
   chosenInlineResultResponseSchema,
   expiredPollResponseSchema,
   getMeResponseSchema,
-  inlineQueryResponseSchema,
   menuButtonResponseSchema,
   messageDraftResponseSchema,
   messageHistoryResponseSchema,
@@ -466,13 +470,9 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     return response.join_request;
   }
 
-  async expireInlineAnswerCache(inlineQueryId: string): Promise<void> {
-    await requestEmptyResponse(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/inline-queries/${
-        encodeURIComponent(inlineQueryId)
-      }/answer-cache/expiry`,
-      expectedStatus: HTTP_STATUS_NO_CONTENT,
+  expireInlineAnswerCache(inlineQueryId: string): Promise<void> {
+    return callEmptyOperation(this.#transport, expireInlineAnswerCacheContract, {
+      params: { sessionId: this.id, inlineQueryId },
     });
   }
 
@@ -1088,21 +1088,15 @@ function createVirtualAccountClient(
       });
     },
     async sendInlineQuery(input: SendInlineQueryInput): Promise<InlineQuery> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/inline-queries`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: inlineQueryResponseSchema,
+      const response = await callJsonOperation(transport, sendInlineQueryContract, {
+        params: accountParams,
         body: input,
       });
       return response.inline_query;
     },
     async getInlineQuery(inlineQueryId: string): Promise<InlineQuery> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${accountUrl}/inline-queries/${encodeURIComponent(inlineQueryId)}`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: inlineQueryResponseSchema,
+      const response = await callJsonOperation(transport, getInlineQueryContract, {
+        params: { ...accountParams, inlineQueryId },
       });
       return response.inline_query;
     },

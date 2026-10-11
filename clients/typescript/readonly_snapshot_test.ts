@@ -7,6 +7,7 @@ import type {
   BotApiCallEntry,
   ChatJoinRequest,
   EmulationSession,
+  InlineQuery,
   RateLimitResponses,
   SupergroupInviteLink,
   UpdateDeliveredEntry,
@@ -26,6 +27,7 @@ export function mutateSnapshots(
   rateLimits: RateLimitResponses,
   attempt: WebhookAttempt,
   retry: WebhookRetry,
+  inlineQuery: InlineQuery,
 ): void {
   // @ts-expect-error A snapshot's own field is readonly.
   session.uploadProfile = 'local';
@@ -55,6 +57,8 @@ export function mutateSnapshots(
   attempt.scheduling = 'manual';
   // @ts-expect-error A nested object's field is readonly.
   retry.status = 'released';
+  // @ts-expect-error A nested union's fields are readonly.
+  inlineQuery.chat.type = 'private';
 }
 
 Deno.test('Response snapshots are readonly all the way down', () => {

@@ -29,6 +29,10 @@ import type {
   queueRateLimitResponsesContract,
   queueServerErrorResponsesContract,
 } from '../../control_contracts/queued_bot_api_answers.ts';
+import type {
+  getInlineQueryContract,
+  sendInlineQueryContract,
+} from '../../control_contracts/inline_queries.ts';
 import type { createSessionContract } from '../../control_contracts/sessions.ts';
 import type {
   createSupergroupContract,
@@ -1964,21 +1968,10 @@ export interface CallbackQuery {
   readonly answer: CallbackQueryAnswer | null;
 }
 
-export interface SendInlineQueryInput {
-  /** The inline bot, whose username the account types before the query. */
-  readonly bot_id: number;
-  /** The chat where the account types the query, to which a chosen result is sent. */
-  readonly chat: MessageTarget;
-  /** Up to 256 characters; omitted or empty when the account types only the bot's username. */
-  readonly query?: string;
-  /** The `next_offset` of an earlier answer, requesting more results; omitted for the first. */
-  readonly offset?: string;
-  /**
-   * Where the account is, shared only with a bot created with `requests_inline_location`;
-   * omitted to share no location.
-   */
-  readonly location?: LocationInput;
-}
+/** An inline query an account types in a chat, for the inline bot whose username precedes it. */
+export type SendInlineQueryInput = ReadonlySnapshot<
+  ControlOperationRequest<typeof sendInlineQueryContract>['body']
+>;
 
 /** A point on Earth an account shares. */
 export interface LocationInput {
@@ -1998,54 +1991,22 @@ export interface Location {
   readonly horizontal_accuracy?: number;
 }
 
-/** A result of an answer as the account's client lists it. */
-export interface InlineQueryResultListing {
-  readonly type:
-    | 'article'
-    | 'contact'
-    | 'location'
-    | 'photo'
-    | 'document'
-    | 'video'
-    | 'voice'
-    | 'audio';
-  readonly id: string;
-  readonly title?: string;
-  readonly description?: string;
-  /** The URL an article shows. */
-  readonly url?: string;
-}
-
-/** The button the account's client shows above the results. */
-export type InlineQueryResultsButton =
-  | { readonly text: string; readonly start_parameter: string }
-  | { readonly text: string; readonly web_app: { readonly url: string } };
-
-export interface InlineQueryAnswer {
-  readonly results: readonly InlineQueryResultListing[];
-  readonly cache_time: number;
-  readonly is_personal: boolean;
-  /** Empty when there are no more results. */
-  readonly next_offset: string;
-  readonly button?: InlineQueryResultsButton;
-}
+/** An inline query an account sent, with the bot's answer once it has answered. */
+export type InlineQuery = ReadonlySnapshot<
+  ControlOperationResult<typeof getInlineQueryContract>['inline_query']
+>;
 
 /** Whether the bot has answered an inline query. */
-export type InlineQueryStatus = 'awaiting_answer' | 'answered';
+export type InlineQueryStatus = InlineQuery['status'];
 
-/** An inline query an account sent, with the bot's answer once it has answered. */
-export interface InlineQuery {
-  readonly id: string;
-  readonly bot_id: number;
-  readonly chat: MessageTarget;
-  readonly query: string;
-  readonly offset: string;
-  /** The location the account shared with the bot; omitted for none. */
-  readonly location?: Location;
-  readonly status: InlineQueryStatus;
-  /** The bot's answer when `status` is `answered`, and `null` otherwise. */
-  readonly answer: InlineQueryAnswer | null;
-}
+/** The bot's answer to an inline query. */
+export type InlineQueryAnswer = NonNullable<InlineQuery['answer']>;
+
+/** A result of an answer as the account's client lists it. */
+export type InlineQueryResultListing = InlineQueryAnswer['results'][number];
+
+/** The button the account's client shows above the results. */
+export type InlineQueryResultsButton = NonNullable<InlineQueryAnswer['button']>;
 
 export interface ChooseInlineQueryResultInput {
   readonly inline_query_id: string;

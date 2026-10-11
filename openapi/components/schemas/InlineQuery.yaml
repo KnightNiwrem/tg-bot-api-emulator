@@ -11,6 +11,7 @@ required:
 properties:
   id:
     type: string
+    minLength: 1
     description: Identifier the bot receives in its inline_query update.
   bot_id:
     $ref: ./TelegramUserId.yaml
@@ -21,7 +22,7 @@ properties:
   offset:
     type: string
   location:
-    $ref: ./Location.yaml
+    $ref: ./SharedLocation.yaml
     description: The location the account shared with the bot; omitted for none.
   status:
     type: string

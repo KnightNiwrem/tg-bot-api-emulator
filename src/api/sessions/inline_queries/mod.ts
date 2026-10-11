@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 
-import { controlErrorResponse } from '../../control_error_response.ts';
+import { expireInlineAnswerCacheContract } from '../../../../control_contracts/inline_queries.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
-const INLINE_QUERY_ID_PARAMETER = 'inlineQueryId';
-const ANSWER_CACHE_EXPIRY_PATH = `/:${INLINE_QUERY_ID_PARAMETER}/answer-cache/expiry` as const;
+/** Where the inline query routes are mounted within the server, as a contract path template. */
+const INLINE_QUERY_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/inline-queries';
 
 /**
  * Routes that control the inline answer cache, which the emulator does not expire as time passes:
@@ -14,19 +15,22 @@ const ANSWER_CACHE_EXPIRY_PATH = `/:${INLINE_QUERY_ID_PARAMETER}/answer-cache/ex
 export function createInlineQueryCacheRoutes(): Hono<SessionRouteContextTypes> {
   const inlineQueryRoutes = new Hono<SessionRouteContextTypes>();
 
-  inlineQueryRoutes.post(ANSWER_CACHE_EXPIRY_PATH, (context) => {
-    const result = context.get('emulationSession').inlineQueries.expireAnswerCache(
-      context.req.param(INLINE_QUERY_ID_PARAMETER),
-    );
-    if (!result.expired) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'inline_query_not_found' ? 404 : 409,
-        result.reason,
+  registerControlOperation(
+    inlineQueryRoutes,
+    INLINE_QUERY_COLLECTION_MOUNT_PATH,
+    expireInlineAnswerCacheContract,
+    ({ params: { inlineQueryId } }, context) => {
+      const result = context.get('emulationSession').inlineQueries.expireAnswerCache(
+        inlineQueryId,
       );
-    }
-    return context.body(null, 204);
-  });
+      if (result.expired) {
+        return { status: 204 };
+      }
+      return result.reason === 'inline_query_not_found'
+        ? { status: 404, body: { reason: result.reason } }
+        : { status: 409, body: { reason: result.reason } };
+    },
+  );
 
   return inlineQueryRoutes;
 }

@@ -6,6 +6,7 @@
  */
 import { z } from 'zod';
 
+import { accountPathSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import {
@@ -20,12 +21,6 @@ import {
  * `base64url` alphabet, as TDLib's `is_base64url_characters` accepts them.
  */
 const inviteLinkHashSchema = z.string().regex(/^[A-Za-z0-9_-]{16}$/);
-
-/** The path parameters of the account a route acts as. */
-export const accountPathSchema = z.strictObject({
-  sessionId: sessionIdParameterSchema,
-  accountId: telegramUserIdSchema,
-});
 
 /** The path parameters of a supergroup as an account addresses it. */
 export const accountSupergroupPathSchema = accountPathSchema.extend({

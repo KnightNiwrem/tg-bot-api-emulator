@@ -14,7 +14,6 @@ import type {
   CallbackQuery,
   ControlErrorBody,
   InlineKeyboardMarkup,
-  InlineQuery,
   MessageEntity,
   MessageReactions,
   MessageSenderBot,
@@ -946,50 +945,6 @@ export const replyInterfaceResponseSchema = z.strictObject({
 
 export const callbackQueryResponseSchema = z.strictObject({
   callback_query: callbackQuerySchema,
-});
-
-const messageTargetSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('private'), botId: telegramUserIdSchema }),
-  z.strictObject({ type: z.literal('supergroup'), chatId: supergroupIdSchema }),
-]);
-
-const inlineQuerySchema: z.ZodType<InlineQuery> = z.strictObject({
-  id: z.string().min(1),
-  bot_id: telegramUserIdSchema,
-  chat: messageTargetSchema,
-  query: z.string(),
-  offset: z.string(),
-  location: locationSchema.optional(),
-  status: z.enum(['awaiting_answer', 'answered']),
-  answer: z.strictObject({
-    results: z.array(z.strictObject({
-      type: z.enum([
-        'article',
-        'contact',
-        'location',
-        'photo',
-        'document',
-        'video',
-        'voice',
-        'audio',
-      ]),
-      id: z.string().min(1),
-      title: z.string().min(1).optional(),
-      description: z.string().min(1).optional(),
-      url: z.string().min(1).optional(),
-    })),
-    cache_time: z.number().int().nonnegative(),
-    is_personal: z.boolean(),
-    next_offset: z.string(),
-    button: z.union([
-      z.strictObject({ text: z.string(), start_parameter: z.string().min(1) }),
-      z.strictObject({ text: z.string(), web_app: z.strictObject({ url: z.url() }) }),
-    ]).optional(),
-  }).nullable(),
-});
-
-export const inlineQueryResponseSchema = z.strictObject({
-  inline_query: inlineQuerySchema,
 });
 
 /** A message sent from an inline query's answer, to the private chat or supergroup of the query. */
