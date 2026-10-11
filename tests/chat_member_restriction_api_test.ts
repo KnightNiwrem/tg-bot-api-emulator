@@ -2,12 +2,14 @@ import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createTestSession,
-  type EmulationApi,
+  jsonRequest,
   requestJson,
   TEST_PUBLIC_ORIGIN,
 } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -49,6 +51,9 @@ const MEDIA_PERMISSION_NAMES = [
   'can_send_voice_notes',
 ];
 
+/** The updates the fixture's bots read: messages and membership changes. */
+const MEMBERSHIP_UPDATE_TYPES = ['message', 'chat_member', 'my_chat_member'];
+
 /** A 4 by 3 GIF image, whose header is all the emulator reads, as base64 text. */
 const PHOTO_BASE64 = btoa(
   String.fromCharCode(...new TextEncoder().encode('GIF89a'), 4, 0, 3, 0, 0, 0, 0),
@@ -61,27 +66,11 @@ const PHOTO_BASE64 = btoa(
  */
 async function createRestrictionFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number; first_name: string } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const moderatorBot = await createBot('moderator_bot');
-  const otherBot = await createBot('other_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const moderatorBot = await createBot(api, sessionPath, 'moderator_bot');
+  const otherBot = await createBot(api, sessionPath, 'other_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -108,7 +97,10 @@ async function createRestrictionFixture() {
     'Expected the moderator bot to be promoted',
   );
 
-  const readUpdates = createUpdateReader(api);
+  const readBotUpdates = createUpdateReader(api);
+  /** Reads a bot's updates, including membership changes, since it last read them. */
+  const readUpdates = async (botApiPath: string) =>
+    withoutUpdateIds(await readBotUpdates(botApiPath, MEMBERSHIP_UPDATE_TYPES));
   for (const { botApiPath } of [moderatorBot, otherBot]) {
     await readUpdates(botApiPath);
   }
@@ -156,30 +148,6 @@ async function createRestrictionFixture() {
   };
 }
 
-/**
- * Returns a reader of each bot's updates, including membership changes, since the reader last
- * read that bot's updates.
- */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      {
-        offset: nextOffsetsByBotApiPath.get(botApiPath) ?? 0,
-        allowed_updates: ['message', 'chat_member', 'my_chat_member'],
-      },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Describes membership updates as their kind, member, and old and new status. */
 function describeMembershipUpdates(updates: ReadonlyArray<Record<string, unknown>>): string[] {
   return updates.map((update) => {
@@ -217,10 +185,6 @@ function restrictedMember(
     ...permissionFields(granted),
     is_member: isMember,
   };
-}
-
-function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
 async function expectStatus(

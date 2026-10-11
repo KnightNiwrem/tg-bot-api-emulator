@@ -1,14 +1,16 @@
 import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
+  jsonRequest,
   requestJson,
   TEST_PUBLIC_ORIGIN,
   type TestInProcessEmulator,
 } from './support/emulation_api.ts';
+import { createAccount, createBot as createSessionBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -50,26 +52,11 @@ async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
   const { api, sessionPath } = existingApi === undefined
     ? await createTestSession()
     : { api: existingApi, sessionPath: await createSession(existingApi) };
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number; first_name: string } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const hopper = await createAccount('Hopper');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string): Promise<FixtureBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const hopper = await createAccount(api, sessionPath, 'Hopper');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const createBot = (username: string) => createSessionBot(api, sessionPath, username);
   const delegatingBot = await createBot('delegating_bot');
   const otherBot = await createBot('other_bot');
 
@@ -97,7 +84,10 @@ async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
   await promoteAsOwner(delegatingBot.bot.id, { can_promote_members: true });
   await promoteAsOwner(grace.id, { can_promote_members: true });
 
-  const readUpdates = createUpdateReader(api);
+  const readBotUpdates = createUpdateReader(api);
+  /** Reads a bot's membership updates since it last read them. */
+  const readUpdates = async (bot: FixtureBot) =>
+    withoutUpdateIds(await readBotUpdates(bot.botApiPath, ['chat_member', 'my_chat_member']));
   const callBot = (bot: FixtureBot, method: string, parameters: object) =>
     requestJson<BotApiResponse>(api, 'POST', `${bot.botApiPath}/${method}`, parameters);
   const getChatMember = async (observer: FixtureBot, userId: number) =>
@@ -127,27 +117,6 @@ async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
     getChatMember,
     getAdministratorsAsAccount,
     createBot,
-  };
-}
-
-/** Returns a reader of each bot's membership updates since the reader last read that bot's. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (bot: FixtureBot): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      {
-        offset: nextOffsetsByBotApiPath.get(bot.botApiPath) ?? 0,
-        allowed_updates: ['chat_member', 'my_chat_member'],
-      },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 
@@ -191,10 +160,6 @@ function administratorForAccount(
 /** The bot user that membership updates and chat members show. */
 function botUser(bot: FixtureBot, username: string) {
   return { id: bot.bot.id, is_bot: true, first_name: 'Test Bot', username };
-}
-
-function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
 async function expectStatus(

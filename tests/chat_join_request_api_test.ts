@@ -2,14 +2,16 @@ import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
+  jsonRequest,
   requestJson,
   TEST_PUBLIC_ORIGIN,
   type TestInProcessEmulator,
 } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -46,30 +48,14 @@ const READ_UPDATE_TYPES = ['message', 'chat_member', 'chat_join_request'];
  */
 async function createJoinRequestFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: FixtureAccount }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const hopper = await createAccount('Hopper');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string): Promise<FixtureBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number; username: string } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const inviterBot = await createBot('inviter_bot');
-  const coInviterBot = await createBot('co_inviter_bot');
-  const observerBot = await createBot('observer_bot');
-  const memberBot = await createBot('member_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const hopper = await createAccount(api, sessionPath, 'Hopper');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const inviterBot = await createBot(api, sessionPath, 'inviter_bot');
+  const coInviterBot = await createBot(api, sessionPath, 'co_inviter_bot');
+  const observerBot = await createBot(api, sessionPath, 'observer_bot');
+  const memberBot = await createBot(api, sessionPath, 'member_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -97,7 +83,10 @@ async function createJoinRequestFixture() {
     jsonRequest('PUT', { can_delete_messages: true }),
   );
 
-  const readUpdates = createUpdateReader(api);
+  const readBotUpdates = createUpdateReader(api);
+  /** Reads a bot's updates of `allowedUpdates` since it last read them. */
+  const readUpdates = async (bot: FixtureBot, allowedUpdates = READ_UPDATE_TYPES) =>
+    withoutUpdateIds(await readBotUpdates(bot.botApiPath, allowedUpdates));
   for (const bot of [inviterBot, coInviterBot, observerBot, memberBot]) {
     await readUpdates(bot);
   }
@@ -174,27 +163,6 @@ async function createJoinRequestFixture() {
   };
 }
 
-/** Returns a reader of each bot's updates since the reader last read that bot's. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (
-    bot: FixtureBot,
-    allowedUpdates = READ_UPDATE_TYPES,
-  ): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      { offset: nextOffsetsByBotApiPath.get(bot.botApiPath) ?? 0, allowed_updates: allowedUpdates },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Describes join requests briefly, as `request user via link (pending count)`. */
 function describeJoinRequests(updates: ReadonlyArray<Record<string, unknown>>): string[] {
   return updates.map((update) => {
@@ -213,10 +181,6 @@ function describeJoinRequests(updates: ReadonlyArray<Record<string, unknown>>): 
 /** The link as an administrator other than its creator sees it, with half its hash hidden. */
 function hiddenInviteLink(inviteLink: string): string {
   return `https://t.me/+${inviteLink.slice('https://t.me/+'.length).slice(0, 8)}...`;
-}
-
-function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
 async function expectStatus(
@@ -1365,12 +1329,7 @@ async function createAccountDecisionFixture() {
     useLink,
   } = fixture;
   const createMember = async (firstName: string) => {
-    const { body: { account } } = await requestJson<{ account: FixtureAccount }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    );
+    const account = await createAccount(api, sessionPath, firstName);
     await asOwner(`members/${account.id}`, { method: 'PUT' });
     return account;
   };
@@ -1681,12 +1640,7 @@ Deno.test('deciding as an account has an explicit status for each actor, right, 
   const afterDemotion = await decideAsAccount(kay, grace.id, 'decline');
   // Another session has its own accounts and supergroups, under the same IDs.
   const otherSessionPath = await createSession(api);
-  const otherOwner = (await requestJson<{ account: FixtureAccount }>(
-    api,
-    'POST',
-    `${otherSessionPath}/accounts`,
-    { first_name: 'Ada' },
-  )).body.account;
+  const otherOwner = await createAccount(api, otherSessionPath, 'Ada');
   const { body: { supergroup: otherSessionSupergroup } } = await requestJson<
     { supergroup: { id: number } }
   >(api, 'POST', `${otherSessionPath}/accounts/${otherOwner.id}/supergroups`, { title: 'Team' });

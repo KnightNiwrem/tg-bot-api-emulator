@@ -5,6 +5,10 @@ import {
   type EmulationApi,
   requestJson,
 } from './support/emulation_api.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
 
 /** A user ID that no account or bot of a fixture has. */
 const UNKNOWN_USER_ID = 999_999;
@@ -22,23 +26,11 @@ interface ShownMessage {
 async function createPinnedMessagesFixture(api: EmulationApi = createTestInProcessEmulator()) {
   const sessionPath = await createSession(api);
   const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account.id;
+    (await createSessionAccount(api, sessionPath, firstName)).id;
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const linus = await createAccount('Linus');
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  const botId = createdBot.bot.id;
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const { bot: { id: botId }, botApiPath } = await createSessionBot(api, sessionPath, 'test_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -206,12 +198,7 @@ Deno.test('pin routes refuse service messages, non-members, and unknown chats', 
     'a service message cannot be pinned',
   );
 
-  const outsider = (await requestJson<{ account: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: 'Eve' },
-  )).body.account.id;
+  const outsider = (await createSessionAccount(api, sessionPath, 'Eve')).id;
   assertEquals(
     (await api.request(`${supergroupPath(outsider)}/pinned-messages`)).status,
     403,

@@ -1,10 +1,12 @@
 import { assertEquals } from '@std/assert';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
+  jsonRequest,
   requestJson,
 } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -22,6 +24,9 @@ interface FixtureAccount {
   readonly id: number;
   readonly first_name: string;
 }
+
+/** The updates the fixture's bots read: messages and membership changes. */
+const MEMBERSHIP_UPDATE_TYPES = ['message', 'chat_member', 'my_chat_member'];
 
 /** A link as `createChatInviteLink` returns it, in the field order Telegram shows. */
 interface CreatedInviteLink {
@@ -42,23 +47,13 @@ const INVITER_RIGHTS = { can_invite_users: true };
  */
 async function createInviteLinkFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const hopper = await createAccount('Hopper');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string): Promise<FixtureBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number; username: string } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const inviterBot = await createBot('inviter_bot');
-  const observerBot = await createBot('observer_bot');
-  const memberBot = await createBot('member_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const hopper = await createAccount(api, sessionPath, 'Hopper');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const inviterBot = await createBot(api, sessionPath, 'inviter_bot');
+  const observerBot = await createBot(api, sessionPath, 'observer_bot');
+  const memberBot = await createBot(api, sessionPath, 'member_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -89,7 +84,10 @@ async function createInviteLinkFixture() {
   await promote(inviterBot.bot.id, INVITER_RIGHTS);
   await promote(observerBot.bot.id, { can_delete_messages: true });
 
-  const readUpdates = createUpdateReader(api);
+  const readBotUpdates = createUpdateReader(api);
+  /** Reads a bot's messages and membership updates since it last read them. */
+  const readUpdates = async (bot: FixtureBot) =>
+    withoutUpdateIds(await readBotUpdates(bot.botApiPath, MEMBERSHIP_UPDATE_TYPES));
   for (const bot of [inviterBot, observerBot, memberBot]) {
     await readUpdates(bot);
   }
@@ -173,40 +171,6 @@ async function createInviteLinkFixture() {
   };
 }
 
-async function createSessionAccount(
-  api: EmulationApi,
-  sessionPath: string,
-  firstName: string,
-): Promise<FixtureAccount> {
-  return (await requestJson<{ account: FixtureAccount }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: firstName },
-  )).body.account;
-}
-
-/** Returns a reader of each bot's updates since the reader last read that bot's. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (bot: FixtureBot): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      {
-        offset: nextOffsetsByBotApiPath.get(bot.botApiPath) ?? 0,
-        allowed_updates: ['message', 'chat_member', 'my_chat_member'],
-      },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
 /** Describes membership updates and service messages briefly, as `kind user: old -> new`. */
 function describeUpdates(updates: ReadonlyArray<Record<string, unknown>>): string[] {
   return updates.map((update) => {
@@ -248,10 +212,6 @@ function inviteLinkHash(inviteLink: string): string {
 /** The link as an administrator other than its creator sees it, with half its hash hidden. */
 function hiddenInviteLink(inviteLink: string): string {
   return `https://t.me/+${inviteLinkHash(inviteLink).slice(0, 8)}...`;
-}
-
-function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
 async function expectStatus(
@@ -620,7 +580,7 @@ Deno.test('using an invite link has an explicit outcome for each standing and li
   await readUpdates(inviterBot);
   const memberCountBefore = await getMemberCount();
   const otherSessionPath = await createSession(api);
-  const outsider = await createSessionAccount(api, otherSessionPath, 'Outsider');
+  const outsider = await createAccount(api, otherSessionPath, 'Outsider');
   const join = async (accountPath: string, body: unknown) =>
     (await requestJson(api, 'POST', `${accountPath}/chat-joins`, body)).status;
   const accountPath = (account: FixtureAccount) => `${sessionPath}/accounts/${account.id}`;

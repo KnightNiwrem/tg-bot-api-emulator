@@ -1,5 +1,7 @@
 import { assertEquals } from '@std/assert';
+import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, requestJson } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -47,27 +49,11 @@ const PHOTO_BYTES = new Uint8Array([
  */
 async function createDefaultPermissionsFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
-  const ada = await createAccount('Ada');
-  const grace = await createAccount('Grace');
-  const linus = await createAccount('Linus');
-  const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
-  const moderatorBot = await createBot('moderator_bot');
-  const memberBot = await createBot('member_bot');
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const linus = await createAccount(api, sessionPath, 'Linus');
+  const moderatorBot = await createBot(api, sessionPath, 'moderator_bot');
+  const memberBot = await createBot(api, sessionPath, 'member_bot');
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -156,24 +142,10 @@ async function createDefaultPermissionsFixture() {
     }
   };
 
-  const nextUpdateOffsets = new Map<string, number>();
+  const readBotUpdates = createUpdateReader(api);
   /** Returns a bot's updates since the last read, membership changes included. */
-  const readUpdates = async (bot: { botApiPath: string }) => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      {
-        offset: nextUpdateOffsets.get(bot.botApiPath) ?? 0,
-        allowed_updates: ['message', 'chat_member', 'my_chat_member'],
-      },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextUpdateOffsets.set(bot.botApiPath, lastUpdateId + 1);
-    }
-    return body.result;
-  };
+  const readUpdates = (bot: { botApiPath: string }) =>
+    readBotUpdates(bot.botApiPath, ['message', 'chat_member', 'my_chat_member']);
 
   return {
     api,
@@ -408,24 +380,22 @@ Deno.test('default permissions decide information changes and inline bots, never
   );
 
   // Using an inline bot needs `can_send_other_messages`, which the defaults now withhold.
-  const inlineBot = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Inline Bot', username: 'inline_bot', supports_inline_queries: true },
-  );
+  const inlineBot = await createBot(api, sessionPath, 'inline_bot', {
+    first_name: 'Inline Bot',
+    supports_inline_queries: true,
+  });
   const inlineQueriesPath = `${accountPath(grace.id)}/inline-queries`;
   const inlineQuery = await requestJson<{ inline_query: { id: string } }>(
     api,
     'POST',
     inlineQueriesPath,
-    { bot_id: inlineBot.body.bot.id, chat: { type: 'supergroup', chatId: supergroup.id } },
+    { bot_id: inlineBot.bot.id, chat: { type: 'supergroup', chatId: supergroup.id } },
   );
   const inlineQueryId = inlineQuery.body.inline_query.id;
   await requestJson(
     api,
     'POST',
-    `${sessionPath}/bot-api/bot${inlineBot.body.token}/answerInlineQuery`,
+    `${inlineBot.botApiPath}/answerInlineQuery`,
     {
       inline_query_id: inlineQueryId,
       results: [{

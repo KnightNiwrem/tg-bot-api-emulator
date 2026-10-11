@@ -1,6 +1,11 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, requestJson } from './support/emulation_api.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -35,20 +40,10 @@ interface CreatedBot {
 async function createPinFixture() {
   const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account.id;
+    (await createSessionAccount(api, sessionPath, firstName)).id;
   const createBot = async (username: string): Promise<CreatedBot> => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Test Bot', username },
-    );
-    return { id: body.bot.id, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
+    const { bot, botApiPath } = await createSessionBot(api, sessionPath, username);
+    return { id: bot.id, botApiPath };
   };
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -92,21 +87,12 @@ async function createPinFixture() {
     );
     return [status, body.ok ? body.result : body.description] as const;
   };
-  const nextOffsets = new Map<number, number>();
+  const readUpdates = createUpdateReader(api);
   /** Reads a bot's message updates since the last read, as the given subscription allows. */
-  const readMessages = async (bot: CreatedBot, allowedUpdates: readonly string[] = ['message']) => {
-    const { body } = await requestJson<{ result: Array<ShownUpdate & { update_id: number }> }>(
-      api,
-      'POST',
-      `${bot.botApiPath}/getUpdates`,
-      { offset: nextOffsets.get(bot.id) ?? 0, allowed_updates: allowedUpdates },
+  const readMessages = async (bot: CreatedBot, allowedUpdates: readonly string[] = ['message']) =>
+    (await readUpdates(bot.botApiPath, allowedUpdates) as ShownUpdate[]).flatMap(({ message }) =>
+      message === undefined ? [] : [message]
     );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (lastUpdateId !== undefined) {
-      nextOffsets.set(bot.id, lastUpdateId + 1);
-    }
-    return body.result.flatMap(({ message }) => message === undefined ? [] : [message]);
-  };
   const getHistory = async (chatPath: string) =>
     (await requestJson<{ messages: ShownMessage[] }>(api, 'GET', `${chatPath}/messages`)).body
       .messages;
