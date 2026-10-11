@@ -1,7 +1,18 @@
 import { z } from 'zod';
 
-import type { BotApiBotDescription, BotApiBotShortDescription } from '../../../../types/bot_api.ts';
+import type {
+  BotApiBotCommand,
+  BotApiBotDescription,
+  BotApiBotShortDescription,
+} from '../../../../types/bot_api.ts';
+import type { BotCommand } from '../../../../types/bot_command.ts';
+import { getApplicableAdministratorRightFlags } from '../../../../types/bot_default_administrator_rights.ts';
+import { toBotApiMenuButton } from '../../../../types/bot_menu_button.ts';
 import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import {
+  excludeMissingBotFailure,
+  missingAuthenticatedBotError,
+} from '../authenticated_bot_failures.ts';
 import {
   botCommandScopeParameter,
   botCommandsParameter,
@@ -13,7 +24,7 @@ import { presentBotProfileFailure } from '../errors/bot_profile_failure_presente
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { readMenuButtonParameter } from '../menu_button_parameter.ts';
-import { type BotApiMethod, type BotApiMethodContext, botApiResult } from '../method_call.ts';
+import { type BotApiFamilyContext, type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
   answerWith,
   answerWithBadRequest,
@@ -77,7 +88,19 @@ const getChatMenuButtonParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
 });
 
-type MyCommandsTarget = Parameters<EmulationSession['botApi']['getMyCommands']>[1];
+/**
+ * What the bot profile methods use: the services that keep the bot's command lists, descriptions,
+ * default administrator rights and menu buttons.
+ */
+type BotProfileContext = BotApiFamilyContext<
+  'botCommands' | 'botDescriptions' | 'botDefaultAdministratorRights' | 'botMenuButtons'
+>;
+
+/** The scope and language that address one of the bot's command lists. */
+type MyCommandsTarget = Omit<
+  Parameters<EmulationSession['botCommands']['getBotCommands']>[0],
+  'botId'
+>;
 
 /**
  * The methods that read or change how the bot presents itself: its identity, commands, default
@@ -106,9 +129,15 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
           ? proceedWith({ commands, ...targetReading.value })
           : targetReading;
       }),
-    execute: (context, request) => {
-      const result = context.session.botApi.setMyCommands(context.bot, request);
-      return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+    execute: (context: BotProfileContext, request) => {
+      const result = context.session.botCommands.setBotCommands({
+        botId: context.bot.id,
+        ...request,
+      });
+      return result.set ? botApiResult(true) : presentBotProfileFailure({
+        set: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
   handledMethodOfSteps({
@@ -117,9 +146,17 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     parameters: myCommandsTargetParametersSchema,
     steps: (call) =>
       startSteps(call.parameters).andThen((target) => readMyCommandsTarget(call, target)),
-    execute: (context, target) => {
-      const result = context.session.botApi.getMyCommands(context.bot, target);
-      return result.found ? botApiResult(result.commands) : presentBotProfileFailure(result);
+    execute: (context: BotProfileContext, target) => {
+      const result = context.session.botCommands.getBotCommands({
+        botId: context.bot.id,
+        ...target,
+      });
+      return result.found
+        ? botApiResult(result.commands.map(viewBotCommand))
+        : presentBotProfileFailure({
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
   commandMethodOfSteps({
@@ -128,9 +165,15 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     parameters: myCommandsTargetParametersSchema,
     steps: (call) =>
       startSteps(call.parameters).andThen((target) => readMyCommandsTarget(call, target)),
-    execute: (context, target) => {
-      const result = context.session.botApi.deleteMyCommands(context.bot, target);
-      return result.deleted ? botApiResult(true) : presentBotProfileFailure(result);
+    execute: (context: BotProfileContext, target) => {
+      const result = context.session.botCommands.deleteBotCommands({
+        botId: context.bot.id,
+        ...target,
+      });
+      return result.deleted ? botApiResult(true) : presentBotProfileFailure({
+        deleted: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
 
@@ -151,8 +194,14 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
           })
           : answerWithBadRequest(rightsReading.description);
       }),
-    execute: (context, request) => {
-      context.session.botApi.setMyDefaultAdministratorRights(context.bot, request);
+    execute: (context: BotProfileContext, request) => {
+      const result = context.session.botDefaultAdministratorRights.setDefaultAdministratorRights({
+        botId: context.bot.id,
+        ...request,
+      });
+      if (!result.set) {
+        throw missingAuthenticatedBotError(context.bot);
+      }
       return botApiResult(true);
     },
   }),
@@ -161,13 +210,17 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: getMyDefaultAdministratorRightsParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, { for_channels: forChannels }) =>
-      botApiResult(
-        context.session.botApi.getMyDefaultAdministratorRights(
-          context.bot,
-          forChannels ? 'channel' : 'group',
-        ),
-      ),
+    execute: (context: BotProfileContext, { for_channels: forChannels }) => {
+      const kind = forChannels ? 'channel' : 'group';
+      const result = context.session.botDefaultAdministratorRights.getDefaultAdministratorRights({
+        botId: context.bot.id,
+        kind,
+      });
+      if (!result.found) {
+        throw missingAuthenticatedBotError(context.bot);
+      }
+      return botApiResult(getApplicableAdministratorRightFlags(kind, result.rights));
+    },
   }),
 
   // Sets the bot's menu button for all its private chats, or with `chat_id` for its chat with that
@@ -194,9 +247,20 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
             ? proceedWith({ menuButton, userId: userReading.value })
             : userReading;
         }),
-    execute: (context, request) => {
-      const result = context.session.botApi.setChatMenuButton(context.bot, request);
-      return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+    execute: (context: BotProfileContext, request) => {
+      const result = context.session.botMenuButtons.setBotMenuButton({
+        botId: context.bot.id,
+        ...request,
+      });
+      if (result.set) {
+        return botApiResult(true);
+      }
+      return result.reason === 'web_app_url_invalid'
+        ? presentBotProfileFailure(result)
+        : presentBotProfileFailure({
+          set: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
   handledMethodOfSteps({
@@ -205,9 +269,17 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     parameters: getChatMenuButtonParametersSchema,
     steps: ({ parameters }) =>
       startSteps(parameters).andThen(({ chat_id: chatId }) => readMenuButtonUserId(chatId)),
-    execute: (context, userId) => {
-      const result = context.session.botApi.getChatMenuButton(context.bot, userId);
-      return result.found ? botApiResult(result.menuButton) : presentBotProfileFailure(result);
+    execute: (context: BotProfileContext, userId) => {
+      const result = context.session.botMenuButtons.getBotMenuButton({
+        botId: context.bot.id,
+        userId,
+      });
+      return result.found
+        ? botApiResult(toBotApiMenuButton(result.menuButton))
+        : presentBotProfileFailure({
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
 
@@ -216,7 +288,7 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: setMyDescriptionParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, { description, language_code: languageCode }) =>
+    execute: (context: BotProfileContext, { description, language_code: languageCode }) =>
       setMyDescription(context, { kind: 'description', text: description, languageCode }),
   }),
   commandMethodOfSteps({
@@ -224,7 +296,10 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: setMyShortDescriptionParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, { short_description: shortDescription, language_code: languageCode }) =>
+    execute: (
+      context: BotProfileContext,
+      { short_description: shortDescription, language_code: languageCode },
+    ) =>
       setMyDescription(context, {
         kind: 'short_description',
         text: shortDescription,
@@ -236,14 +311,18 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: myDescriptionTargetParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, { language_code: languageCode }) => {
-      const result = context.session.botApi.getMyDescription(context.bot, {
+    execute: (context: BotProfileContext, { language_code: languageCode }) => {
+      const result = context.session.botDescriptions.getBotDescription({
+        botId: context.bot.id,
         kind: 'description',
         languageCode,
       });
       return result.found
         ? botApiResult({ description: result.text } satisfies BotApiBotDescription)
-        : presentBotProfileFailure(result);
+        : presentBotProfileFailure({
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
   handledMethodOfSteps({
@@ -251,14 +330,18 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: myDescriptionTargetParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, { language_code: languageCode }) => {
-      const result = context.session.botApi.getMyDescription(context.bot, {
+    execute: (context: BotProfileContext, { language_code: languageCode }) => {
+      const result = context.session.botDescriptions.getBotDescription({
+        botId: context.bot.id,
         kind: 'short_description',
         languageCode,
       });
       return result.found
         ? botApiResult({ short_description: result.text } satisfies BotApiBotShortDescription)
-        : presentBotProfileFailure(result);
+        : presentBotProfileFailure({
+          found: false,
+          reason: excludeMissingBotFailure(context.bot, result.reason),
+        });
     },
   }),
 ];
@@ -296,9 +379,20 @@ function readMenuButtonUserId(chatId: number | undefined): BotApiStepResult<numb
 
 /** Sets one of the bot's descriptions, as `setMyDescription` asks for it. */
 function setMyDescription(
-  context: BotApiMethodContext,
-  request: Parameters<EmulationSession['botApi']['setMyDescription']>[1],
+  context: BotProfileContext,
+  request: Omit<Parameters<EmulationSession['botDescriptions']['setBotDescription']>[0], 'botId'>,
 ) {
-  const result = context.session.botApi.setMyDescription(context.bot, request);
-  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
+  const result = context.session.botDescriptions.setBotDescription({
+    botId: context.bot.id,
+    ...request,
+  });
+  return result.set ? botApiResult(true) : presentBotProfileFailure({
+    set: false,
+    reason: excludeMissingBotFailure(context.bot, result.reason),
+  });
+}
+
+/** Shows a command as the Bot API does, with `is_ephemeral` only when set. */
+function viewBotCommand({ command, description, isEphemeral }: BotCommand): BotApiBotCommand {
+  return { command, description, ...(isEphemeral ? { is_ephemeral: true as const } : {}) };
 }

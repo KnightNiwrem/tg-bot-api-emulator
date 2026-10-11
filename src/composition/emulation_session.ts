@@ -341,7 +341,7 @@ export function createEmulationSession(
     botDescriptions: new BotDescriptionRepository(journal),
   });
 
-  const defaultAdministratorRights = new BotDefaultAdministratorRightsService({
+  const botDefaultAdministratorRights = new BotDefaultAdministratorRightsService({
     bots,
     defaultAdministratorRights: new BotDefaultAdministratorRightsRepository(journal),
   });
@@ -451,10 +451,6 @@ export function createEmulationSession(
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
     },
-    botCommands,
-    botDescriptions,
-    defaultAdministratorRights,
-    menuButtons: botMenuButtons,
     chatActions,
     messageDrafts,
     botDraftTexts: {
@@ -484,6 +480,8 @@ export function createEmulationSession(
     polls: pollService,
     inlineQueries,
     botCommands,
+    botDescriptions,
+    botDefaultAdministratorRights,
     botMenuButtons,
     chatActions,
     messageDrafts,

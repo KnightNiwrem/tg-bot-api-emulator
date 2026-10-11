@@ -20,7 +20,14 @@ export interface BotApiMethodContext {
    */
   readonly session: Pick<
     EmulationSession,
-    'botApi' | 'mediaFiles' | 'botUpdateConsumers' | 'lifetime'
+    | 'botApi'
+    | 'mediaFiles'
+    | 'botUpdateConsumers'
+    | 'botCommands'
+    | 'botDescriptions'
+    | 'botDefaultAdministratorRights'
+    | 'botMenuButtons'
+    | 'lifetime'
   >;
   /** The bot whose token authenticated the call. */
   readonly bot: VirtualBotProfile;

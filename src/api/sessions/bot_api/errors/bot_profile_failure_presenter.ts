@@ -1,4 +1,5 @@
 import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import type { AuthenticatedBotFailure } from '../authenticated_bot_failures.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
@@ -8,23 +9,28 @@ import {
   presentFixedBotApiError,
 } from './error_template.ts';
 
-type BotApi = EmulationSession['botApi'];
+type BotCommands = EmulationSession['botCommands'];
+type BotDescriptions = EmulationSession['botDescriptions'];
+type BotMenuButtons = EmulationSession['botMenuButtons'];
 
 /** Why the bot could not set, read or delete one of its command lists. */
-type BotCommandListFailure =
-  | Extract<ReturnType<BotApi['setMyCommands']>, { readonly set: false }>
-  | Extract<ReturnType<BotApi['getMyCommands']>, { readonly found: false }>
-  | Extract<ReturnType<BotApi['deleteMyCommands']>, { readonly deleted: false }>;
+type BotCommandListFailure = AuthenticatedBotFailure<
+  | Extract<ReturnType<BotCommands['setBotCommands']>, { readonly set: false }>
+  | Extract<ReturnType<BotCommands['getBotCommands']>, { readonly found: false }>
+  | Extract<ReturnType<BotCommands['deleteBotCommands']>, { readonly deleted: false }>
+>;
 
 /** Why the bot could not set or read its description or short description. */
-type BotDescriptionFailure =
-  | Extract<ReturnType<BotApi['setMyDescription']>, { readonly set: false }>
-  | Extract<ReturnType<BotApi['getMyDescription']>, { readonly found: false }>;
+type BotDescriptionFailure = AuthenticatedBotFailure<
+  | Extract<ReturnType<BotDescriptions['setBotDescription']>, { readonly set: false }>
+  | Extract<ReturnType<BotDescriptions['getBotDescription']>, { readonly found: false }>
+>;
 
 /** Why the bot could not set or read a menu button. */
-type BotMenuButtonFailure =
-  | Extract<ReturnType<BotApi['setChatMenuButton']>, { readonly set: false }>
-  | Extract<ReturnType<BotApi['getChatMenuButton']>, { readonly found: false }>;
+type BotMenuButtonFailure = AuthenticatedBotFailure<
+  | Extract<ReturnType<BotMenuButtons['setBotMenuButton']>, { readonly set: false }>
+  | Extract<ReturnType<BotMenuButtons['getBotMenuButton']>, { readonly found: false }>
+>;
 
 /** Telegram's errors for the failures of the family that carry no details, by reason. */
 const FIXED_BOT_PROFILE_ERRORS = {

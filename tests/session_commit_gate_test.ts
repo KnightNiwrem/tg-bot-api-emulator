@@ -204,7 +204,8 @@ Deno.test('a Bot API call that starts after its session ended changes nothing', 
   assertEquals(
     [
       outcome,
-      fixture.session.botApi.getMyDescription(fixture.bot, {
+      fixture.session.botDescriptions.getBotDescription({
+        botId: fixture.bot.id,
         kind: 'description',
         languageCode: '',
       }),

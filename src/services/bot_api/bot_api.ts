@@ -2,25 +2,12 @@ import { cleanInputString, trimTdlibSpaces } from '../../text_entities/input_str
 import { isParseMode, parseMarkup } from '../../text_entities/parse_mode.ts';
 import { checkLink, getLinkUserId } from '../../text_entities/telegram_link.ts';
 import type {
-  BotApiBotCommand,
   BotApiChatFullInfo,
   BotApiChatInviteLink,
   BotApiChatMember,
-  BotApiDefaultAdministratorRights,
-  BotApiMenuButton,
   BotApiMessage,
 } from '../../types/bot_api.ts';
 import type { BotApiPoll } from '../../types/bot_api_poll.ts';
-import type { BotCommand, BotCommandScope } from '../../types/bot_command.ts';
-import {
-  type ChatAdministratorRightName,
-  type DefaultAdministratorRights,
-  type DefaultAdministratorRightsChatKind,
-  getApplicableAdministratorRightFlags,
-} from '../../types/bot_default_administrator_rights.ts';
-import type { BotDescriptionKind } from '../../types/bot_description.ts';
-import { type BotMenuButton, toBotApiMenuButton } from '../../types/bot_menu_button.ts';
-import type { BotLanguageCode } from '../../types/bot_language_code.ts';
 import type { CallbackQueryId } from '../../types/callback_query.ts';
 import type { ChatInviteLink } from '../../types/chat_invite_link.ts';
 import {
@@ -1657,159 +1644,6 @@ interface BotMediaResolution {
   ): InlineResultFileResolution<Extract<StoredFile, { readonly type: Type }>>;
 }
 
-/** A command list of the bot, addressed as the command methods address it. */
-export interface MyCommandsTarget {
-  readonly scope: BotCommandScope;
-  readonly languageCode: BotLanguageCode;
-}
-
-export interface SetMyCommandsRequest extends MyCommandsTarget {
-  readonly commands: readonly {
-    readonly command: string;
-    readonly description: string;
-    readonly isEphemeral: boolean;
-  }[];
-}
-
-/** Why a scope or language cannot address one of the bot's command lists. */
-export type MyCommandsTargetFailureReason =
-  | 'chat_not_found'
-  | FormerSupergroupMemberFailureReason
-  | 'scope_not_allowed_in_private_chats'
-  | 'language_code_invalid';
-
-export type SetMyCommandsFailureReason =
-  | MyCommandsTargetFailureReason
-  | 'command_not_utf8'
-  | 'command_description_not_utf8'
-  | 'command_empty'
-  | 'command_too_long'
-  | 'command_description_empty'
-  | 'command_description_too_long'
-  | 'too_many_commands'
-  | 'command_invalid';
-
-export type SetMyCommandsResult =
-  | { readonly set: true }
-  | { readonly set: false; readonly reason: SetMyCommandsFailureReason };
-
-export type GetMyCommandsResult =
-  | { readonly found: true; readonly commands: readonly BotApiBotCommand[] }
-  | { readonly found: false; readonly reason: MyCommandsTargetFailureReason };
-
-export type DeleteMyCommandsResult =
-  | { readonly deleted: true }
-  | { readonly deleted: false; readonly reason: MyCommandsTargetFailureReason };
-
-interface BotCommandListAddress extends MyCommandsTarget {
-  readonly botId: number;
-}
-
-type BotCommandListTargetFailure = MyCommandsTargetFailureReason | 'bot_not_found';
-
-interface BotCommandLists {
-  setBotCommands(input: BotCommandListAddress & Pick<SetMyCommandsRequest, 'commands'>):
-    | { readonly set: true }
-    | {
-      readonly set: false;
-      readonly reason:
-        | BotCommandListTargetFailure
-        | Exclude<
-          SetMyCommandsFailureReason,
-          MyCommandsTargetFailureReason
-        >;
-    };
-  getBotCommands(target: BotCommandListAddress):
-    | { readonly found: true; readonly commands: readonly BotCommand[] }
-    | { readonly found: false; readonly reason: BotCommandListTargetFailure };
-  deleteBotCommands(target: BotCommandListAddress):
-    | { readonly deleted: true }
-    | { readonly deleted: false; readonly reason: BotCommandListTargetFailure };
-}
-
-/** A description or short description of the bot, addressed by its kind and language. */
-export interface MyDescriptionTarget {
-  readonly kind: BotDescriptionKind;
-  readonly languageCode: BotLanguageCode;
-}
-
-export interface SetMyDescriptionRequest extends MyDescriptionTarget {
-  /** Empty to remove the text for the language. */
-  readonly text: string;
-}
-
-export type SetMyDescriptionResult =
-  | { readonly set: true }
-  | { readonly set: false; readonly reason: 'text_not_utf8' | 'language_code_invalid' };
-
-export type GetMyDescriptionResult =
-  | { readonly found: true; readonly text: string }
-  | { readonly found: false; readonly reason: 'language_code_invalid' };
-
-interface BotDescriptions {
-  setBotDescription(input: SetMyDescriptionRequest & { readonly botId: number }):
-    | { readonly set: true }
-    | {
-      readonly set: false;
-      readonly reason: 'bot_not_found' | 'text_not_utf8' | 'language_code_invalid';
-    };
-  getBotDescription(target: MyDescriptionTarget & { readonly botId: number }):
-    | { readonly found: true; readonly text: string }
-    | { readonly found: false; readonly reason: 'bot_not_found' | 'language_code_invalid' };
-}
-
-interface BotDefaultAdministratorRightsSettings {
-  setDefaultAdministratorRights(input: {
-    readonly botId: number;
-    readonly kind: DefaultAdministratorRightsChatKind;
-    readonly requestedRights: Iterable<ChatAdministratorRightName>;
-  }): { readonly set: true } | { readonly set: false; readonly reason: 'bot_not_found' };
-  getDefaultAdministratorRights(target: {
-    readonly botId: number;
-    readonly kind: DefaultAdministratorRightsChatKind;
-  }):
-    | { readonly found: true; readonly rights: DefaultAdministratorRights }
-    | { readonly found: false; readonly reason: 'bot_not_found' };
-}
-
-/** Why a user cannot be addressed or a menu button is rejected, in the order Telegram checks. */
-export type SetChatMenuButtonFailureReason =
-  | 'user_not_found'
-  | 'menu_button_text_empty'
-  | 'menu_button_text_not_utf8'
-  | 'menu_button_url_not_utf8';
-
-export type SetChatMenuButtonResult =
-  | { readonly set: true }
-  | { readonly set: false; readonly reason: SetChatMenuButtonFailureReason }
-  | {
-    readonly set: false;
-    readonly reason: 'web_app_url_invalid';
-    /** TDLib's description of the invalid URL. */
-    readonly urlError: string;
-  };
-
-export type GetChatMenuButtonResult =
-  | { readonly found: true; readonly menuButton: BotApiMenuButton }
-  | { readonly found: false; readonly reason: 'user_not_found' };
-
-interface BotMenuButtons {
-  setBotMenuButton(input: {
-    readonly botId: number;
-    readonly userId?: number;
-    readonly menuButton: BotMenuButton;
-  }):
-    | { readonly set: true }
-    | {
-      readonly set: false;
-      readonly reason: SetChatMenuButtonFailureReason | 'bot_not_found';
-    }
-    | { readonly set: false; readonly reason: 'web_app_url_invalid'; readonly urlError: string };
-  getBotMenuButton(target: { readonly botId: number; readonly userId?: number }):
-    | { readonly found: true; readonly menuButton: BotMenuButton }
-    | { readonly found: false; readonly reason: 'bot_not_found' | 'user_not_found' };
-}
-
 interface CallbackQueryAnswering {
   answerCallbackQuery(input: {
     readonly fromBotId: number;
@@ -1929,10 +1763,6 @@ interface BotApiServiceDependencies {
    * sending, as it normalizes the caption of a bot's media.
    */
   readonly botCaptions: BotCaptionNormalizer;
-  readonly botCommands: BotCommandLists;
-  readonly botDescriptions: BotDescriptions;
-  readonly defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
-  readonly menuButtons: BotMenuButtons;
   readonly chatActions: ChatActions;
   /** Shows the message drafts bots stream to accounts' private chats. */
   readonly messageDrafts: MessageDrafts;
@@ -1972,10 +1802,6 @@ export class BotApiService {
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
   readonly #botCaptions: BotCaptionNormalizer;
-  readonly #botCommands: BotCommandLists;
-  readonly #botDescriptions: BotDescriptions;
-  readonly #defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
-  readonly #menuButtons: BotMenuButtons;
   readonly #chatActions: ChatActions;
   readonly #messageDrafts: MessageDrafts;
   readonly #botDraftTexts: BotDraftTextNormalizer;
@@ -2000,10 +1826,6 @@ export class BotApiService {
       callbackQueries,
       inlineQueries,
       botCaptions,
-      botCommands,
-      botDescriptions,
-      defaultAdministratorRights,
-      menuButtons,
       chatActions,
       messageDrafts,
       botDraftTexts,
@@ -2027,10 +1849,6 @@ export class BotApiService {
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
     this.#botCaptions = botCaptions;
-    this.#botCommands = botCommands;
-    this.#botDescriptions = botDescriptions;
-    this.#defaultAdministratorRights = defaultAdministratorRights;
-    this.#menuButtons = menuButtons;
     this.#chatActions = chatActions;
     this.#messageDrafts = messageDrafts;
     this.#botDraftTexts = botDraftTexts;
@@ -3731,174 +3549,6 @@ export class BotApiService {
     };
   }
 
-  /** Replaces the bot's command list for a scope and language; an empty list deletes it. */
-  setMyCommands(
-    authenticatedBot: VirtualBotProfile,
-    { commands, scope, languageCode }: SetMyCommandsRequest,
-  ): SetMyCommandsResult {
-    const result = this.#botCommands.setBotCommands({
-      botId: authenticatedBot.id,
-      scope,
-      languageCode,
-      commands,
-    });
-    if (result.set) {
-      return result;
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { set: false, reason: result.reason };
-  }
-
-  /** Returns the bot's command list for exactly this scope and language. */
-  getMyCommands(
-    authenticatedBot: VirtualBotProfile,
-    { scope, languageCode }: MyCommandsTarget,
-  ): GetMyCommandsResult {
-    const result = this.#botCommands.getBotCommands({
-      botId: authenticatedBot.id,
-      scope,
-      languageCode,
-    });
-    if (!result.found) {
-      if (result.reason === 'bot_not_found') {
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      }
-      return { found: false, reason: result.reason };
-    }
-    return { found: true, commands: result.commands.map(projectBotCommand) };
-  }
-
-  /** Deletes the bot's command list for a scope and language. */
-  deleteMyCommands(
-    authenticatedBot: VirtualBotProfile,
-    { scope, languageCode }: MyCommandsTarget,
-  ): DeleteMyCommandsResult {
-    const result = this.#botCommands.deleteBotCommands({
-      botId: authenticatedBot.id,
-      scope,
-      languageCode,
-    });
-    if (result.deleted) {
-      return result;
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { deleted: false, reason: result.reason };
-  }
-
-  /** Replaces the bot's description or short description for a language; empty removes it. */
-  setMyDescription(
-    authenticatedBot: VirtualBotProfile,
-    request: SetMyDescriptionRequest,
-  ): SetMyDescriptionResult {
-    const result = this.#botDescriptions.setBotDescription({
-      botId: authenticatedBot.id,
-      ...request,
-    });
-    if (result.set) {
-      return result;
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { set: false, reason: result.reason };
-  }
-
-  /** Returns the bot's description or short description for exactly this language. */
-  getMyDescription(
-    authenticatedBot: VirtualBotProfile,
-    target: MyDescriptionTarget,
-  ): GetMyDescriptionResult {
-    const result = this.#botDescriptions.getBotDescription({
-      botId: authenticatedBot.id,
-      ...target,
-    });
-    if (result.found) {
-      return result;
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { found: false, reason: result.reason };
-  }
-
-  /**
-   * Replaces the rights the bot asks for by default as an administrator of groups or channels;
-   * none removes them.
-   */
-  setMyDefaultAdministratorRights(
-    authenticatedBot: VirtualBotProfile,
-    request: {
-      readonly kind: DefaultAdministratorRightsChatKind;
-      readonly requestedRights: Iterable<ChatAdministratorRightName>;
-    },
-  ): void {
-    const result = this.#defaultAdministratorRights.setDefaultAdministratorRights({
-      botId: authenticatedBot.id,
-      ...request,
-    });
-    if (!result.set) {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-  }
-
-  /**
-   * Returns the rights the bot asks for by default as an administrator of groups or channels,
-   * showing each right that applies to that kind of chat.
-   */
-  getMyDefaultAdministratorRights(
-    authenticatedBot: VirtualBotProfile,
-    kind: DefaultAdministratorRightsChatKind,
-  ): BotApiDefaultAdministratorRights {
-    const result = this.#defaultAdministratorRights.getDefaultAdministratorRights({
-      botId: authenticatedBot.id,
-      kind,
-    });
-    if (!result.found) {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return getApplicableAdministratorRightFlags(kind, result.rights);
-  }
-
-  /**
-   * Replaces the bot's menu button for all its private chats, or for its chat with a user when
-   * `userId` is given; the default button removes the choice.
-   */
-  setChatMenuButton(
-    authenticatedBot: VirtualBotProfile,
-    request: { readonly userId?: number; readonly menuButton: BotMenuButton },
-  ): SetChatMenuButtonResult {
-    const result = this.#menuButtons.setBotMenuButton({ botId: authenticatedBot.id, ...request });
-    if (result.set || result.reason === 'web_app_url_invalid') {
-      return result;
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { set: false, reason: result.reason };
-  }
-
-  /**
-   * Returns the bot's menu button for all its private chats, or the one its chat with a user
-   * shows when `userId` is given.
-   */
-  getChatMenuButton(
-    authenticatedBot: VirtualBotProfile,
-    userId: number | undefined,
-  ): GetChatMenuButtonResult {
-    const result = this.#menuButtons.getBotMenuButton({ botId: authenticatedBot.id, userId });
-    if (result.found) {
-      return { found: true, menuButton: toBotApiMenuButton(result.menuButton) };
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { found: false, reason: result.reason };
-  }
-
   /**
    * Resolves the files of an inline query result as TDLib's `answer_inline_query` does: its photo,
    * document, video, voice note, or audio file known by `file_id`, and the files of a rich message it sends,
@@ -4630,11 +4280,6 @@ function toInlineResultAudioAttributes(
     ...(performer.length === 0 ? {} : { performer }),
     ...(title.length === 0 ? {} : { title }),
   };
-}
-
-/** Shows a command as the Bot API does, with `is_ephemeral` only when set. */
-function projectBotCommand({ command, description, isEphemeral }: BotCommand): BotApiBotCommand {
-  return { command, description, ...(isEphemeral ? { is_ephemeral: true as const } : {}) };
 }
 
 /**
