@@ -5,45 +5,20 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
 } from '../../../../types/chat_membership.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
-import { readChatMemberTarget, USER_ID_INVALID_DESCRIPTION } from '../chat_member_requests.ts';
+import { requireSpecifiedChatId } from '../chat_access.ts';
+import { readChatMemberTargetStep, requireValidUserId } from '../chat_member_requests.ts';
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
 import { presentChatMemberFailure } from '../errors/chat_member_failure_presenter.ts';
+import { type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
-  answeredPreparation,
-  type BotApiCallPreparation,
-  botApiError,
-  type BotApiMethod,
-  type BotApiMethodAnswer,
-  type BotApiMethodContext,
-  botApiResult,
-} from '../method_call.ts';
-import {
-  booleanParameter,
-  type BotApiRequestParameters,
-  integerParameter,
-} from '../request_parameters.ts';
-
-/**
- * The methods that read a chat's members, moderate or promote them, or make the bot leave. Each
- * method that changes the chat is executed as a command in its call's transaction; the reads
- * change nothing, and answer from their handlers.
- */
-export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
-  { name: 'banChatMember', recordsActivity: true, prepare: prepareBanChatMember },
-  { name: 'getChatAdministrators', recordsActivity: true, handler: handleGetChatAdministrators },
-  { name: 'getChatMember', recordsActivity: true, handler: handleGetChatMember },
-  { name: 'getChatMemberCount', recordsActivity: true, handler: handleGetChatMemberCount },
-  { name: 'leaveChat', recordsActivity: true, prepare: prepareLeaveChat },
-  { name: 'promoteChatMember', recordsActivity: true, prepare: preparePromoteChatMember },
-  { name: 'restrictChatMember', recordsActivity: true, prepare: prepareRestrictChatMember },
-  {
-    name: 'setChatAdministratorCustomTitle',
-    recordsActivity: true,
-    prepare: prepareSetChatAdministratorCustomTitle,
-  },
-  { name: 'unbanChatMember', recordsActivity: true, prepare: prepareUnbanChatMember },
-];
+  answerWithBadRequest,
+  type BotApiStepResult,
+  commandMethodOfSteps,
+  handledMethodOfSteps,
+  proceedWith,
+  startSteps,
+} from '../method_steps.ts';
+import { booleanParameter, integerParameter } from '../request_parameters.ts';
 
 /** The emulator's description for a promotion to an anonymous administrator, which it lacks. */
 const ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION =
@@ -110,6 +85,8 @@ const promoteChatMemberParametersSchema = z.strictObject({
   can_send_welcome_messages: booleanParameter().optional(),
 });
 
+type PromoteChatMemberParameters = z.output<typeof promoteChatMemberParametersSchema>;
+
 // Telegram also reads the deprecated permissions given as separate parameters, such as
 // `can_send_messages`; rejecting them instead surfaces the bot's mistake in tests.
 const restrictChatMemberParametersSchema = z.strictObject({
@@ -126,202 +103,189 @@ const unbanChatMemberParametersSchema = z.strictObject({
   only_if_banned: booleanParameter().default(false),
 });
 
-function prepareLeaveChat(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = leaveChatParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(botApiError(400, 'Bad Request: invalid leaveChat parameters'));
-  }
-  const { chat_id: chatId } = parsedParameters.data;
-  if (chatId === undefined) {
-    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.leaveChat(
-        context.bot,
-        { chatId },
-      );
-      return result.left ? botApiResult(true) : presentChatMemberFailure('chat_leave', result);
-    },
-  };
-}
-
-function handleGetChatMember(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = getChatMemberParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getChatMember parameters');
-  }
-  const targetReading = readChatMemberTarget(parsedParameters.data);
-  if (!targetReading.read) {
-    return targetReading.errorAnswer;
-  }
-
-  const result = context.session.botApi.getChatMember(
-    context.bot,
-    targetReading.target,
-  );
-  return result.found
-    ? botApiResult(result.member)
-    : presentChatMemberFailure('member_lookup', result);
-}
-
-function handleGetChatAdministrators(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = getChatAdministratorsParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getChatAdministrators parameters');
-  }
-  const { chat_id: chatId, return_bots: includesOtherBots } = parsedParameters.data;
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.getChatAdministrators(
-    context.bot,
-    { chatId, includesOtherBots },
-  );
-  return result.found
-    ? botApiResult(result.administrators)
-    : presentChatMemberFailure('member_lookup', result);
-}
-
-function handleGetChatMemberCount(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = getChatMemberCountParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getChatMemberCount parameters');
-  }
-  const { chat_id: chatId } = parsedParameters.data;
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.getChatMemberCount(
-    context.bot,
-    { chatId },
-  );
-  return result.found
-    ? botApiResult(result.memberCount)
-    : presentChatMemberFailure('member_lookup', result);
-}
-
-function prepareBanChatMember(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = banChatMemberParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(botApiError(400, 'Bad Request: invalid banChatMember parameters'));
-  }
-  const targetReading = readChatMemberTarget(parsedParameters.data);
-  if (!targetReading.read) {
-    return answeredPreparation(targetReading.errorAnswer);
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.banChatMember(
-        context.bot,
-        { ...targetReading.target, untilUnixSeconds: parsedParameters.data.until_date },
-      );
+/**
+ * The methods that read a chat's members, moderate or promote them, or make the bot leave. Each
+ * method that changes the chat is executed as a command in its call's transaction; the reads
+ * change nothing, and answer from their handlers.
+ */
+export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
+  commandMethodOfSteps({
+    name: 'banChatMember',
+    recordsActivity: true,
+    parameters: banChatMemberParametersSchema,
+    steps: ({ parameters }) =>
+      startSteps(parameters).andThen((ban) => {
+        const targetReading = readChatMemberTargetStep(ban);
+        return targetReading.proceeds
+          ? proceedWith({ ...targetReading.value, untilUnixSeconds: ban.until_date })
+          : targetReading;
+      }),
+    execute: (context, request) => {
+      const result = context.session.botApi.banChatMember(context.bot, request);
       return result.banned
         ? botApiResult(true)
         : presentChatMemberFailure('member_moderation', result);
     },
-  };
-}
-
-function prepareRestrictChatMember(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid restrictChatMember parameters';
-  const parsedParameters = restrictChatMemberParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(botApiError(400, invalidParametersDescription));
-  }
-  const { data } = parsedParameters;
-  // Telegram reads the user, then the permissions, before it looks at the chat.
-  if (data.user_id === undefined || data.user_id <= 0) {
-    return answeredPreparation(botApiError(400, USER_ID_INVALID_DESCRIPTION));
-  }
-  const permissionsReading = readChatPermissionsParameter(data.permissions, {
-    usesIndependentChatPermissions: data.use_independent_chat_permissions,
-    invalidParametersDescription,
-  });
-  if (!permissionsReading.read) {
-    return answeredPreparation(botApiError(400, permissionsReading.description));
-  }
-  const targetReading = readChatMemberTarget(data);
-  if (!targetReading.read) {
-    return answeredPreparation(targetReading.errorAnswer);
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.restrictChatMember(context.bot, {
-        ...targetReading.target,
-        permissions: permissionsReading.permissions,
-        untilUnixSeconds: data.until_date,
+  }),
+  handledMethodOfSteps({
+    name: 'getChatAdministrators',
+    recordsActivity: true,
+    parameters: getChatAdministratorsParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters).andThen(requireSpecifiedChatId),
+    execute: (context, { chat_id: chatId, return_bots: includesOtherBots }) => {
+      const result = context.session.botApi.getChatAdministrators(context.bot, {
+        chatId,
+        includesOtherBots,
       });
-      return result.restricted
-        ? botApiResult(true)
-        : presentChatMemberFailure('member_moderation', result);
+      return result.found
+        ? botApiResult(result.administrators)
+        : presentChatMemberFailure('member_lookup', result);
     },
-  };
-}
-
-/**
- * Prepares `promoteChatMember`. As the official server's `process_promote_chat_member_query` reads
- * them, each right is a separate parameter, a missing one is false, and passing none demotes an
- * administrator.
- */
-function preparePromoteChatMember(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = promoteChatMemberParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      botApiError(400, 'Bad Request: invalid promoteChatMember parameters'),
-    );
-  }
-  const { data } = parsedParameters;
-  const targetReading = readChatMemberTarget(data);
-  if (!targetReading.read) {
-    return answeredPreparation(targetReading.errorAnswer);
-  }
-  // Anonymous administrators are not supported; granting the right alone would misrepresent them.
-  if (data.is_anonymous === true) {
-    return answeredPreparation(botApiError(400, ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION));
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.promoteChatMember(context.bot, {
-        ...targetReading.target,
-        rights: readPromotedSupergroupRights(data),
-      });
+  }),
+  handledMethodOfSteps({
+    name: 'getChatMember',
+    recordsActivity: true,
+    parameters: getChatMemberParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters).andThen(readChatMemberTargetStep),
+    execute: (context, target) => {
+      const result = context.session.botApi.getChatMember(context.bot, target);
+      return result.found
+        ? botApiResult(result.member)
+        : presentChatMemberFailure('member_lookup', result);
+    },
+  }),
+  handledMethodOfSteps({
+    name: 'getChatMemberCount',
+    recordsActivity: true,
+    parameters: getChatMemberCountParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters).andThen(requireSpecifiedChatId),
+    execute: (context, { chat_id: chatId }) => {
+      const result = context.session.botApi.getChatMemberCount(context.bot, { chatId });
+      return result.found
+        ? botApiResult(result.memberCount)
+        : presentChatMemberFailure('member_lookup', result);
+    },
+  }),
+  commandMethodOfSteps({
+    name: 'leaveChat',
+    recordsActivity: true,
+    parameters: leaveChatParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters).andThen(requireSpecifiedChatId),
+    execute: (context, { chat_id: chatId }) => {
+      const result = context.session.botApi.leaveChat(context.bot, { chatId });
+      return result.left ? botApiResult(true) : presentChatMemberFailure('chat_leave', result);
+    },
+  }),
+  // As the official server's `process_promote_chat_member_query` reads them, each right is a
+  // separate parameter, a missing one is false, and passing none demotes an administrator.
+  commandMethodOfSteps({
+    name: 'promoteChatMember',
+    recordsActivity: true,
+    parameters: promoteChatMemberParametersSchema,
+    steps: ({ parameters }) =>
+      startSteps(parameters)
+        .andThen((promotion) => {
+          const targetReading = readChatMemberTargetStep(promotion);
+          return targetReading.proceeds
+            ? proceedWith({ target: targetReading.value, promotion })
+            : targetReading;
+        })
+        .andThen(({ target, promotion }) => {
+          const anonymityReading = refuseAnonymousAdministrator(promotion);
+          return anonymityReading.proceeds
+            ? proceedWith({ ...target, rights: readPromotedSupergroupRights(promotion) })
+            : anonymityReading;
+        }),
+    execute: (context, request) => {
+      const result = context.session.botApi.promoteChatMember(context.bot, request);
       return result.promoted
         ? botApiResult(true)
         : presentChatMemberFailure('member_promotion', result);
     },
-  };
+  }),
+  // Telegram reads the user, then the permissions, before it looks at the chat.
+  commandMethodOfSteps({
+    name: 'restrictChatMember',
+    recordsActivity: true,
+    parameters: restrictChatMemberParametersSchema,
+    steps: ({ parameters, invalidParametersDescription }) =>
+      startSteps(parameters)
+        .andThen(requireValidUserId)
+        .andThen((restriction) => {
+          const permissionsReading = readChatPermissionsParameter(restriction.permissions, {
+            usesIndependentChatPermissions: restriction.use_independent_chat_permissions,
+            invalidParametersDescription,
+          });
+          return permissionsReading.read
+            ? proceedWith({ restriction, permissions: permissionsReading.permissions })
+            : answerWithBadRequest(permissionsReading.description);
+        })
+        .andThen(({ restriction, permissions }) => {
+          const targetReading = readChatMemberTargetStep(restriction);
+          return targetReading.proceeds
+            ? proceedWith({
+              ...targetReading.value,
+              permissions,
+              untilUnixSeconds: restriction.until_date,
+            })
+            : targetReading;
+        }),
+    execute: (context, request) => {
+      const result = context.session.botApi.restrictChatMember(context.bot, request);
+      return result.restricted
+        ? botApiResult(true)
+        : presentChatMemberFailure('member_moderation', result);
+    },
+  }),
+  // As the official server reads it, a missing `custom_title` is empty, which removes the title.
+  commandMethodOfSteps({
+    name: 'setChatAdministratorCustomTitle',
+    recordsActivity: true,
+    parameters: setChatAdministratorCustomTitleParametersSchema,
+    steps: ({ parameters }) =>
+      startSteps(parameters).andThen((titleChange) => {
+        const targetReading = readChatMemberTargetStep(titleChange);
+        return targetReading.proceeds
+          ? proceedWith({ ...targetReading.value, customTitle: titleChange.custom_title ?? '' })
+          : targetReading;
+      }),
+    execute: (context, request) => {
+      const result = context.session.botApi.setChatAdministratorCustomTitle(context.bot, request);
+      return result.set
+        ? botApiResult(true)
+        : presentChatMemberFailure('custom_title_change', result);
+    },
+  }),
+  commandMethodOfSteps({
+    name: 'unbanChatMember',
+    recordsActivity: true,
+    parameters: unbanChatMemberParametersSchema,
+    steps: ({ parameters }) =>
+      startSteps(parameters).andThen((unban) => {
+        const targetReading = readChatMemberTargetStep(unban);
+        return targetReading.proceeds
+          ? proceedWith({ ...targetReading.value, onlyIfBanned: unban.only_if_banned })
+          : targetReading;
+      }),
+    execute: (context, request) => {
+      const result = context.session.botApi.unbanChatMember(context.bot, request);
+      return result.unbanned
+        ? botApiResult(true)
+        : presentChatMemberFailure('member_moderation', result);
+    },
+  }),
+];
+
+/**
+ * The step that refuses a promotion to an anonymous administrator, which the emulator does not
+ * support: granting the right alone would misrepresent such an administrator.
+ */
+function refuseAnonymousAdministrator(
+  promotion: PromoteChatMemberParameters,
+): BotApiStepResult<PromoteChatMemberParameters> {
+  return promotion.is_anonymous === true
+    ? answerWithBadRequest(ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION)
+    : proceedWith(promotion);
 }
 
 /**
@@ -330,7 +294,7 @@ function preparePromoteChatMember(
  * granted, as TDLib's `AdministratorRights` makes them for a supergroup.
  */
 function readPromotedSupergroupRights(
-  requestedRights: z.infer<typeof promoteChatMemberParametersSchema>,
+  requestedRights: PromoteChatMemberParameters,
 ): SupergroupAdministratorRights {
   return grantSupergroupAdministratorRights(
     SUPERGROUP_ADMINISTRATOR_RIGHTS.filter((right) =>
@@ -338,64 +302,4 @@ function readPromotedSupergroupRights(
       (right === 'can_manage_video_chats' && requestedRights.can_manage_voice_chats === true)
     ),
   );
-}
-
-function prepareUnbanChatMember(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = unbanChatMemberParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(botApiError(400, 'Bad Request: invalid unbanChatMember parameters'));
-  }
-  const targetReading = readChatMemberTarget(parsedParameters.data);
-  if (!targetReading.read) {
-    return answeredPreparation(targetReading.errorAnswer);
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.unbanChatMember(
-        context.bot,
-        { ...targetReading.target, onlyIfBanned: parsedParameters.data.only_if_banned },
-      );
-      return result.unbanned
-        ? botApiResult(true)
-        : presentChatMemberFailure('member_moderation', result);
-    },
-  };
-}
-
-/**
- * Prepares `setChatAdministratorCustomTitle`. As the official server reads it, a missing
- * `custom_title` is empty, which removes the title.
- */
-function prepareSetChatAdministratorCustomTitle(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = setChatAdministratorCustomTitleParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      botApiError(400, 'Bad Request: invalid setChatAdministratorCustomTitle parameters'),
-    );
-  }
-  const targetReading = readChatMemberTarget(parsedParameters.data);
-  if (!targetReading.read) {
-    return answeredPreparation(targetReading.errorAnswer);
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.setChatAdministratorCustomTitle(context.bot, {
-        ...targetReading.target,
-        customTitle: parsedParameters.data.custom_title ?? '',
-      });
-      return result.set
-        ? botApiResult(true)
-        : presentChatMemberFailure('custom_title_change', result);
-    },
-  };
 }

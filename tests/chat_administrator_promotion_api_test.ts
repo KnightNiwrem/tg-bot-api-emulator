@@ -626,7 +626,7 @@ Deno.test('promoteChatMember refuses what Telegram refuses, without changing any
       [400, 'Bad Request: chat not found'],
       [400, 'Bad Request: member not found'],
       [400, 'Bad Request: anonymous administrators are not supported'],
-      [400, 'Bad Request: invalid promoteChatMember parameters'],
+      [400, 'Bad Request: invalid promoteChatMember parameters: can_fly'],
       [400, 'Bad Request: not enough rights'],
       [400, 'Bad Request: USER_NOT_MUTUAL_CONTACT'],
       [400, 'Bad Request: USER_KICKED'],

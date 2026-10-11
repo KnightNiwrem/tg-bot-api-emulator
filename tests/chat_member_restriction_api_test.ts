@@ -425,7 +425,7 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
         'type Boolean',
       ],
       [400, 'Bad Request: invalid restrictChatMember parameters'],
-      [400, 'Bad Request: invalid restrictChatMember parameters'],
+      [400, 'Bad Request: invalid restrictChatMember parameters: can_send_messages'],
     ],
     'Expected Telegram refusals',
   );
