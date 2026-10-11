@@ -12,6 +12,7 @@ import {
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   type BotApiMethodOutcome,
+  SESSION_ENDED,
 } from './method_call.ts';
 import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 
@@ -116,6 +117,54 @@ export function commandMethodOfSteps<Schema extends z.ZodType, Prepared>(
       return result.proceeds
         ? { kind: 'command', execute: () => execute(context, result.value) }
         : answeredPreparation(result.answer);
+    },
+  };
+}
+
+/**
+ * A method whose steps read the call, then wait for what it names, such as files named by URL,
+ * before its call's transaction executes the command. Neither the steps nor the wait change the
+ * session.
+ */
+export interface BotApiWaitingCommandMethodOfSteps<Schema extends z.ZodType, Prepared, Ready>
+  extends BotApiMethodOfSteps<Schema, Prepared> {
+  /**
+   * Waits for what the steps read names, checking the session's commit gate as soon as each of
+   * its waits ends, as `BotApiMethodContext` describes: `SESSION_ENDED` once the session has
+   * ended, and otherwise what `execute` needs, or the answer that ends the call, such as a failed
+   * download's.
+   */
+  readonly waitFor: (
+    context: BotApiMethodContext,
+    prepared: Prepared,
+  ) => Promise<BotApiStepResult<Ready> | typeof SESSION_ENDED>;
+  /** Executes the command, as `BotApiCommandMethodOfSteps` describes. */
+  readonly execute: (context: BotApiMethodContext, ready: Ready) => BotApiMethodAnswer;
+}
+
+/** The method record of a method that `BotApiWaitingCommandMethodOfSteps` defines. */
+export function waitingCommandMethodOfSteps<Schema extends z.ZodType, Prepared, Ready>(
+  { waitFor, execute, ...method }: BotApiWaitingCommandMethodOfSteps<Schema, Prepared, Ready>,
+): BotApiMethod {
+  return {
+    name: method.name,
+    recordsActivity: method.recordsActivity,
+    prepare: async (
+      context,
+      parameters,
+      uploadedFiles,
+    ): Promise<BotApiCallPreparation | typeof SESSION_ENDED> => {
+      const stepsResult = runSteps(method, context, parameters, uploadedFiles);
+      if (!stepsResult.proceeds) {
+        return answeredPreparation(stepsResult.answer);
+      }
+      const waitResult = await waitFor(context, stepsResult.value);
+      if (waitResult === SESSION_ENDED || !context.session.lifetime.admitsCommits) {
+        return SESSION_ENDED;
+      }
+      return waitResult.proceeds
+        ? { kind: 'command', execute: () => execute(context, waitResult.value) }
+        : answeredPreparation(waitResult.answer);
     },
   };
 }

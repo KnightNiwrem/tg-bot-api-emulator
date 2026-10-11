@@ -261,7 +261,8 @@ methods, and the default administrator rights methods), the query answer methods
 (`answerCallbackQuery` and `answerInlineQuery`) and the member administration methods
 (`banChatMember`, `unbanChatMember`, `restrictChatMember`, `promoteChatMember`,
 `setChatAdministratorCustomTitle`, `leaveChat`, `getChatMember`, `getChatAdministrators` and
-`getChatMemberCount`) name the first parameter their schema refuses after the description, as a path
+`getChatMemberCount`), the deletion methods (`deleteMessage` and `deleteMessages`) and
+`setMessageReaction` name the first parameter their schema refuses after the description, as a path
 into the call's parameters:
 `Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]` for a
 button with no action, `Bad Request: invalid forwardMessages parameters: message_ids[1]` for an
@@ -270,10 +271,15 @@ parameter the method does not take. A key that is not a plain name is written as
 brackets, such as `["odd key"]`; the path never includes a parameter's value. A `reply_markup` that
 is not JSON the official server can read is answered with Telegram's
 `Bad Request: can't parse reply keyboard markup JSON object` instead, by every method that takes it.
-A parameter that the schema reads as text or as a list and a later reader refuses, such as
-`editMessageMedia`'s `media`, `copyMessage`'s `caption_entities` or a field of `setChatPermissions`'
-`permissions` that Telegram does not know, keeps the description without a path, as do the other
-methods.
+Likewise, as the server's `get_link_preview_options` reads it, a `link_preview_options` that is not
+JSON it can read is answered with `Bad Request: can't parse link preview options JSON object`, and
+empty text is no options, so that `disable_web_page_preview` applies. As its `get_message_ids` reads
+it, `deleteMessages`' `message_ids` that is not JSON it can read is answered with
+`Bad Request: can't parse message_ids JSON object`, and empty text names no messages, which is
+answered with `Bad Request: message identifiers are not specified`. A parameter that the schema
+reads as text or as a list and a later reader refuses, such as `editMessageMedia`'s `media`,
+`copyMessage`'s `caption_entities` or a field of `setChatPermissions`' `permissions` that Telegram
+does not know, keeps the description without a path, as do the other methods.
 
 ## Accepted options without their Telegram effects
 

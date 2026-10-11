@@ -16,7 +16,15 @@ export const linkPreviewOptionsSchema = z.strictObject({
   show_above_text: z.boolean().optional(),
 });
 
-/** A `link_preview_options` parameter: a JSON `LinkPreviewOptions` object. */
+/**
+ * A `link_preview_options` parameter: a JSON `LinkPreviewOptions` object, read as the official Bot
+ * API server's `get_link_preview_options` reads it. Empty text is no options, which leaves
+ * `disable_web_page_preview` to apply, and text it cannot read as JSON is refused with its
+ * description.
+ */
 export function linkPreviewOptionsParameter() {
-  return jsonParameter(linkPreviewOptionsSchema);
+  return jsonParameter(linkPreviewOptionsSchema.optional(), {
+    unparsableJsonDescription: "Bad Request: can't parse link preview options JSON object",
+    emptyText: { readAs: undefined },
+  });
 }

@@ -129,6 +129,25 @@ export const BOT_API_ERRORS = {
     'Bad Request: invalid user_id specified',
     botApiServerSource('telegram-bot-api/Client.cpp#L13548-L13554'),
   ),
+  /**
+   * A list of messages that a call names by `message_ids`, as the official server's
+   * `get_message_ids` reads it: given, of at most 100 messages, each with a positive identifier.
+   */
+  messageIdentifiersNotSpecified: fixedBotApiError(
+    400,
+    'Bad Request: message identifiers are not specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13500-L13504'),
+  ),
+  tooManyMessageIdentifiers: fixedBotApiError(
+    400,
+    'Bad Request: too many message identifiers specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13514-L13516'),
+  ),
+  messageIdentifierInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid message identifier specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13532-L13534'),
+  ),
   /** A `chat_id` that must name a user, as a menu button's does, read by `get_user_id`. */
   userChatIdInvalid: fixedBotApiError(
     400,
