@@ -441,8 +441,6 @@ export function createEmulationSession(
       getPrivateForwardName: getAccountPrivateForwardName,
       currentUnixTimeSeconds,
     }),
-    chatMemberships: sharedChatAdministration,
-    chatAdmission,
     botMessageViews,
     messagePinning,
     messageReactions,

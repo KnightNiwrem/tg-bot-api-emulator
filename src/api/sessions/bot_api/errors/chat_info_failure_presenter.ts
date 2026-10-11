@@ -1,25 +1,40 @@
-import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import type { FormerSupergroupMemberFailureReason } from '../../../../types/chat_membership.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
 
-type BotApi = EmulationSession['botApi'];
+/** Why a bot cannot change a chat's title or description, in the order Telegram checks them. */
+type ChatInfoChangeFailureReason =
+  | 'chat_not_found'
+  | FormerSupergroupMemberFailureReason
+  /** A private chat has no title or description a bot can change. */
+  | 'private_chat_info_unchangeable'
+  | 'text_encoding_invalid'
+  | 'not_enough_rights';
 
 /** Why `setChatTitle` changed no title. */
-type ChatTitleChangeFailure = Extract<ReturnType<BotApi['setChatTitle']>, { readonly set: false }>;
+export interface ChatTitleChangeFailure {
+  readonly set: false;
+  readonly reason: ChatInfoChangeFailureReason | 'title_empty';
+}
 
 /** Why `setChatDescription` changed no description. */
-type ChatDescriptionChangeFailure = Extract<
-  ReturnType<BotApi['setChatDescription']>,
-  { readonly set: false }
->;
+export interface ChatDescriptionChangeFailure {
+  readonly set: false;
+  readonly reason: ChatInfoChangeFailureReason | 'description_not_modified';
+}
 
 /** Why `setChatPermissions` changed no default permissions. */
-type ChatPermissionsChangeFailure = Extract<
-  ReturnType<BotApi['setChatPermissions']>,
-  { readonly set: false }
->;
+export interface ChatPermissionsChangeFailure {
+  readonly set: false;
+  readonly reason:
+    | 'chat_not_found'
+    | FormerSupergroupMemberFailureReason
+    /** A private chat has no permissions a bot can change. */
+    | 'private_chat_permissions_unchangeable'
+    | 'not_enough_rights';
+}
 
 /** The change of a chat's information that failed: its title, description or permissions. */
 type ChatInfoChangeOperation =

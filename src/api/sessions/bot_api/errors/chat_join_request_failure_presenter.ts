@@ -1,16 +1,27 @@
 import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import type { AuthenticatedBotFailure } from '../authenticated_bot_failures.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
 
-type BotApi = EmulationSession['botApi'];
+type ChatAdmission = EmulationSession['chatAdmission'];
 
 /** Why `approveChatJoinRequest` or `declineChatJoinRequest` decided nothing. */
-type ChatJoinRequestDecisionFailure = Extract<
-  ReturnType<BotApi['approveChatJoinRequest'] | BotApi['declineChatJoinRequest']>,
-  { readonly decided: false }
->;
+export type ChatJoinRequestDecisionFailure =
+  | AuthenticatedBotFailure<
+    Extract<
+      ReturnType<
+        ChatAdmission['approveJoinRequestAsBot'] | ChatAdmission['declineJoinRequestAsBot']
+      >,
+      { readonly decided: false }
+    >
+  >
+  // A private chat, as `findPrivateChatRefusal` refuses it.
+  | {
+    readonly decided: false;
+    readonly reason: 'private_chat_has_no_join_requests' | 'chat_not_found';
+  };
 
 /**
  * Telegram's errors for the failures of the join request family, by reason: TDLib's checks of the

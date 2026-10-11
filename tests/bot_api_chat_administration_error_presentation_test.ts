@@ -1,9 +1,34 @@
 import { botChatAccessFailureAnswer } from '../src/api/sessions/bot_api/chat_access.ts';
-import { presentChatInfoChangeFailure } from '../src/api/sessions/bot_api/errors/chat_info_failure_presenter.ts';
-import { presentChatInviteLinkFailure } from '../src/api/sessions/bot_api/errors/chat_invite_link_failure_presenter.ts';
-import { presentChatJoinRequestFailure } from '../src/api/sessions/bot_api/errors/chat_join_request_failure_presenter.ts';
-import { presentChatMemberFailure } from '../src/api/sessions/bot_api/errors/chat_member_failure_presenter.ts';
-import type { EmulationSession } from '../src/session/emulation_session.ts';
+import {
+  type ChatDescriptionChangeFailure,
+  type ChatPermissionsChangeFailure,
+  type ChatTitleChangeFailure,
+  presentChatInfoChangeFailure,
+} from '../src/api/sessions/bot_api/errors/chat_info_failure_presenter.ts';
+import {
+  type InviteLinkCreationFailure,
+  type InviteLinkEditFailure,
+  type InviteLinkExportFailure,
+  type InviteLinkRevocationFailure,
+  presentChatInviteLinkFailure,
+} from '../src/api/sessions/bot_api/errors/chat_invite_link_failure_presenter.ts';
+import {
+  type ChatJoinRequestDecisionFailure,
+  presentChatJoinRequestFailure,
+} from '../src/api/sessions/bot_api/errors/chat_join_request_failure_presenter.ts';
+import {
+  type AdministratorsReadFailure,
+  type ChatLeaveFailure,
+  type CustomTitleChangeFailure,
+  type MemberBanFailure,
+  type MemberCountFailure,
+  type MemberPromotionFailure,
+  type MemberReadFailure,
+  type MemberRestrictionFailure,
+  type MemberUnbanFailure,
+  presentChatMemberFailure,
+} from '../src/api/sessions/bot_api/errors/chat_member_failure_presenter.ts';
+import type { ChatLookupFailure } from '../src/api/sessions/bot_api/methods/chat_info.ts';
 import {
   type CasesByReason,
   expectPresentations,
@@ -13,59 +38,13 @@ import {
 // The families that administer chats: their information, their members, their invite links and
 // the requests to join them. Each case is Telegram's literal answer.
 
-type BotApi = EmulationSession['botApi'];
-
-type ChatReadFailure = Extract<ReturnType<BotApi['getChat']>, { readonly found: false }>;
-type ChatTitleChangeFailure = Extract<ReturnType<BotApi['setChatTitle']>, { readonly set: false }>;
-type ChatDescriptionChangeFailure = Extract<
-  ReturnType<BotApi['setChatDescription']>,
-  { readonly set: false }
->;
-type ChatPermissionsChangeFailure = Extract<
-  ReturnType<BotApi['setChatPermissions']>,
-  { readonly set: false }
->;
-type MemberLookupFailure = Extract<
-  ReturnType<
-    BotApi['getChatMember'] | BotApi['getChatAdministrators'] | BotApi['getChatMemberCount']
-  >,
-  { readonly found: false }
->;
-type ChatLeaveFailure = Extract<ReturnType<BotApi['leaveChat']>, { readonly left: false }>;
-type BanFailure = Extract<ReturnType<BotApi['banChatMember']>, { readonly banned: false }>;
-type UnbanFailure = Extract<ReturnType<BotApi['unbanChatMember']>, { readonly unbanned: false }>;
-type RestrictionFailure = Extract<
-  ReturnType<BotApi['restrictChatMember']>,
-  { readonly restricted: false }
->;
-type PromotionFailure = Extract<
-  ReturnType<BotApi['promoteChatMember']>,
-  { readonly promoted: false }
->;
-type CustomTitleChangeFailure = Extract<
-  ReturnType<BotApi['setChatAdministratorCustomTitle']>,
-  { readonly set: false }
->;
-type InviteLinkExportFailure = Extract<
-  ReturnType<BotApi['exportChatInviteLink']>,
-  { readonly exported: false }
->;
-type InviteLinkCreationFailure = Extract<
-  ReturnType<BotApi['createChatInviteLink']>,
-  { readonly created: false }
->;
-type InviteLinkEditFailure = Extract<
-  ReturnType<BotApi['editChatInviteLink']>,
-  { readonly edited: false }
->;
-type InviteLinkRevocationFailure = Extract<
-  ReturnType<BotApi['revokeChatInviteLink']>,
-  { readonly revoked: false }
->;
-type JoinRequestDecisionFailure = Extract<
-  ReturnType<BotApi['approveChatJoinRequest'] | BotApi['declineChatJoinRequest']>,
-  { readonly decided: false }
->;
+type ChatReadFailure = ChatLookupFailure;
+type MemberLookupFailure = MemberReadFailure | AdministratorsReadFailure | MemberCountFailure;
+type BanFailure = MemberBanFailure;
+type UnbanFailure = MemberUnbanFailure;
+type RestrictionFailure = MemberRestrictionFailure;
+type PromotionFailure = MemberPromotionFailure;
+type JoinRequestDecisionFailure = ChatJoinRequestDecisionFailure;
 
 const STRINGS_NOT_UTF8 = [400, 'Bad Request: strings must be encoded in UTF-8'] as const;
 const TEXT_ENCODING_CASES = {
