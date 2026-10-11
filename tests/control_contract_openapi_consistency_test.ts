@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { createAccountContract } from '../control_contracts/accounts.ts';
 import { readBotActivityContract } from '../control_contracts/bot_activity.ts';
+import { downloadFileContract } from '../control_contracts/files.ts';
 import { createBotContract } from '../control_contracts/bots.ts';
 import { controlRefusalSchema } from '../control_contracts/control_errors.ts';
 import {
@@ -50,6 +51,7 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   decideSupergroupJoinRequestContract,
   expireChatInviteLinkContract,
   expireJoinRequesterContactContract,
+  downloadFileContract,
 ];
 
 const document = readOpenApiDocument();

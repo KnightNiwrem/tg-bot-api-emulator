@@ -9,6 +9,8 @@
  */
 import type { z } from 'zod';
 
+import { isMediaRange } from '../http_grammar/media_type.ts';
+
 export type ControlHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
 /** A JSON request body, which the operation may let a request leave out. */
@@ -32,6 +34,11 @@ export interface EmptyResponseBodyContract {
 /** A success response whose content is bytes of a media type the response names, such as a file. */
 export interface BytesResponseBodyContract {
   readonly kind: 'bytes';
+  /**
+   * The media type of the bytes, or the range of media types they may have, such as `image/*` or
+   * the range of every media type; the response's `Content-Type` names the exact one.
+   */
+  readonly mediaTypeRange: string;
 }
 
 export type ResponseBodyContract =
@@ -91,8 +98,8 @@ const PATH_PLACEHOLDER_PATTERN = /\{([^{}]+)\}/g;
  * from.
  *
  * @throws {Error} when `params` does not name exactly the placeholders of `path`,
- * `querySerialization` names a parameter that `query` does not, or a refusal status is not an
- * error status.
+ * `querySerialization` names a parameter that `query` does not, a bytes success declares text that
+ * is no media range, or a refusal status is not an error status.
  */
 export function defineControlOperation<const Contract extends ControlOperationContract>(
   contract: Contract,
@@ -112,6 +119,12 @@ export function defineControlOperation<const Contract extends ControlOperationCo
     if (!queryParameterNames.includes(name)) {
       throw new Error(`${contract.operationId} serializes ${name}, which is no query parameter`);
     }
+  }
+  const successBody = contract.success.body;
+  if (successBody.kind === 'bytes' && !isMediaRange(successBody.mediaTypeRange)) {
+    throw new Error(
+      `${contract.operationId} declares ${successBody.mediaTypeRange}, which is no media range`,
+    );
   }
   for (const status of Object.keys(contract.refusals).map(Number)) {
     if (!Number.isInteger(status) || status < 400 || status > 599) {

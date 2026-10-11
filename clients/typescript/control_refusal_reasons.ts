@@ -37,6 +37,7 @@ export const CONTROL_REFUSAL_REASONS = [
   'chat_action_not_found',
   'chat_not_found',
   'chat_not_public',
+  'content_type_invalid',
   'creator_account_not_found',
   'custom_title_contains_emoji',
   'custom_title_too_long',

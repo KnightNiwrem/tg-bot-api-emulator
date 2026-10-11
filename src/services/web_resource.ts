@@ -1,3 +1,4 @@
+import { readContentTypeMediaType } from '../../http_grammar/media_type.ts';
 import { formatHttpUrl, parseHttpUrl } from '../types/http_url.ts';
 import type { WebResource } from '../types/web_resource.ts';
 
@@ -25,7 +26,10 @@ export type WebResourceRegistration = Omit<WebResource, 'url'> & {
 export type RegisterWebResourceResult =
   | { readonly registered: true; readonly resource: WebResource }
   | { readonly registered: false; readonly reason: 'url_invalid'; readonly urlError: string }
-  | { readonly registered: false; readonly reason: 'status_invalid' | 'header_invalid' };
+  | {
+    readonly registered: false;
+    readonly reason: 'status_invalid' | 'header_invalid' | 'content_type_invalid';
+  };
 
 /**
  * Serves a session's emulated web: the responses tests register for URLs, from which Telegram
@@ -63,6 +67,13 @@ export class WebResourceService {
     const resource = { ...registration, url };
     if (createResponseHeaders(resource) === undefined) {
       return { registered: false, reason: 'header_invalid' };
+    }
+    // Every file the emulator stores keeps a media type, so a resource names a well-formed one.
+    if (
+      resource.contentType !== undefined &&
+      readContentTypeMediaType(resource.contentType) === undefined
+    ) {
+      return { registered: false, reason: 'content_type_invalid' };
     }
     this.#webResources.set(requestUrl, resource);
     return { registered: true, resource };

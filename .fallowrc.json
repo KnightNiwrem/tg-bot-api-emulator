@@ -391,6 +391,12 @@
         ]
       },
       {
+        "name": "http-grammar",
+        "patterns": [
+          "http_grammar/**/*.ts"
+        ]
+      },
+      {
         "name": "control-contracts",
         "patterns": [
           "control_contracts/**/*.ts"
@@ -665,6 +671,7 @@
         "from": "domain-services",
         "allow": [
           "domain",
+          "http-grammar",
           "text-entity-detection",
           "media-inspection"
         ],
@@ -832,14 +839,21 @@
         ]
       },
       {
-        "from": "control-contracts",
+        "from": "http-grammar",
         "allow": []
+      },
+      {
+        "from": "control-contracts",
+        "allow": [
+          "http-grammar"
+        ]
       },
       {
         "from": "transport",
         "allow": [
           "domain",
           "control-contracts",
+          "http-grammar",
           "transport"
         ],
         "allowTypeOnly": [
@@ -849,7 +863,8 @@
       {
         "from": "typescript-client",
         "allow": [
-          "control-contracts"
+          "control-contracts",
+          "http-grammar"
         ]
       },
       {

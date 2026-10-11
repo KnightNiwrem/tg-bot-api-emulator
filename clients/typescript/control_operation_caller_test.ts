@@ -2,12 +2,13 @@
  * The contract-driven route registration and typed caller, exercised together on contracts of
  * operations that no control route has yet: a query, bytes, an empty success, and an optional body.
  */
-import { assertEquals } from '@std/assert';
+import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
 import { controlRefusalSchema } from '../../control_contracts/control_errors.ts';
+import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
 import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
 import {
   callBytesOperation,
@@ -15,7 +16,7 @@ import {
   callJsonOperation,
   type ControlOperationTransport,
 } from './control_operation_caller.ts';
-import { EmulationControlError } from './emulation_client_error.ts';
+import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
 
 const readNoteContract = defineControlOperation({
   operationId: 'readNote',
@@ -38,7 +39,7 @@ const downloadNoteContract = defineControlOperation({
   method: 'GET',
   path: '/notes/{noteId}/content',
   params: z.strictObject({ noteId: z.string() }),
-  success: { status: 200, body: { kind: 'bytes' } },
+  success: { status: 200, body: { kind: 'bytes', mediaTypeRange: 'text/*' } },
   refusals: {},
 });
 
@@ -159,6 +160,166 @@ Deno.test('A bytes success is read as bytes, served in its media type', async ()
   assertEquals(response.headers.get('Content-Type'), 'text/plain', 'Expected its media type');
 });
 
+Deno.test('Bytes outside the media type range their contract declares are refused', async () => {
+  const servedTypes: (string | null)[] = ['image/png', null, 'TEXT/Plain; charset=utf-8'];
+  const transport: ControlOperationTransport = {
+    serverRoot: new URL('http://notes.example/'),
+    fetch: () => {
+      const contentType = servedTypes.shift() ?? null;
+      const response = new Response(new TextEncoder().encode('Note'), { status: 200 });
+      if (contentType === null) response.headers.delete('Content-Type');
+      else response.headers.set('Content-Type', contentType);
+      return Promise.resolve(response);
+    },
+  };
+  const download = () =>
+    callBytesOperation(transport, downloadNoteContract, { params: { noteId: '1' } });
+
+  await assertRejects(download, EmulationClientError, 'not text/*');
+  await assertRejects(download, EmulationClientError, 'no media type');
+  const accepted = new TextDecoder().decode(await download());
+
+  assertEquals(accepted, 'Note', 'Expected text with parameters, in any letter case, accepted');
+});
+
+Deno.test('Bytes of the wrong media type are refused however cancelling their body ends', async () => {
+  const unsettledCancel = () => new Promise<void>(() => {});
+  const rejectedCancel = () => Promise.reject(new Error('The transport failed to cancel'));
+  for (const cancel of [unsettledCancel, rejectedCancel]) {
+    const transport: ControlOperationTransport = {
+      serverRoot: new URL('http://notes.example/'),
+      fetch: () =>
+        Promise.resolve(
+          new Response(new ReadableStream({ cancel }), {
+            status: 200,
+            headers: { 'Content-Type': 'image/png' },
+          }),
+        ),
+    };
+
+    await assertRejects(
+      () => callBytesOperation(transport, downloadNoteContract, { params: { noteId: '1' } }),
+      EmulationClientError,
+      'not text/*',
+    );
+  }
+});
+
+Deno.test('A wildcard Content-Type is no media type within a range', async () => {
+  const transport: ControlOperationTransport = {
+    serverRoot: new URL('http://notes.example/'),
+    fetch: () =>
+      Promise.resolve(
+        new Response('Note', { status: 200, headers: { 'Content-Type': 'text/*' } }),
+      ),
+  };
+  const routes = new Hono();
+  registerControlOperation(routes, '', downloadNoteContract, () => ({
+    status: 200,
+    body: new Uint8Array([1]),
+    mediaType: 'text/*',
+  }));
+  const app = new Hono().route('/', routes);
+
+  await assertRejects(
+    () => callBytesOperation(transport, downloadNoteContract, { params: { noteId: '1' } }),
+    EmulationClientError,
+    'not text/*',
+  );
+  const response = await app.request('http://notes.example/notes/1/content');
+  assertEquals(response.status, 500, 'Expected the route to fail rather than answer a range');
+});
+
+Deno.test('A bytes contract declares a media range of RFC 9110 form', () => {
+  for (
+    const mediaTypeRange of ['text', '*/plain', 'text/', '/plain', 'text/plain/x', '', 'te xt/*']
+  ) {
+    assertThrows(
+      () =>
+        defineControlOperation({
+          ...downloadNoteContract,
+          success: { status: 200, body: { kind: 'bytes', mediaTypeRange } },
+        }),
+      Error,
+      'no media range',
+      `Expected ${JSON.stringify(mediaTypeRange)} refused`,
+    );
+  }
+  for (const mediaTypeRange of ['text/plain', 'text/*', '*/*', 'Image/PNG']) {
+    defineControlOperation({
+      ...downloadNoteContract,
+      success: { status: 200, body: { kind: 'bytes', mediaTypeRange } },
+    });
+  }
+});
+
+Deno.test('A route answering bytes outside its media type range is a server fault', async () => {
+  const routes = new Hono();
+  registerControlOperation(routes, '', downloadNoteContract, () => ({
+    status: 200,
+    body: new Uint8Array([1]),
+    mediaType: 'image/png',
+  }));
+  const app = new Hono().route('/', routes);
+
+  const response = await app.request('http://notes.example/notes/1/content');
+
+  assertEquals(response.status, 500, 'Expected the route to fail rather than answer an image');
+});
+
+Deno.test('A Content-Type is within a range when it is well formed and its media type matches', () => {
+  const cases: readonly (readonly [contentType: string, range: string, within: boolean])[] = [
+    // Ranges.
+    ['image/png', '*/*', true],
+    ['image/png', 'image/*', true],
+    ['image/png', 'image/png', true],
+    ['image/png', 'image/jpeg', false],
+    ['image/png', 'text/*', false],
+    // Letter case, of the media type and of the range.
+    ['Image/PNG', 'image/png', true],
+    ['image/png', 'IMAGE/*', true],
+    // Wildcards, which only a range may hold.
+    ['text/*', 'text/*', false],
+    ['*/*', '*/*', false],
+    ['*/plain', '*/*', false],
+    ['text/plain', '*/plain', false],
+    // Malformed media types.
+    ['image', '*/*', false],
+    ['image/png/x', '*/*', false],
+    ['', '*/*', false],
+    [' text/plain', '*/*', false],
+    ['text /plain', '*/*', false],
+    ['text/plain, text/html', '*/*', false],
+    // Parameters, of any case, around semicolons with optional spaces and tabs.
+    ['text/plain;charset=utf-8', 'text/plain', true],
+    ['text/plain ; Charset=UTF-8', 'text/plain', true],
+    ['text/plain;\tcharset=utf-8;\tformat=flowed', 'text/plain', true],
+    // Empty parameters, which the grammar allows.
+    ['text/plain;', 'text/plain', true],
+    ['text/plain; ;charset=utf-8;;', 'text/plain', true],
+    // A name without a value, a value without a name, or text that is no parameter.
+    ['text/plain; charset', 'text/plain', false],
+    ['text/plain; charset=', 'text/plain', false],
+    ['text/plain; =utf-8', 'text/plain', false],
+    ['text/plain; garbage', 'text/plain', false],
+    // Whitespace around the equals sign.
+    ['text/plain; charset =utf-8', 'text/plain', false],
+    ['text/plain; charset= utf-8', 'text/plain', false],
+    // Quoted values, which may hold a semicolon, spaces and escaped quotes.
+    ['text/plain; name="a;b c"', 'text/plain', true],
+    ['text/plain; name="say \\"hi\\""', 'text/plain', true],
+    ['text/plain; name=""', 'text/plain', true],
+    ['text/plain; name="unterminated', 'text/plain', false],
+    ['text/plain; name="a"b', 'text/plain', false],
+    ['text/plain; name=a b', 'text/plain', false],
+  ];
+  assertEquals(
+    cases.map(([contentType, range]) => isContentTypeInRange(contentType, range)),
+    cases.map(([, , within]) => within),
+    'Expected each Content-Type judged against its range',
+  );
+});
+
 Deno.test('An optional body may be left out, and its defaults still apply', async () => {
   const { transport, writes } = createNoteServer();
 
@@ -205,7 +366,7 @@ const echoBytesContract = defineControlOperation({
   method: 'POST',
   path: '/echoes/{echoId}/bytes',
   ...echoRequestParts,
-  success: { status: 200, body: { kind: 'bytes' } },
+  success: { status: 200, body: { kind: 'bytes', mediaTypeRange: 'text/*' } },
   refusals: {},
 });
 

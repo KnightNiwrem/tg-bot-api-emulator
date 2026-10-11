@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
 import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
 import { controlErrorBodySchema } from './schemas.ts';
 import type { ControlErrorBody, ControlRequestIssue, RequestDetails } from './types.ts';
@@ -19,9 +20,11 @@ interface JsonRequest<Schema extends z.ZodType> extends SerializableRequest, Abo
   readonly responseSchema: Schema;
 }
 
-/** A request, optionally with a JSON body, whose response is read as it is, rather than as JSON. */
-interface RawResponseRequest extends SerializableRequest {
+/** A request, optionally with a JSON body, whose success response is bytes, such as a file's. */
+interface BytesRequest extends SerializableRequest {
   readonly expectedStatus: number;
+  /** The media type or range that the success response's `Content-Type` must name. */
+  readonly mediaTypeRange: string;
 }
 
 interface SerializableRequest extends RequestDetails {
@@ -65,15 +68,29 @@ export async function requestJson<Schema extends z.ZodType>(
   return parsedResponse.data;
 }
 
-/** Requests binary content, such as a file's, and returns it as bytes. */
+/**
+ * Requests binary content, such as a file's, and returns it as bytes, once its `Content-Type`
+ * names a media type within the request's range.
+ */
 export async function requestBytes(
   fetchImplementation: typeof globalThis.fetch,
-  request: RawResponseRequest,
+  request: BytesRequest,
 ): Promise<Uint8Array> {
   const response = await sendRequest(fetchImplementation, request);
   if (response.status !== request.expectedStatus) {
     const responseBody = await readResponseBody(response, request);
     assertResponseStatus(response, responseBody, request);
+  }
+  const contentType = response.headers.get('Content-Type');
+  if (contentType === null || !isContentTypeInRange(contentType, request.mediaTypeRange)) {
+    // The body is left unread; cancelling it releases the transport, however the cancel settles.
+    response.body?.cancel().catch(() => {});
+    throw new EmulationClientError(
+      `${formatRequest(request)} returned content of ${
+        contentType === null ? 'no media type' : `the media type ${contentType}`
+      }, not ${request.mediaTypeRange}`,
+      { ...request, status: response.status },
+    );
   }
   try {
     return new Uint8Array(await response.arrayBuffer());
@@ -251,7 +268,7 @@ function createAbandonedRequestError(
 function assertResponseStatus(
   response: Response,
   responseBody: string,
-  request: JsonRequest<z.ZodType> | RawResponseRequest,
+  request: JsonRequest<z.ZodType> | BytesRequest | EmptyResponseRequest,
 ): void {
   if (response.status === request.expectedStatus) {
     return;
