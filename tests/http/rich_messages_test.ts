@@ -385,6 +385,69 @@ Deno.test('editMessageText turns text into a rich message and back', async () =>
   }
 });
 
+Deno.test('bots send and edit rich messages without blocks', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
+  await sendText('/start');
+  const chatId = createdAccount.account.id;
+  const readAccountMessage = async (messageId: unknown) => {
+    const response = await api.request(
+      `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
+    );
+    const { messages } = await response.json() as { messages: Array<Record<string, unknown>> };
+    return messages.find((message) => message.message_id === messageId);
+  };
+
+  const sent = await callBotApi(api, `${botApiPath}/sendRichMessage`, {
+    chat_id: chatId,
+    rich_message: { blocks: [] },
+  });
+  const sentMessage = botApiResult(sent.body);
+  if (sent.status !== 200 || sentMessage === undefined || 'text' in sentMessage) {
+    throw new Error(
+      `Expected a rich message without blocks, received ${JSON.stringify(sent.body)}`,
+    );
+  }
+  assertEqualsInFieldOrder(
+    sentMessage.rich_message,
+    { blocks: [] },
+    'Expected the sent message without blocks',
+  );
+  assertEqualsInFieldOrder(
+    await readAccountMessage(sentMessage.message_id),
+    sentMessage,
+    'Expected the account to see the message without blocks',
+  );
+
+  const draft = await callBotApi(api, `${botApiPath}/sendMessage`, {
+    chat_id: chatId,
+    text: 'Draft',
+  });
+  const edited = await callBotApi(api, `${botApiPath}/editMessageText`, {
+    chat_id: chatId,
+    message_id: botApiResult(draft.body)?.message_id,
+    rich_message: { blocks: [] },
+  });
+  const editedMessage = botApiResult(edited.body);
+  if (edited.status !== 200 || editedMessage === undefined || 'text' in editedMessage) {
+    throw new Error(
+      `Expected the text to become a message without blocks, received ${
+        JSON.stringify(edited.body)
+      }`,
+    );
+  }
+  assertEqualsInFieldOrder(
+    editedMessage.rich_message,
+    { blocks: [] },
+    'Expected the edited message without blocks',
+  );
+  assertEqualsInFieldOrder(
+    await readAccountMessage(editedMessage.message_id),
+    editedMessage,
+    'Expected the account to see the edited message without blocks',
+  );
+});
+
 Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => {
   await using fixture = await createPrivateConversationFixture();
   const { api, botApiPath, createdAccount, sendText } = fixture;
@@ -401,7 +464,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       'Bad Request: rich messages written in HTML or Markdown are not supported',
     ],
     [{}, 'Bad Request: rich message must be non-empty'],
-    [{ blocks: [] }, 'Bad Request: rich message must be non-empty'],
+    [{ blocks: null }, 'Bad Request: invalid sendRichMessage parameters'],
     [{ blocks: [1] }, 'Bad Request: object expected as InputRichMessageBlock'],
     [
       { blocks: [{ type: 'list', items: [1] }] },

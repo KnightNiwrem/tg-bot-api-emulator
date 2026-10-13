@@ -136,8 +136,7 @@ unless the result's `input_message_content` replaces them.
 - **Documented limits without Telegram's descriptions.** Telegram's servers check what the Bot API
   documents but TDLib does not: a row has at most 8 buttons, only a callback button has the `link`
   style, a button's text holds only custom emoji and dates, and only drafts hold `thinking` blocks.
-  The emulator refuses such messages with descriptions of its own, as it refuses a message without
-  blocks.
+  The emulator refuses such messages with descriptions of its own.
 - **Blocks read before the chat.** TDLib checks the blocks when it sends the message, after the
   server looks at the chat. The emulator reads the blocks and their files first, so a request that
   also names an unknown chat fails for its blocks.
@@ -164,7 +163,9 @@ apart from detected entities. Their detection rules for rich text are not public
 applies the [rules of message text](text-formatting.md#detected-entities) to each plain text on its
 own, outside code, preformatted blocks, links, text mentions, dates and buttons, and detects no
 phone numbers. Telegram may also limit the length of rich text, the number of blocks, or map
-dimensions it fills in, which the emulator does not.
+dimensions it fills in, which the emulator does not. Neither the Bot API nor TDLib requires a block,
+so the emulator sends and edits a message whose `blocks` are empty, shown as `{"blocks":[]}`;
+whether Telegram's servers deliver such a message is not known.
 
 ## Local evidence
 

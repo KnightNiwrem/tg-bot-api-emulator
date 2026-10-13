@@ -1581,15 +1581,6 @@ export const BOT_API_ERRORS = {
     'Bad Request: rich message must be non-empty',
     botApiServerSource('telegram-bot-api/Client.cpp#L12482-L12484'),
   ),
-  /** A rich message whose `blocks` are empty, which the emulator words as one without a source. */
-  richMessageBlocksEmpty: fixedBotApiError(
-    400,
-    'Bad Request: rich message must be non-empty',
-    emulatorInference(
-      "TDLib accepts a rich message without blocks and Telegram's servers decide whether it can " +
-        "be sent; the emulator refuses it with TDLib's description of a message without a source",
-    ),
-  ),
   richMessageMarkupUnsupported: fixedBotApiError(
     400,
     'Bad Request: rich messages written in HTML or Markdown are not supported',

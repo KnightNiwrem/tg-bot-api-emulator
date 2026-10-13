@@ -4,14 +4,12 @@ description: >-
   A rich message a bot sends, described as blocks. Telegram also reads a message written in
   HTML or Markdown with `html` or `markdown`, which its servers parse by rules the open-source
   code does not contain; the emulator refuses them (`Bad Request: rich messages written in HTML
-  or Markdown are not supported`), along with their `media`. A message must have at least one
-  block, which Telegram's servers decide for an empty one.
+  or Markdown are not supported`), along with their `media`. `blocks` may be empty.
 required:
   - blocks
 properties:
   blocks:
     type: array
-    minItems: 1
     items:
       $ref: ./InputRichBlock.yaml
   is_rtl:
