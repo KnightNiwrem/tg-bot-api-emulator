@@ -1,0 +1,7 @@
+type: object
+additionalProperties: false
+required:
+  - checkout_attempt
+properties:
+  checkout_attempt:
+    $ref: ./CheckoutAttempt.yaml

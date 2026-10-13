@@ -1,4 +1,5 @@
 import type { CallbackQuery } from './callback_query.ts';
+import type { CheckoutAttempt } from './checkout.ts';
 import type { ChatInviteLink } from './chat_invite_link.ts';
 import type { ChatJoinRequest } from './chat_join_request.ts';
 import type { ChatMemberStatus } from './chat_membership.ts';
@@ -27,6 +28,16 @@ export interface CallbackQueryCreatedEvent {
   readonly callbackQuery: CallbackQuery;
   /** The message carrying the pressed button, as it was when the button was pressed. */
   readonly message: ChatMessage;
+}
+
+/**
+ * An account confirmed the checkout of a bot's invoice, which started a pending attempt that the
+ * bot receives as a pre-checkout query.
+ */
+export interface PreCheckoutQueryCreatedEvent {
+  readonly type: 'pre_checkout_query_created';
+  /** The attempt as it started: pending, with the invoice as the payer confirmed it. */
+  readonly attempt: CheckoutAttempt;
 }
 
 /** An account answered a poll, changed its answer, or retracted it. */
@@ -133,6 +144,7 @@ export type ChatDomainEvent =
   | MessageCreatedEvent
   | MessageEditedEvent
   | CallbackQueryCreatedEvent
+  | PreCheckoutQueryCreatedEvent
   | PollAnswerChangedEvent
   | PollClosedEvent
   | InlineQueryCreatedEvent

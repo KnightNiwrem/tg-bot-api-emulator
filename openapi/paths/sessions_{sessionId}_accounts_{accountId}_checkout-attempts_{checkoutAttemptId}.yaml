@@ -1,0 +1,33 @@
+description: One checkout attempt an account made.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/CheckoutAttemptId.yaml
+get:
+  operationId: getCheckoutAttempt
+  summary: Return a checkout attempt with the bot's answer once given
+  responses:
+    '200':
+      description: The checkout attempt, in whatever state it is.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CheckoutAttemptResponse.yaml
+    '400':
+      description: The account path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
+    '404':
+      description: The session does not exist, or the account made no such checkout attempt.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_not_found
+                      - session_not_found

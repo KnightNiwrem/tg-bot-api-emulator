@@ -64,11 +64,17 @@ export const telegramUsernameSchema = z.string()
   .max(MAX_TELEGRAM_USERNAME_LENGTH)
   .regex(TELEGRAM_USERNAME_PATTERN);
 
+/** An account's private chat with a bot, by the bot's ID. */
+export const privateMessageTargetSchema = z.strictObject({
+  type: z.literal('private'),
+  botId: telegramUserIdSchema,
+});
+
 /**
  * The chat an account writes in: its private chat with a bot, or a supergroup it is a member of.
  */
 export const messageTargetSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('private'), botId: telegramUserIdSchema }),
+  privateMessageTargetSchema,
   z.strictObject({ type: z.literal('supergroup'), chatId: supergroupChatIdSchema }),
 ]);
 

@@ -1,0 +1,8 @@
+name: checkoutAttemptId
+in: path
+required: true
+description: >-
+  Identifier of a checkout attempt the addressed account made, which is the identifier of the
+  bot's pre-checkout query.
+schema:
+  type: string

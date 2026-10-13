@@ -14,6 +14,7 @@ import type { BotUpdateConsumerService } from '../services/update_consumers/bot_
 import type { CallbackQueryService } from '../services/domain/callback_query.ts';
 import type { ChatActionService } from '../services/domain/chat_action.ts';
 import type { ChatAdmissionService } from '../services/domain/chat_admission.ts';
+import type { CheckoutService } from '../services/domain/checkout.ts';
 import type { InlineQueryService } from '../services/domain/inline_query.ts';
 import type { MediaFileService } from '../services/domain/media_file.ts';
 import type { MessageDraftService } from '../services/domain/message_draft.ts';
@@ -61,6 +62,8 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly replyInterfaces: ReplyInterfaceService;
   readonly botBlocking: BotBlockingService;
   readonly callbackQueries: CallbackQueryService;
+  /** Checkouts of bots' invoices, with the pre-checkout queries bots answer. */
+  readonly checkouts: CheckoutService;
   readonly polls: PollService;
   readonly inlineQueries: InlineQueryService;
   readonly botCommands: BotCommandService;

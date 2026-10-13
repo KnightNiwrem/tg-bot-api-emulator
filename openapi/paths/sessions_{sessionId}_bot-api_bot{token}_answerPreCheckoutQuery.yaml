@@ -1,0 +1,57 @@
+description: >-
+  Telegram Bot API method for answering a pre-checkout query the bot received for its invoice:
+  approving the account's checkout, or refusing it with an explanation the account's app shows.
+  The emulator accepts one answer per pending query and reads only the attempt, which keeps the
+  invoice as the account confirmed it, so a later deletion of the invoice or a block of the bot
+  does not change the answer. An approval creates no payment. The account reads the answer from
+  its checkout attempt.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: answerPreCheckoutQuery
+  summary: Approve or refuse a checkout of the authenticated virtual bot's invoice
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/AnswerPreCheckoutQueryRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/AnswerPreCheckoutQueryRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/AnswerPreCheckoutQueryRequest.yaml
+  responses:
+    '200':
+      description: The answer was recorded.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters; or a refusal has no
+        `error_message` (`Bad Request: parameter "error_message" is required`); or the query does
+        not exist, was sent to another bot, is already answered, or its attempt was abandoned or
+        expired (`Bad Request: query is too old and response timeout expired or query ID is
+        invalid`, an emulator policy worded as Telegram words an invalid query ID).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

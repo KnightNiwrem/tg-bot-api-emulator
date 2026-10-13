@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { PreCheckoutQueryAnswer } from '../../../../types/checkout.ts';
 import {
   isCurrencyAmountInRange,
   type LabeledPrice,
@@ -37,8 +38,11 @@ import {
   type SendRequestOptions,
 } from '../send_options.ts';
 
-/** What the payment methods use: the sender of the bot's messages, which sends its invoices. */
-type PaymentContext = BotApiFamilyContext<'botMessageSending'>;
+/**
+ * What the payment methods use: the sender of the bot's messages, which sends its invoices, and the
+ * checkouts, whose pre-checkout queries the bot answers.
+ */
+type PaymentContext = BotApiFamilyContext<'botMessageSending' | 'checkouts'>;
 
 // As for sendMessage, topics, business connections, paid broadcasts, and suggested posts are not
 // supported. The fields that the Bot API documents as ignored for payments in Telegram Stars, which
@@ -73,6 +77,16 @@ const sendInvoiceParametersSchema = z.strictObject({
 
 type SendInvoiceParameters = z.output<typeof sendInvoiceParametersSchema>;
 
+// As the official server's `process_answer_pre_checkout_query_query` reads them, `ok` is false
+// unless given, and only a refusal reads `error_message`.
+const answerPreCheckoutQueryParametersSchema = z.strictObject({
+  pre_checkout_query_id: z.string().default(''),
+  ok: booleanParameter().default(false),
+  error_message: z.string().default(''),
+});
+
+type AnswerPreCheckoutQueryParameters = z.output<typeof answerPreCheckoutQueryParametersSchema>;
+
 /** The invoice and tips `sendInvoice` read, before its send options. */
 interface InvoiceReading {
   readonly parameters: SendInvoiceParameters;
@@ -83,7 +97,8 @@ interface InvoiceReading {
 
 /**
  * The payment methods, each executed as a command in its call's transaction. `sendInvoice` sends
- * one-off invoices in Telegram Stars to the bot's private chats.
+ * one-off invoices in Telegram Stars to the bot's private chats, and `answerPreCheckoutQuery`
+ * approves or refuses an account's checkout of one.
  */
 export const PAYMENT_METHODS: readonly BotApiMethod[] = [
   // As the official server's `get_input_message_invoice` reads them, before the chat: the title,
@@ -112,7 +127,47 @@ export const PAYMENT_METHODS: readonly BotApiMethod[] = [
         payload: parameters.payload,
       }, options),
   }),
+  commandMethodOfSteps({
+    name: 'answerPreCheckoutQuery',
+    recordsActivity: true,
+    parameters: answerPreCheckoutQueryParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters).andThen(readPreCheckoutQueryAnswer),
+    execute: (context: PaymentContext, { preCheckoutQueryId, answer }) => {
+      const result = context.session.checkouts.answerPreCheckoutQuery({
+        fromBotId: context.bot.id,
+        preCheckoutQueryId,
+        answer,
+      });
+      return result.answered
+        ? botApiResult(true)
+        : presentFixedBotApiError(BOT_API_ERRORS.preCheckoutQueryNotAnswerable);
+    },
+  }),
 ];
+
+/**
+ * The step that reads the bot's answer to a pre-checkout query: an approval, whose
+ * `error_message` the official server never reads, or a refusal, which requires one.
+ */
+function readPreCheckoutQueryAnswer(
+  parameters: AnswerPreCheckoutQueryParameters,
+): BotApiStepResult<{
+  readonly preCheckoutQueryId: string;
+  readonly answer: PreCheckoutQueryAnswer;
+}> {
+  const preCheckoutQueryId = parameters.pre_checkout_query_id;
+  if (parameters.ok) {
+    return proceedWith({ preCheckoutQueryId, answer: { status: 'approved' } });
+  }
+  return parameters.error_message.length === 0
+    ? answerWith(presentBotApiError(BOT_API_ERRORS.requiredParameterMissing, {
+      parameterName: 'error_message',
+    }))
+    : proceedWith({
+      preCheckoutQueryId,
+      answer: { status: 'refused', errorMessage: parameters.error_message },
+    });
+}
 
 /**
  * The step that refuses an invoice without a title, a description, or a payload, which the official

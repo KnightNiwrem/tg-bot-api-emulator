@@ -119,6 +119,12 @@ import {
   pressCallbackButtonContract,
 } from '../src/api/contracts/callback_queries.ts';
 import {
+  abandonCheckoutAttemptContract,
+  expireCheckoutAttemptContract,
+  getCheckoutAttemptContract,
+  submitCheckoutContract,
+} from '../src/api/contracts/checkouts.ts';
+import {
   expirePrivateMessageDraftContract,
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
@@ -220,6 +226,10 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   sendAccountMediaGroupContract,
   pressReplyKeyboardButtonContract,
   chooseInlineQueryResultContract,
+  submitCheckoutContract,
+  getCheckoutAttemptContract,
+  abandonCheckoutAttemptContract,
+  expireCheckoutAttemptContract,
 ];
 
 const document = readOpenApiDocument();

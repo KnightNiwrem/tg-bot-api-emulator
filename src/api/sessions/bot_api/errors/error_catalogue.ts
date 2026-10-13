@@ -785,6 +785,20 @@ export const BOT_API_ERRORS = {
     'Bad Request: forwarding invoice messages is not supported',
     emulatorInference('The emulator does not forward invoices'),
   ),
+  /**
+   * An answer to a pre-checkout query that does not exist, was sent to another bot, or is no
+   * longer pending: already answered, abandoned or expired.
+   */
+  preCheckoutQueryNotAnswerable: fixedBotApiError(
+    400,
+    'Bad Request: query is too old and response timeout expired or query ID is invalid',
+    emulatorInference(
+      "The official server words Telegram's QUERY_ID_INVALID so, but which states of a " +
+        'pre-checkout query Telegram refuses, and with which error, is not established; the ' +
+        'emulator answers one accepted answer per pending query and refuses every other answer ' +
+        'with the wording of an invalid query ID',
+    ),
+  ),
 
   // Edits of sent messages.
   messageIdentifierNotSpecified: fixedBotApiError(

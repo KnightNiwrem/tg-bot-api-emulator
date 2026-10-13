@@ -1,0 +1,18 @@
+type: object
+additionalProperties: false
+required:
+  - pre_checkout_query_id
+properties:
+  pre_checkout_query_id:
+    type: string
+  ok:
+    type: boolean
+    default: false
+    description: >-
+      Approves the checkout when true, and refuses it otherwise. The Bot API documents `ok` as
+      required; as the official server reads it, an omitted `ok` refuses.
+  error_message:
+    type: string
+    description: >-
+      Required, nonempty, for a refusal: the explanation the account's app shows. An approval
+      ignores it.

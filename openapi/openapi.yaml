@@ -197,6 +197,14 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_inline-queries_{inlineQueryId}.yaml
   /sessions/{sessionId}/accounts/{accountId}/inline-queries/{inlineQueryId}/chosen-results:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_inline-queries_{inlineQueryId}_chosen-results.yaml
+  /sessions/{sessionId}/accounts/{accountId}/checkout-attempts:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts.yaml
+  /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts_{checkoutAttemptId}.yaml
+  /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}/abandonment:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts_{checkoutAttemptId}_abandonment.yaml
+  /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}/expiry:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts_{checkoutAttemptId}_expiry.yaml
   /sessions/{sessionId}/bot-api/bot{token}/getMe:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_getMe.yaml
   /sessions/{sessionId}/bot-api/bot{token}/getUpdates:
@@ -245,6 +253,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendLocation.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendInvoice:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendInvoice.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/answerPreCheckoutQuery:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_answerPreCheckoutQuery.yaml
   /sessions/{sessionId}/bot-api/bot{token}/forwardMessage:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_forwardMessage.yaml
   /sessions/{sessionId}/bot-api/bot{token}/copyMessage:

@@ -43,10 +43,29 @@ Deno.test('an inline query whose projection fails is not sent', async () => {
   assertEquals(fixture.sendInlineQuery().id, '1');
 });
 
+Deno.test('a checkout whose projection fails starts no attempt', async () => {
+  const fixture = await createQueryFixture();
+  const { session } = fixture;
+  const views = session.botMessageViews;
+  const viewPreCheckoutQuery = views.viewPreCheckoutQueryForBot.bind(views);
+  views.viewPreCheckoutQueryForBot = () => {
+    throw new Error(FAILED_VIEW_MESSAGE);
+  };
+  const stateBefore = fixture.readState();
+
+  assertThrows(() => fixture.submitCheckout(), Error, FAILED_VIEW_MESSAGE);
+  views.viewPreCheckoutQueryForBot = viewPreCheckoutQuery;
+
+  assertEquals(fixture.readState(), stateBefore);
+  // The invoice has no active attempt left behind, and the query ID was not used.
+  assertEquals(fixture.submitCheckout().id, '1');
+});
+
 Deno.test('an answer whose record fails leaves its query unanswered', async () => {
   const fixture = await createQueryFixture();
   const callbackQuery = fixture.pressButton();
   const inlineQuery = fixture.sendInlineQuery();
+  const checkoutAttempt = fixture.submitCheckout();
   const readAnswers = () => ({
     callbackQuery: fixture.session.callbackQueries.getAccountCallbackQuery({
       accountId: fixture.adaId,
@@ -56,8 +75,10 @@ Deno.test('an answer whose record fails leaves its query unanswered', async () =
       accountId: fixture.adaId,
       inlineQueryId: inlineQuery.id,
     })?.state,
+    checkoutAttempt: fixture.readCheckoutAttempt(checkoutAttempt.id)?.state,
   });
   const answers = [
+    ['answerPreCheckoutQuery', { pre_checkout_query_id: checkoutAttempt.id, ok: 'true' }],
     ['answerCallbackQuery', { callback_query_id: callbackQuery.id, text: 'Done' }],
     ['answerInlineQuery', {
       inline_query_id: inlineQuery.id,
@@ -121,6 +142,49 @@ Deno.test('an answer prepared before its query was answered is not recorded agai
   });
 });
 
+Deno.test('a pre-checkout answer prepared before its query was answered is not recorded again', async () => {
+  const fixture = await createQueryFixture();
+  const attempt = fixture.submitCheckout();
+  const reply = fixture.holdWebhookReply(fixture.alpha, {
+    method: 'answerPreCheckoutQuery',
+    pre_checkout_query_id: attempt.id,
+    ok: 'false',
+    error_message: 'Late',
+  });
+
+  // Alpha approves the checkout over HTTP while its webhook reply is still being read.
+  await fixture.callMethodExpectingResult(fixture.alpha, 'answerPreCheckoutQuery', {
+    pre_checkout_query_id: attempt.id,
+    ok: 'true',
+  });
+  await reply.release();
+
+  assertEquals(fixture.readCheckoutAttempt(attempt.id)?.state, { status: 'approved' });
+  assertEquals(await fixture.lastRecordedAnswer(), {
+    ok: false,
+    error_code: 400,
+    description:
+      'Bad Request: query is too old and response timeout expired or query ID is invalid',
+  });
+});
+
+Deno.test('a pre-checkout answer prepared before its session ended records nothing', async () => {
+  const fixture = await createQueryFixture();
+  const attempt = fixture.submitCheckout();
+  const reply = fixture.holdWebhookReply(fixture.alpha, {
+    method: 'answerPreCheckoutQuery',
+    pre_checkout_query_id: attempt.id,
+    ok: 'true',
+  });
+  const stateBefore = fixture.readState();
+
+  fixture.session.end();
+  await reply.release();
+
+  assertEquals(fixture.readState(), stateBefore);
+  assertEquals(fixture.readCheckoutAttempt(attempt.id)?.state, { status: 'pending' });
+});
+
 Deno.test('an answer prepared before its session ended records nothing', async () => {
   const fixture = await createQueryFixture();
   const callbackQuery = fixture.pressButton();
@@ -144,7 +208,8 @@ Deno.test('an answer prepared before its session ended records nothing', async (
 });
 
 /**
- * Ada's private chat with Alpha, an inline bot, where Alpha sent a message with a callback button.
+ * Ada's private chat with Alpha, an inline bot, where Alpha sent a message with a callback button
+ * and an invoice.
  */
 async function createQueryFixture() {
   const harness = createBotApiCommandSession('query-answer-transactions');
@@ -179,6 +244,23 @@ async function createQueryFixture() {
     throw new Error(`Expected a message, received ${JSON.stringify(keyboardMessage)}`);
   }
   const keyboardMessageId = keyboardMessage.message_id;
+  const invoiceMessage = await harness.callMethodExpectingResult(alpha, 'sendInvoice', {
+    chat_id: String(adaId),
+    title: 'Premium access',
+    description: 'Unlocks every premium chapter',
+    payload: 'order-42',
+    currency: 'XTR',
+    prices: JSON.stringify([{ label: 'Access', amount: 50 }]),
+  });
+  if (
+    typeof invoiceMessage !== 'object' || invoiceMessage === null ||
+    !('message_id' in invoiceMessage) || typeof invoiceMessage.message_id !== 'number'
+  ) {
+    throw new Error(`Expected an invoice, received ${JSON.stringify(invoiceMessage)}`);
+  }
+  const invoiceMessageId = invoiceMessage.message_id;
+  const readCheckoutAttempt = (attemptId: string) =>
+    session.checkouts.getAccountCheckoutAttempt({ accountId: adaId, attemptId });
 
   return {
     ...harness,
@@ -210,8 +292,21 @@ async function createQueryFixture() {
       }
       return sending.inlineQuery;
     },
+    submitCheckout: () => {
+      const submission = session.checkouts.submitCheckout({
+        payerAccountId: adaId,
+        botId: alpha.id,
+        invoiceChatMessageId: invoiceMessageId,
+      });
+      if (!submission.submitted) {
+        throw new Error(`Expected the checkout to be submitted: ${submission.reason}`);
+      }
+      return submission.attempt;
+    },
+    readCheckoutAttempt,
     /** The queries Alpha has been sent and the call records, through reads that record nothing. */
     readState: () => ({
+      checkoutAttempt: readCheckoutAttempt('1') ?? null,
       callbackQuery: session.callbackQueries.getAccountCallbackQuery({
         accountId: adaId,
         callbackQueryId: '1',

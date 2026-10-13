@@ -6,6 +6,7 @@ oneOf:
   - $ref: ./InlineQueryUpdate.yaml
   - $ref: ./ChosenInlineResultUpdate.yaml
   - $ref: ./CallbackQueryUpdate.yaml
+  - $ref: ./PreCheckoutQueryUpdate.yaml
   - $ref: ./PollUpdate.yaml
   - $ref: ./PollAnswerUpdate.yaml
   - $ref: ./MyChatMemberUpdate.yaml

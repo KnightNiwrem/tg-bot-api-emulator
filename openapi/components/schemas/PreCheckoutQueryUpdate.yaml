@@ -1,0 +1,11 @@
+type: object
+additionalProperties: false
+required:
+  - update_id
+  - pre_checkout_query
+properties:
+  update_id:
+    type: integer
+    minimum: 1
+  pre_checkout_query:
+    $ref: ./BotApiPreCheckoutQuery.yaml

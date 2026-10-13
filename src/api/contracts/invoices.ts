@@ -9,15 +9,24 @@ import type { ReadonlySnapshot } from './readonly_snapshot.ts';
 /** The currency code of Telegram Stars, the only currency of the emulator's invoices. */
 const TELEGRAM_STARS_CURRENCY = 'XTR';
 
+/** The most characters of an invoice's title, counted by code point, as `sendInvoice` limits it. */
+const MAX_INVOICE_TITLE_LENGTH = 32;
+
+/** The most characters of an invoice's description, counted by code point. */
+const MAX_INVOICE_DESCRIPTION_LENGTH = 255;
+
+/** The largest total TDLib's `check_currency_amount` accepts, in the currency's smallest units. */
+const MAX_INVOICE_TOTAL_AMOUNT = 999_999_999_999;
+
 /** An invoice, in the field order of the official Bot API server's `JsonInvoice`. */
 export const invoiceSchema = z.strictObject({
-  title: z.string().min(1),
-  description: z.string().min(1),
+  title: z.string().min(1).max(MAX_INVOICE_TITLE_LENGTH),
+  description: z.string().min(1).max(MAX_INVOICE_DESCRIPTION_LENGTH),
   /** Empty for an invoice without a deep-linking start parameter; never absent. */
   start_parameter: z.string(),
   currency: z.literal(TELEGRAM_STARS_CURRENCY),
   /** The total price in Telegram Stars. */
-  total_amount: z.int().positive(),
+  total_amount: z.int().min(1).max(MAX_INVOICE_TOTAL_AMOUNT),
 });
 
 /** An invoice a bot sent to its private chat with an account, payable in Telegram Stars. */

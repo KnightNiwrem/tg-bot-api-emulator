@@ -1,0 +1,54 @@
+description: >-
+  The account's abandonment of a checkout attempt, as closing the payment form does.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/CheckoutAttemptId.yaml
+post:
+  operationId: abandonCheckoutAttempt
+  summary: Abandon a pending or approved checkout attempt as a virtual account
+  description: >-
+    Ends a pending or approved attempt as abandoned. The bot receives no update, and a later
+    answer to its pre-checkout query fails. The invoice can then be checked out again, with a new
+    attempt and a fresh pre-checkout query identifier.
+  responses:
+    '200':
+      description: The attempt was abandoned; it is shown as abandonment left it.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CheckoutAttemptResponse.yaml
+    '400':
+      description: The account path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
+    '404':
+      description: The session does not exist, or the account made no such checkout attempt.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_not_found
+                      - session_not_found
+    '409':
+      description: The attempt has already ended, as refused, abandoned or expired.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_ended

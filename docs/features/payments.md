@@ -4,9 +4,10 @@
 [Keyboards and callbacks](keyboards-and-callbacks.md)
 
 Payments are partially supported. Bots send one-off invoices in Telegram Stars to their private
-chats with accounts. Accounts cannot check out yet, so no `pre_checkout_query` or
-`successful_payment` reaches a bot: checkout with `answerPreCheckoutQuery`, then payment completion,
-receipts and their inspection, are planned as the next steps of the same feature.
+chats with accounts, and accounts check them out: the bot receives a `pre_checkout_query`, which it
+approves or refuses with `answerPreCheckoutQuery`. Payment completion is not supported yet, so no
+`successful_payment` reaches a bot and no checkout is ever paid: completion, receipts and their
+inspection are planned as the next step of the same feature.
 
 ## Sending invoices
 
@@ -18,9 +19,9 @@ later checkout, nor a receipt. `start_parameter` is always present, empty for an
 without one. The bot receives no update for its own invoice, and the account's conversation history
 shows it as the bot sees it.
 
-Telegram's clients show a Pay button on an invoice sent without a keyboard. The emulator returns no
-`reply_markup` for it: the Bot API documents the button that clients show, but not whether the
-returned message carries it.
+Telegram's clients show a Pay button on an invoice sent without a keyboard, which accounts press
+through the [checkout control](#checkout). The emulator returns no `reply_markup` for it: the Bot
+API documents the button that clients show, but not whether the returned message carries it.
 
 ### What an invoice is checked for
 
@@ -101,6 +102,84 @@ Invoice links (`createInvoiceLink`), shipping answers, refunds, Star balances an
 subscriptions and paid media are other methods, which the emulator does not implement; like every
 method outside the [inventory](README.md#implemented-bot-api-methods), they return `404`.
 
+## Checkout
+
+An account checks out an invoice with
+`POST /sessions/{sessionId}/accounts/{accountId}/checkout-attempts` (`submitCheckout` in the
+TypeScript client), naming the invoice by its private chat and message ID. This is the final
+confirmation of the payment form, as [Telegram's checkout][stars-checkout] describes it; opening the
+form is not modeled. The request carries no payment details: the payer, the bot, the currency, the
+amount and the payload all come from the stored invoice.
+
+The checkout starts a **checkout attempt** with a fresh identifier, which is also the identifier of
+its pre-checkout query, and which keeps the invoice as it was confirmed. Unless its subscription
+leaves them out, the bot that sent the invoice receives a `pre_checkout_query` update through
+polling or its webhook, in the fields of the official server's
+[`JsonPreCheckoutQuery`][json-pre-checkout-query]: `id`, `from`, the payer, `currency`,
+`total_amount` and the `invoice_payload` the bot sent, unchanged. An invoice in Telegram Stars has
+no shipping option or order information, so those fields never appear. The update names no chat, and
+a webhook delivers pre-checkout queries in a queue of their own for each payer, as the official
+server does.
+
+The bot answers with `answerPreCheckoutQuery`, as the official server's
+[handler][answer-pre-checkout-query] reads it: `ok` true approves the checkout and ignores any
+`error_message`; any other answer refuses it and requires a nonempty `error_message`
+(`Bad Request: parameter "error_message" is required`), an omitted `ok` included. An accepted answer
+returns `true`, and an answer in a webhook's response works as any other. **Answering creates no
+payment**: an approved checkout still awaits completion, which the emulator does not support yet, so
+a bot must not grant access until a `successful_payment` arrives, as
+[Telegram documents][stars-checkout].
+
+The account reads its attempt, with the bot's answer, at
+`GET /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}`
+(`getCheckoutAttempt`). It shows the attempt's `id`, the invoice's chat and `message_id`, the
+`invoice` as confirmed, without the payload, and its `status`:
+
+| Status      | Meaning                                                                     |
+| ----------- | --------------------------------------------------------------------------- |
+| `pending`   | The bot has not answered yet.                                               |
+| `approved`  | The bot approved the checkout; it awaits completion.                        |
+| `refused`   | The bot refused it; `error_message` holds the explanation the account sees. |
+| `abandoned` | The account abandoned it while it was pending or approved.                  |
+| `expired`   | A test expired it while it was pending.                                     |
+
+A refused, abandoned or expired attempt has ended for good. Two controls end an attempt, and neither
+sends the bot an update, since the Bot API has none for a checkout that ends unpaid:
+
+- `POST …/checkout-attempts/{checkoutAttemptId}/abandonment` (`abandonCheckoutAttempt`) abandons a
+  pending or approved attempt, as closing the payment form does. An attempt that has ended is
+  refused with `409` and the reason `checkout_attempt_ended`.
+- `POST …/checkout-attempts/{checkoutAttemptId}/expiry` (`expireCheckoutAttempt`) expires a pending
+  attempt, as the passing of the bot's time to answer would. The emulator expires no checkout by
+  time; the bot's queued `pre_checkout_query` stays queued. An attempt that is not pending is
+  refused with `409` and the reason `checkout_attempt_not_pending`.
+
+An attempt belongs to its payer: other accounts' reads and controls of it are answered `404` with
+the reason `checkout_attempt_not_found`.
+
+### Checkout policies
+
+Telegram does not document how these cases behave, and [#289][issue-289] tracks verifying them. The
+emulator applies these rules as its own policies:
+
+- **One active attempt per invoice.** While an invoice has a pending or approved attempt, another
+  checkout of it is refused with `409` and the reason `checkout_attempt_active`. Once the attempt
+  has ended, the invoice can be checked out again, which starts a new attempt with a fresh query ID.
+- **An available invoice in an unblocked chat.** A checkout of a message that is no invoice is
+  refused with `400` and the reason `message_not_invoice`, one of a deleted or unknown message with
+  `404` and `message_not_found`, and one while the account blocks the bot with `409` and
+  `bot_blocked`. A refused checkout starts no attempt, uses no query ID and sends no update.
+- **One accepted answer per query.** An answer to a query that does not exist, was sent to another
+  bot, was already answered, or whose attempt was abandoned or expired, changes nothing and is
+  answered `Bad Request: query is too old and response timeout expired or query ID is invalid`. The
+  official server words Telegram's `QUERY_ID_INVALID` so, but which states of a pre-checkout query
+  Telegram refuses, and with which error, is not established, so the emulator's
+  [error catalogue](../../src/api/sessions/bot_api/errors/error_catalogue.ts) records this answer as
+  its own inference.
+- **The answer reads the attempt.** The bot answers from the attempt, without looking at the invoice
+  message or the chat again, so an invoice deleted or a bot blocked after the checkout does not
+  change the answer. A deleted invoice can no longer be checked out.
+
 ## Invoices among other messages
 
 An invoice is a message of its private chat like any other:
@@ -125,6 +204,9 @@ An invoice is a message of its private chat like any other:
 
 ## Intentional deviations
 
+- **Explicit checkout endings.** Abandonment and expiry are controls a test calls; no checkout ends
+  as time passes, and neither sends the bot an update.
+
 - **No synthesized Pay button.** The returned message has no `reply_markup` for the Pay button
   Telegram's clients show; [#289][issue-289] tracks verifying the exact JSON.
 - **Refused options.** Options of other payments, which Telegram supports, are refused rather than
@@ -132,19 +214,22 @@ An invoice is a message of its private chat like any other:
 
 ## Real gaps
 
-- **Checkout and payment.** Accounts cannot submit a checkout, so bots receive no
-  `pre_checkout_query`, `answerPreCheckoutQuery` is not implemented, and no `successful_payment`
-  completes an invoice. These are the next stages of the payments feature.
+- **Payment completion.** No approved checkout is completed, so no `successful_payment` reaches a
+  bot, no invoice is ever paid, and accounts inspect no receipts. This is the next stage of the
+  payments feature.
 - **Other payments.** Invoices in other currencies, payment providers, product photos, tips, invoice
   keyboards, invoices outside private chats, edits and forwards of invoices, invoice links, inline
   invoices, shipping, subscriptions, refunds, Star balances and paid media are not supported.
 
 ## Local evidence
 
-[`sendInvoice`](../../src/api/sessions/bot_api/methods/payments.ts),
-[its JSON parameters](../../src/api/sessions/bot_api/invoice_parameters.ts),
+[`sendInvoice` and `answerPreCheckoutQuery`](../../src/api/sessions/bot_api/methods/payments.ts),
+[their JSON parameters](../../src/api/sessions/bot_api/invoice_parameters.ts),
 [invoice checks](../../src/services/domain/invoice_normalization.ts),
-[the invoice model](../../src/types/invoice.ts), and [tests](../../tests/invoice_api_test.ts).
+[the invoice model](../../src/types/invoice.ts), [the checkout model](../../src/types/checkout.ts),
+[checkout service](../../src/services/domain/checkout.ts),
+[account checkout controls](../../src/api/sessions/accounts/checkouts.ts), and tests of
+[invoices](../../tests/invoice_api_test.ts) and [checkouts](../../tests/checkout_api_test.ts).
 
 [json-invoice]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2653-L2672
 [input-invoice]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13095-L13169
@@ -153,4 +238,7 @@ An invoice is a message of its private chat like any other:
 [currency-amount]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/misc.cpp#L390-L393
 [copy-invoice]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6483-L6510
 [send-invoice]: https://core.telegram.org/bots/api#sendinvoice
+[stars-checkout]: https://core.telegram.org/bots/payments-stars#4-checkout
+[json-pre-checkout-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5633-L5661
+[answer-pre-checkout-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15572-L15583
 [issue-289]: https://github.com/KnightNiwrem/tg-bot-api-emulator/issues/289

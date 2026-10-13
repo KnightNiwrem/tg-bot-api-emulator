@@ -1,0 +1,29 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's confirmed checkout of the bot's invoice, in the field order of the official Bot API
+  server's `JsonPreCheckoutQuery`. An invoice in Telegram Stars has no shipping option or order
+  information, so `shipping_option_id` and `order_info` are never present.
+required:
+  - id
+  - from
+  - currency
+  - total_amount
+  - invoice_payload
+properties:
+  id:
+    type: string
+    description: Identifier to pass to answerPreCheckoutQuery.
+  from:
+    $ref: ./Account.yaml
+    description: The account that pays.
+  currency:
+    type: string
+    const: XTR
+  total_amount:
+    type: integer
+    minimum: 1
+    description: The invoice's total price in Telegram Stars.
+  invoice_payload:
+    type: string
+    description: The payload the bot sent with the invoice, unchanged.

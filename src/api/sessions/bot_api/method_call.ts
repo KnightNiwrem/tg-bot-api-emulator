@@ -27,6 +27,7 @@ export interface BotApiMethodContext {
     | 'botDefaultAdministratorRights'
     | 'botMenuButtons'
     | 'callbackQueries'
+    | 'checkouts'
     | 'inlineQueries'
     | 'botMediaResolver'
     | 'privateMessaging'
