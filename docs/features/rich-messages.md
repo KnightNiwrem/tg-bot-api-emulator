@@ -18,8 +18,16 @@ The official server's [`get_input_rich_message`][input-rich-message],
 [`get_input_page_block`][input-page-block] and [`get_rich_text`][input-rich-text] read the blocks,
 and TDLib's [`RichMessage::get_rich_message`][rich-message], [`get_web_page_blocks`][input-blocks]
 and [`RichText::get_rich_text`][tdlib-rich-text] check them. The emulator refuses what they refuse,
-with their descriptions. For example, a heading size must be from 1 to 6, a list must be either
-ordered or unordered, and a map's zoom and dimensions must fit TDLib's limits. A string that is not
+with their descriptions. The server reads blocks, list items, table cells and the buttons of a row
+as arrays, and prefixes a fault it finds in an element with `Can't parse <class name>:`, once for
+each array around it. Only the outermost prefix starts in lowercase. A nested block that is not an
+object fails, for example, with
+`Bad Request: can't parse InputRichBlock: Can't parse InputRichBlockListItem: Can't parse InputRichBlock: Object expected as InputRichMessageBlock`.
+TDLib checks the blocks once the server has read them, so its faults have no prefix. For example, a
+heading size must be from 1 to 6 (`Bad Request: invalid section heading size specified`), a list
+must be non-empty and either ordered or unordered, and a map's zoom and dimensions must fit TDLib's
+limits. Neither do the emulator's own refusals, described under
+[intentional deviations](#intentional-deviations) and [real gaps](#real-gaps). A string that is not
 well-formed Unicode fails, such as `Bad Request: rich text must be encoded in UTF-8`, and other
 strings are cleaned as message text is. A text mention must name a user of the session:
 `Bad Request: user not found`.
@@ -60,7 +68,8 @@ as keyboard links are. Their style is read as the server's [`get_button_style`][
 a rich message's, which also accepts `link`. Callback data must fit in 64 bytes:
 `Bad Request: BUTTON_DATA_INVALID`. An account presses a callback button of a rich message by its
 `callback_data`, as it presses one of an inline keyboard. A login button cannot name a
-`bot_username`: `Bad Request: bot username must be empty for login_url buttons in rich messages`.
+`bot_username`, which the server refuses as it reads the row's buttons:
+`Bad Request: can't parse InputRichBlock: Can't parse RichMessageButton: Bot username must be empty for login_url buttons in rich messages`.
 Forwards and copies keep URL and copy-text buttons, and show the others as disabled buttons with
 their text and style, as TDLib's [`InlineKeyboardButton::clone`][button-clone] decides. Login
 buttons are the exception: a forward keeps them, showing their `forward_text` as plain text when
@@ -71,14 +80,14 @@ Photo, document, video and voice note blocks hold an `InputMediaPhoto`, `InputMe
 `InputMediaVideo` or `InputMediaVoiceNote`, whose `media` is a `file_id` the bot knows,
 `attach://<part name>` for a file uploaded with the request, or an HTTP or HTTPS URL. A block's
 media must be of the block's type, such as
-`Bad Request: unexpected media type "photo" for block "video"`, and its caption is ignored. A
-document's or video's thumbnail works as for `sendDocument` and `sendVideo`, and a video's duration
-and dimensions and a voice note's duration are clamped as for `sendVideo` and `sendVoice`. TDLib's
-[`get_web_page_blocks`][input-blocks] keeps only a video's file and spoiler, so a video's
-`start_timestamp` and `supports_streaming` are validated and ignored; a `cover` is refused, as
-[video covers](media-and-files.md#video-covers) are missing. A file reused by `file_id` keeps its
-own attributes, and one of another type or that the bot does not know fails as for the send methods,
-such as `Bad Request: can't use file of type Photo as VoiceNote` or
+`Bad Request: can't parse InputRichBlock: Unexpected media type "photo" for block "video"`, and its
+caption is ignored. A document's or video's thumbnail works as for `sendDocument` and `sendVideo`,
+and a video's duration and dimensions and a voice note's duration are clamped as for `sendVideo` and
+`sendVoice`. TDLib's [`get_web_page_blocks`][input-blocks] keeps only a video's file and spoiler, so
+a video's `start_timestamp` and `supports_streaming` are validated and ignored; a `cover` is
+refused, as [video covers](media-and-files.md#video-covers) are missing. A file reused by `file_id`
+keeps its own attributes, and one of another type or that the bot does not know fails as for the
+send methods, such as `Bad Request: can't use file of type Photo as VoiceNote` or
 `Bad Request: wrong file identifier/HTTP URL specified`. Uploads are checked as for `sendPhoto`,
 `sendDocument`, `sendVideo` and `sendVoice`. A URL is read and downloaded as for those methods, as
 [files sent by URL](media-and-files.md#files-sent-by-url) describes: the emulator downloads it from

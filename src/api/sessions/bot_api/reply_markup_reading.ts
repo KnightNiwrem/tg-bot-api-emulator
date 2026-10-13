@@ -35,8 +35,8 @@ export type LinkButton = 'inline_url' | 'inline_login' | 'inline_web_app' | 'key
  * Why Telegram cannot read a button being sent:
  * - `request_outside_private_chat`: a reply keyboard button with a request, outside a private
  *   chat, as TDLib's `KeyboardButton::get_keyboard_button` refuses it;
- * - `login_bot_username_in_rich_message`, `login_bot_username_invalid` and `login_bot_not_found`:
- *   the bot that a login button names, as the official Bot API server reads it;
+ * - `login_bot_username_invalid` and `login_bot_not_found`: the bot that a login button of an
+ *   inline keyboard names, as the official Bot API server reads it;
  * - `inline_query_chat_types_empty`: a switch-inline button for a chosen chat that allows no kind
  *   of chat;
  * - `button_url_invalid`: a link that TDLib's `check_link` refuses, with its error;
@@ -48,10 +48,7 @@ export type ButtonFailure =
     readonly requestKind: ReplyKeyboardButtonRequest['kind'];
   }
   | {
-    readonly reason:
-      | 'login_bot_username_in_rich_message'
-      | 'login_bot_username_invalid'
-      | 'inline_query_chat_types_empty';
+    readonly reason: 'login_bot_username_invalid' | 'inline_query_chat_types_empty';
   }
   | { readonly reason: 'login_bot_not_found'; readonly botUsername: string }
   | {
@@ -139,7 +136,7 @@ function readInlineKeyboard(
   for (const row of inlineKeyboard) {
     const readRow: InlineKeyboardButton[] = [];
     for (const button of row) {
-      const actionReading = readButtonAction(context, button, 'inline_keyboard');
+      const actionReading = readButtonAction(context, button);
       if (!actionReading.read) {
         return actionReading;
       }
@@ -196,7 +193,8 @@ function readReplyInterfaceMarkup(
 /**
  * Reads the buttons of a rich message, in rows and in its text, as TDLib's
  * `get_inline_keyboard_button` reads them for a rich message: as `readInlineKeyboard` reads the
- * buttons of an inline keyboard.
+ * buttons of an inline keyboard. `readRichMessageParameter` has already refused a login button
+ * that names a bot, as the official Bot API server does while it reads the blocks.
  */
 export function readRichMessageButtons<Files extends RichMessageFileTypes>(
   context: ButtonReadingContext,
@@ -208,7 +206,7 @@ export function readRichMessageButtons<Files extends RichMessageFileTypes>(
     if (buttonFailure !== undefined) {
       return button;
     }
-    const actionReading = readButtonAction(context, action, 'rich_message');
+    const actionReading = readButtonAction(context, action);
     if (!actionReading.read) {
       buttonFailure = actionReading.buttonFailure;
       return button;
@@ -232,12 +230,11 @@ export function readRichMessageButtons<Files extends RichMessageFileTypes>(
  * need an HTTPS link, which cannot open a profile.
  *
  * As the official Bot API server reads a login button, its bot's username consists of letters,
- * digits and underscores, and must name a bot; the button of a rich message cannot name one.
+ * digits and underscores, and must name a bot.
  */
 function readButtonAction(
   context: ButtonReadingContext,
   action: RichMessageButtonAction,
-  buttonLocation: 'inline_keyboard' | 'rich_message',
 ): ButtonReading<{ readonly url?: string }> {
   switch (action.kind) {
     case 'url':
@@ -245,9 +242,6 @@ function readButtonAction(
     case 'login_url': {
       const { authorizingBotUsername } = action;
       if (authorizingBotUsername !== undefined) {
-        if (buttonLocation === 'rich_message') {
-          return { read: false, buttonFailure: { reason: 'login_bot_username_in_rich_message' } };
-        }
         if (!/^[A-Za-z0-9_]+$/.test(authorizingBotUsername)) {
           return { read: false, buttonFailure: { reason: 'login_bot_username_invalid' } };
         }

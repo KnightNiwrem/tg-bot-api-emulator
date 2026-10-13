@@ -503,7 +503,8 @@ Deno.test('Web App buttons work only in private chats', async () => {
     'Bad Request: BUTTON_TYPE_INVALID',
     'Bad Request: BUTTON_TYPE_INVALID',
     'Bad Request: BUTTON_TYPE_INVALID',
-    'Bad Request: bot username must be empty for login_url buttons in rich messages',
+    "Bad Request: can't parse InputRichBlock: Can't parse RichMessageButton: " +
+    'Bot username must be empty for login_url buttons in rich messages',
   ], 'Expected only the login button in the supergroup');
 });
 

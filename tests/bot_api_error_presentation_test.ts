@@ -3,6 +3,7 @@ import { BOT_API_ERRORS } from '../src/api/sessions/bot_api/errors/error_catalog
 import type { BotApiErrorProvenance } from '../src/api/sessions/bot_api/errors/error_template.ts';
 import type { FormattedTextError } from '../src/api/sessions/bot_api/formatted_text_reading.ts';
 import type { ButtonFailure } from '../src/api/sessions/bot_api/reply_markup_reading.ts';
+import type { RichBlockParsingProblem } from '../src/api/sessions/bot_api/rich_message_parameter.ts';
 import { presentMessageEditingFailure } from '../src/api/sessions/bot_api/errors/message_editing_failure_presenter.ts';
 import { presentMessageSendingFailure } from '../src/api/sessions/bot_api/errors/message_sending_failure_presenter.ts';
 import type {
@@ -560,6 +561,9 @@ Deno.test('every catalogue entry names where its description comes from', () => 
       BOT_API_ERRORS.pollOptionInvalid.provenance({ reason: 'option_not_object' }),
       BOT_API_ERRORS.pollOptionInvalid.provenance({ reason: 'field_missing', fieldName: 'text' }),
     ],
+    richBlockUnparsable: RICH_BLOCK_PARSING_PROBLEMS.map((problem) =>
+      BOT_API_ERRORS.richBlockUnparsable.provenance({ enclosingArrays: [], problem })
+    ),
     inlineQueryResultInvalid: [
       BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
         reason: 'result_type_unsupported',
@@ -612,13 +616,34 @@ const FORMATTED_TEXT_ERRORS: readonly FormattedTextError[] = [
   { reason: 'entity_unparsable', entityError: { reason: 'date_time_format_invalid' } },
 ];
 
+/** One problem of each kind that the official server finds while it reads a rich message's blocks. */
+const RICH_BLOCK_PARSING_PROBLEMS: readonly RichBlockParsingProblem[] = [
+  ...([
+    'block_not_object',
+    'block_media_not_found',
+    'list_item_not_object',
+    'caption_not_object',
+    'table_cell_not_object',
+    'table_cell_alignment_invalid',
+    'table_cell_vertical_alignment_invalid',
+    'button_row_alignment_invalid',
+    'button_not_object',
+    'button_style_invalid',
+    'login_bot_username_not_allowed',
+    'text_invalid',
+    'text_type_unsupported',
+    'text_date_time_format_invalid',
+  ] as const).map((reason) => ({ reason })),
+  { reason: 'block_type_unsupported', blockType: 'marquee' },
+  { reason: 'block_media_type_unexpected', mediaType: 'document', blockType: 'photo' },
+];
+
 /** One failure of each kind and button that Telegram gives for a button it cannot read. */
 const BUTTON_FAILURES: readonly ButtonFailure[] = [
   ...(['contact', 'location', 'poll', 'web_app', 'users', 'chat'] as const).map((requestKind) => ({
     reason: 'request_outside_private_chat' as const,
     requestKind,
   })),
-  { reason: 'login_bot_username_in_rich_message' },
   { reason: 'login_bot_username_invalid' },
   { reason: 'login_bot_not_found', botUsername: 'grammy_bot' },
   { reason: 'inline_query_chat_types_empty' },

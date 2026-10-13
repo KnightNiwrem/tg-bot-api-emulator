@@ -81,7 +81,72 @@ const ORDERED_LIST_ITEM_LABEL_TYPES = [
   '1',
 ] as const satisfies readonly OrderedListItemLabelType[];
 
-/** A description with which reading a `rich_message` fails; only this module throws it. */
+/**
+ * A fault that the official Bot API server's `get_input_page_blocks` call chain finds while it
+ * reads a rich message's blocks, before TDLib checks them:
+ * - `block_not_object`, `list_item_not_object`, `caption_not_object`, `table_cell_not_object` and
+ *   `button_not_object`: JSON that is not an object where the server reads one;
+ * - `block_type_unsupported`: a block of a type the server does not know;
+ * - `block_media_type_unexpected`: a media block whose media is of another type;
+ * - `block_media_not_found`: a media block whose `media` names no file the request can send;
+ * - `table_cell_alignment_invalid`, `table_cell_vertical_alignment_invalid` and
+ *   `button_row_alignment_invalid`: an alignment the server does not know;
+ * - `button_style_invalid`: a button style the server's `get_button_style` does not know;
+ * - `login_bot_username_not_allowed`: a login button that names a bot, which a rich message's
+ *   button cannot;
+ * - `text_invalid`: rich text that is neither a string, an array nor an object;
+ * - `text_type_unsupported`: rich text of a type the server does not know;
+ * - `text_date_time_format_invalid`: a date and time format the server cannot read.
+ */
+export type RichBlockParsingProblem =
+  | {
+    readonly reason:
+      | 'block_not_object'
+      | 'block_media_not_found'
+      | 'list_item_not_object'
+      | 'caption_not_object'
+      | 'table_cell_not_object'
+      | 'table_cell_alignment_invalid'
+      | 'table_cell_vertical_alignment_invalid'
+      | 'button_row_alignment_invalid'
+      | 'button_not_object'
+      | 'button_style_invalid'
+      | 'login_bot_username_not_allowed'
+      | 'text_invalid'
+      | 'text_type_unsupported'
+      | 'text_date_time_format_invalid';
+  }
+  | { readonly reason: 'block_type_unsupported'; readonly blockType: string }
+  | {
+    readonly reason: 'block_media_type_unexpected';
+    readonly mediaType: string;
+    readonly blockType: RichMediaBlockType;
+  };
+
+/**
+ * An array that the server's block parsing reads with `get_array_generic` or `get_array`, by the
+ * class name with which it prefixes the fault of an element.
+ */
+export type RichBlockParsingArray =
+  | 'InputRichBlock'
+  | 'InputRichBlockListItem'
+  | 'PageBlockTableCell'
+  | 'RichMessageButton';
+
+/** A fault of the server's block parsing, with the arrays it was found in. */
+export interface RichBlockParsingError {
+  /** The arrays whose elements hold the fault, outermost first. */
+  readonly enclosingArrays: readonly RichBlockParsingArray[];
+  readonly problem: RichBlockParsingProblem;
+}
+
+type RichMediaBlockType = 'photo' | 'document' | 'video' | 'voice_note';
+
+/**
+ * A description with which reading a `rich_message` fails, which no array of the blocks prefixes:
+ * a fault outside the blocks, one that TDLib or Telegram's servers find once the server has read
+ * them, or one the emulator refuses on its own. Only this module throws it.
+ */
 class RichMessageParameterError extends Error {
   readonly description: string;
 
@@ -91,10 +156,51 @@ class RichMessageParameterError extends Error {
   }
 }
 
+/** A fault of the server's block parsing; only this module throws it. */
+class RichBlockParsingFailure extends Error {
+  readonly parsingError: RichBlockParsingError;
+
+  constructor(parsingError: RichBlockParsingError) {
+    super(parsingError.problem.reason);
+    this.parsingError = parsingError;
+  }
+
+  static of(problem: RichBlockParsingProblem): RichBlockParsingFailure {
+    return new RichBlockParsingFailure({ enclosingArrays: [], problem });
+  }
+
+  /** The same fault, found in an element of `array`. */
+  enclosedIn(array: RichBlockParsingArray): RichBlockParsingFailure {
+    const { enclosingArrays, problem } = this.parsingError;
+    return new RichBlockParsingFailure({ enclosingArrays: [array, ...enclosingArrays], problem });
+  }
+}
+
+/**
+ * Reads each element of an array as the server's `get_array_generic` and `get_array` do: a fault
+ * that its block parsing finds in an element is prefixed with the array's class name. A fault that
+ * TDLib, Telegram's servers or the emulator alone would find is not.
+ */
+function readArrayElements<Element>(
+  values: readonly unknown[],
+  array: RichBlockParsingArray,
+  readElement: (value: unknown) => Element,
+): Element[] {
+  return values.map((value) => {
+    try {
+      return readElement(value);
+    } catch (error) {
+      throw error instanceof RichBlockParsingFailure ? error.enclosedIn(array) : error;
+    }
+  });
+}
+
 /**
  * Reads a `rich_message` parameter as the official Bot API server's `get_input_rich_message`
  * reads it and TDLib's `RichMessage::get_rich_message` checks it, failing with Telegram's
- * description of the first fault. Only a message of blocks is supported.
+ * description of the first fault. Only a message of blocks is supported. A fault that the server
+ * finds while it reads the blocks is described with the arrays it was found in, as
+ * `BOT_API_ERRORS.richBlockUnparsable` describes it.
  *
  * `invalidParametersDescription` answers JSON that Telegram would read leniently, such as unknown
  * fields, missing documented fields, or values of the wrong JSON type, which are rejected instead
@@ -116,6 +222,12 @@ export function readRichMessageParameter(
   } catch (error) {
     if (error instanceof RichMessageParameterError) {
       return { read: false, description: error.description };
+    }
+    if (error instanceof RichBlockParsingFailure) {
+      return {
+        read: false,
+        description: BOT_API_ERRORS.richBlockUnparsable.description(error.parsingError),
+      };
     }
     throw error;
   }
@@ -406,14 +518,15 @@ class RichMessageReader {
     };
   }
 
+  /** Reads blocks as the server's `get_input_page_blocks` reads them. */
   #readBlocks(values: readonly unknown[]): SpecifiedRichBlock[] {
-    return values.map((value) => this.#readBlock(value));
+    return readArrayElements(values, 'InputRichBlock', (value) => this.#readBlock(value));
   }
 
   /** Reads an `InputRichBlock` as the Bot API server's `get_input_page_block` reads it. */
   #readBlock(value: unknown): SpecifiedRichBlock {
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richBlockNotObject.description());
+      throw RichBlockParsingFailure.of({ reason: 'block_not_object' });
     }
     const { type } = this.#parse(blockTypeSchema, value);
     switch (type) {
@@ -502,38 +615,27 @@ class RichMessageReader {
           BOT_API_ERRORS.richThinkingBlockNotAllowed.description(),
         );
       default:
-        throw new RichMessageParameterError(
-          isOneOf(type, MEDIA_BLOCK_TYPES_UNSUPPORTED)
-            ? BOT_API_ERRORS.richMediaBlockUnsupported.description()
-            : BOT_API_ERRORS.richBlockTypeUnsupported.description({ blockType: type }),
-        );
+        if (isOneOf(type, MEDIA_BLOCK_TYPES_UNSUPPORTED)) {
+          throw new RichMessageParameterError(
+            BOT_API_ERRORS.richMediaBlockUnsupported.description(),
+          );
+        }
+        throw RichBlockParsingFailure.of({ reason: 'block_type_unsupported', blockType: type });
     }
   }
 
   /**
-   * Reads a list as TDLib's `WebPageBlockList::Item::get_item` reads its items: an item with a
-   * label type is ordered, and a list must not mix ordered and unordered items. An item without
-   * blocks holds an empty paragraph, as TDLib shows an item Telegram sends without content.
+   * Reads a list's items as the server's `get_input_page_block_list_item` reads them and TDLib's
+   * `WebPageBlockList::Item::get_item` checks them: an item with a label type is ordered, and a
+   * list must not mix ordered and unordered items. An item without blocks holds an empty
+   * paragraph, as TDLib shows an item Telegram sends without content.
    */
   #readList(itemValues: readonly unknown[]): SpecifiedRichBlock {
-    const items = itemValues.map((itemValue): RichListItem<SpecifiedRichMessageFileTypes> => {
-      if (!isJsonObject(itemValue)) {
-        throw new RichMessageParameterError(BOT_API_ERRORS.richListItemNotObject.description());
-      }
-      const item = this.#parse(listItemSchema, itemValue);
-      const blocks = this.#readBlocks(item.blocks);
-      if (item.type.length > 0 && !isOneOf(item.type, ORDERED_LIST_ITEM_LABEL_TYPES)) {
-        throw new RichMessageParameterError(BOT_API_ERRORS.richListItemTypeInvalid.description());
-      }
-      return {
-        blocks: blocks.length === 0 ? [{ kind: 'paragraph', text: EMPTY_RICH_TEXT }] : blocks,
-        hasCheckbox: item.has_checkbox,
-        isChecked: item.has_checkbox && item.is_checked,
-        ...(isOneOf(item.type, ORDERED_LIST_ITEM_LABEL_TYPES)
-          ? { number: { value: item.value, labelType: item.type } }
-          : {}),
-      };
-    });
+    const items = readArrayElements(
+      itemValues,
+      'InputRichBlockListItem',
+      (itemValue) => this.#readListItem(itemValue),
+    );
     if (items.length === 0) {
       throw new RichMessageParameterError(BOT_API_ERRORS.richListEmpty.description());
     }
@@ -544,54 +646,34 @@ class RichMessageReader {
     return { kind: 'list', items };
   }
 
+  #readListItem(value: unknown): RichListItem<SpecifiedRichMessageFileTypes> {
+    if (!isJsonObject(value)) {
+      throw RichBlockParsingFailure.of({ reason: 'list_item_not_object' });
+    }
+    const item = this.#parse(listItemSchema, value);
+    const blocks = this.#readBlocks(item.blocks);
+    if (item.type.length > 0 && !isOneOf(item.type, ORDERED_LIST_ITEM_LABEL_TYPES)) {
+      throw new RichMessageParameterError(BOT_API_ERRORS.richListItemTypeInvalid.description());
+    }
+    return {
+      blocks: blocks.length === 0 ? [{ kind: 'paragraph', text: EMPTY_RICH_TEXT }] : blocks,
+      hasCheckbox: item.has_checkbox,
+      isChecked: item.has_checkbox && item.is_checked,
+      ...(isOneOf(item.type, ORDERED_LIST_ITEM_LABEL_TYPES)
+        ? { number: { value: item.value, labelType: item.type } }
+        : {}),
+    };
+  }
+
   /**
    * Reads a table as the Bot API server's `get_page_block_table_cell` and TDLib's
    * `get_web_page_block_table_cell` read its cells: a cell is aligned left, or centered as a
    * header, and to the middle unless it says otherwise, and spans at least one column and row.
    */
   #readTable(block: z.output<typeof tableBlockSchema>): SpecifiedRichBlock {
+    // The server reads each row of cells as an array, but the rows themselves in a plain loop.
     const rows = block.cells.map((row) =>
-      row.map((cellValue): RichTableCell => {
-        if (!isJsonObject(cellValue)) {
-          throw new RichMessageParameterError(BOT_API_ERRORS.richTableCellNotObject.description());
-        }
-        const cell = this.#parse(tableCellSchema, cellValue);
-        const text = cell.text === undefined ? EMPTY_RICH_TEXT : this.#readRichText(cell.text);
-        const alignment = readHorizontalAlignment(
-          cell.align.length === 0 ? (cell.is_header ? 'center' : 'left') : cell.align,
-        );
-        if (alignment === undefined) {
-          throw new RichMessageParameterError(
-            BOT_API_ERRORS.richTableCellAlignmentInvalid.description(),
-          );
-        }
-        const verticalAlignment = readVerticalAlignment(
-          cell.valign.length === 0 ? 'middle' : cell.valign,
-        );
-        if (verticalAlignment === undefined) {
-          throw new RichMessageParameterError(
-            BOT_API_ERRORS.richTableCellVerticalAlignmentInvalid.description(),
-          );
-        }
-        if (cell.colspan < 0) {
-          throw new RichMessageParameterError(
-            BOT_API_ERRORS.richTableCellColumnSpanInvalid.description(),
-          );
-        }
-        if (cell.rowspan < 0) {
-          throw new RichMessageParameterError(
-            BOT_API_ERRORS.richTableCellRowSpanInvalid.description(),
-          );
-        }
-        return {
-          ...(isEmptyRichText(text) ? {} : { text }),
-          isHeader: cell.is_header,
-          columnSpan: Math.max(cell.colspan, 1),
-          rowSpan: Math.max(cell.rowspan, 1),
-          alignment,
-          verticalAlignment,
-        };
-      })
+      readArrayElements(row, 'PageBlockTableCell', (cellValue) => this.#readTableCell(cellValue))
     );
     const caption = block.caption === undefined
       ? EMPTY_RICH_TEXT
@@ -603,6 +685,42 @@ class RichMessageReader {
       isBordered: block.is_bordered,
       isStriped: block.is_striped,
       isCompact: block.is_compact,
+    };
+  }
+
+  #readTableCell(value: unknown): RichTableCell {
+    if (!isJsonObject(value)) {
+      throw RichBlockParsingFailure.of({ reason: 'table_cell_not_object' });
+    }
+    const cell = this.#parse(tableCellSchema, value);
+    const text = cell.text === undefined ? EMPTY_RICH_TEXT : this.#readRichText(cell.text);
+    const alignment = readHorizontalAlignment(
+      cell.align.length === 0 ? (cell.is_header ? 'center' : 'left') : cell.align,
+    );
+    if (alignment === undefined) {
+      throw RichBlockParsingFailure.of({ reason: 'table_cell_alignment_invalid' });
+    }
+    const verticalAlignment = readVerticalAlignment(
+      cell.valign.length === 0 ? 'middle' : cell.valign,
+    );
+    if (verticalAlignment === undefined) {
+      throw RichBlockParsingFailure.of({ reason: 'table_cell_vertical_alignment_invalid' });
+    }
+    if (cell.colspan < 0) {
+      throw new RichMessageParameterError(
+        BOT_API_ERRORS.richTableCellColumnSpanInvalid.description(),
+      );
+    }
+    if (cell.rowspan < 0) {
+      throw new RichMessageParameterError(BOT_API_ERRORS.richTableCellRowSpanInvalid.description());
+    }
+    return {
+      ...(isEmptyRichText(text) ? {} : { text }),
+      isHeader: cell.is_header,
+      columnSpan: Math.max(cell.colspan, 1),
+      rowSpan: Math.max(cell.rowspan, 1),
+      alignment,
+      verticalAlignment,
     };
   }
 
@@ -643,11 +761,13 @@ class RichMessageReader {
 
   #readButtonRow(block: z.output<typeof buttonRowBlockSchema>): SpecifiedRichBlock {
     const alignment = block.align.length === 0 ? undefined : readHorizontalAlignment(block.align);
-    const buttons = block.buttons.map((buttonValue) => this.#readButton(buttonValue));
+    const buttons = readArrayElements(
+      block.buttons,
+      'RichMessageButton',
+      (buttonValue) => this.#readButton(buttonValue),
+    );
     if (block.align.length > 0 && alignment === undefined) {
-      throw new RichMessageParameterError(
-        BOT_API_ERRORS.richButtonRowAlignmentInvalid.description(),
-      );
+      throw RichBlockParsingFailure.of({ reason: 'button_row_alignment_invalid' });
     }
     if (buttons.length === 0) {
       throw new RichMessageParameterError(BOT_API_ERRORS.richButtonRowEmpty.description());
@@ -664,19 +784,22 @@ class RichMessageReader {
 
   /**
    * Reads a `RichMessageButton` as the Bot API server's `get_inline_button` reads it: its style as
-   * `get_button_style` reads a rich message's, and its action as an inline keyboard button's. As
-   * the Bot API documents, only a callback button may look like a link, and its text may hold
-   * only custom emoji and dates.
+   * `get_button_style` reads a rich message's, and its action as an inline keyboard button's,
+   * except that a login button cannot name a bot. As the Bot API documents, only a callback button
+   * may look like a link, and its text may hold only custom emoji and dates.
    */
   #readButton(value: unknown): RichMessageButton {
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonNotObject.description());
+      throw RichBlockParsingFailure.of({ reason: 'button_not_object' });
     }
     const { face, action } = this.#parse(richMessageButtonSchema, value);
     const text = this.#readRichText(face.text);
     const style = readRichMessageButtonStyle(face.style ?? '');
     if (style === null) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonStyleInvalid.description());
+      throw RichBlockParsingFailure.of({ reason: 'button_style_invalid' });
+    }
+    if (action.kind === 'login_url' && action.authorizingBotUsername !== undefined) {
+      throw RichBlockParsingFailure.of({ reason: 'login_bot_username_not_allowed' });
     }
     if (style === 'link' && action.kind !== 'callback') {
       throw new RichMessageParameterError(
@@ -762,7 +885,7 @@ class RichMessageReader {
   #readMediaFile(media: string) {
     const reading = readInputFileParameter('', media, this.#uploadedFiles);
     if (!reading.read) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richBlockMediaNotFound.description());
+      throw RichBlockParsingFailure.of({ reason: 'block_media_not_found' });
     }
     return reading.inputFile;
   }
@@ -776,7 +899,7 @@ class RichMessageReader {
       return {};
     }
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richBlockCaptionNotObject.description());
+      throw RichBlockParsingFailure.of({ reason: 'caption_not_object' });
     }
     const caption = this.#parse(captionSchema, value);
     const text = this.#readRichText(caption.text);
@@ -811,7 +934,7 @@ class RichMessageReader {
         : { kind: 'concatenation', texts: value.map((part) => this.#readRichText(part)) };
     }
     if (typeof value === 'number' || typeof value === 'boolean') {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richTextInvalid.description());
+      throw RichBlockParsingFailure.of({ reason: 'text_invalid' });
     }
     if (!isJsonObject(value)) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
@@ -903,7 +1026,7 @@ class RichMessageReader {
           button: this.#readButton(this.#parse(buttonTextSchema, value).button),
         };
       default:
-        throw new RichMessageParameterError(BOT_API_ERRORS.richTextTypeUnsupported.description());
+        throw RichBlockParsingFailure.of({ reason: 'text_type_unsupported' });
     }
   }
 
@@ -924,9 +1047,7 @@ class RichMessageReader {
     const text = this.#readRichText(dateTime.text);
     const formatReading = readDateTimeFormat(dateTime.date_time_format);
     if (!formatReading.valid) {
-      throw new RichMessageParameterError(
-        BOT_API_ERRORS.richTextDateTimeFormatInvalid.description(),
-      );
+      throw RichBlockParsingFailure.of({ reason: 'text_date_time_format_invalid' });
     }
     if (dateTime.unix_time <= 0) {
       throw new RichMessageParameterError(BOT_API_ERRORS.richTextDateInvalid.description());
@@ -954,14 +1075,13 @@ class RichMessageReader {
  * Checks that a block's media is of the block's type, as the Bot API server's
  * `get_input_page_block` does.
  */
-function checkMediaType(
-  mediaType: string,
-  blockType: 'photo' | 'document' | 'video' | 'voice_note',
-): void {
+function checkMediaType(mediaType: string, blockType: RichMediaBlockType): void {
   if (mediaType !== blockType) {
-    throw new RichMessageParameterError(
-      BOT_API_ERRORS.richBlockMediaTypeUnexpected.description({ mediaType, blockType }),
-    );
+    throw RichBlockParsingFailure.of({
+      reason: 'block_media_type_unexpected',
+      mediaType,
+      blockType,
+    });
   }
 }
 

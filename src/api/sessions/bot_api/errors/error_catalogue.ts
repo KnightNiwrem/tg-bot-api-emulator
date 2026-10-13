@@ -26,6 +26,7 @@ import type { MessageEntityError } from '../message_entities_parameter.ts';
 import type { ReactionTypeError } from '../reaction_type_parameter.ts';
 import type { ButtonFailure, LinkButton } from '../reply_markup_reading.ts';
 import type { JsonObjectFieldError } from '../request_parameters.ts';
+import type { RichBlockParsingError, RichBlockParsingProblem } from '../rich_message_parameter.ts';
 import {
   type BotApiErrorProvenance,
   type BotApiErrorTemplate,
@@ -157,6 +158,12 @@ const UNDECODABLE_BODY_INFERENCE = emulatorInference(
  * JSON type the official server passes on.
  */
 const JSON_OBJECT_FIELD_GETTERS = tdlibSource('tdutils/td/utils/JsonBuilder.cpp#L561-L686');
+
+/** The official server's `get_date_time_formatting_type`, for a format it cannot read. */
+const DATE_TIME_FORMAT_INVALID: TelegramErrorMessage = {
+  message: 'Invalid date-time format specified',
+  provenance: botApiServerSource('telegram-bot-api/Client.cpp#L19829'),
+};
 
 /** The official server's `get_array`, which reads a JSON array of objects of one class. */
 const ARRAY_READING = botApiServerSource('telegram-bot-api/Client.cpp#L10056-L10077');
@@ -1557,8 +1564,10 @@ export const BOT_API_ERRORS = {
   locationInvalid: fixedBotApiError(400, 'Bad Request: invalid location specified', LOCATION_CHECK),
 
   // Rich messages, as the official server's `get_input_rich_message` reads them and TDLib's
-  // `RichMessage::get_rich_message` checks their blocks. The server prefixes the errors it finds
-  // inside the blocks with `Can't parse InputRichBlock: `, which the emulator's descriptions omit.
+  // `RichMessage::get_rich_message` checks their blocks. Only `richBlockUnparsable` describes a
+  // fault that the server finds while it reads the blocks, prefixed with each array it was found
+  // in. TDLib checks the blocks once the server has read them, and Telegram's servers after TDLib,
+  // so the other entries, like the emulator's own refusals, have no prefix.
   /** A `rich_message` given as no text. */
   richMessageEmpty: fixedBotApiError(
     400,
@@ -1581,6 +1590,13 @@ export const BOT_API_ERRORS = {
     'Bad Request: rich message must be non-empty',
     botApiServerSource('telegram-bot-api/Client.cpp#L12482-L12484'),
   ),
+  /**
+   * A fault that the official server finds while it reads the blocks: the problem as the server
+   * words it, prefixed with `Can't parse <class name>: ` for each array of blocks, list items,
+   * table cells or buttons that `get_array_generic` and `get_array` read around it, outermost
+   * first.
+   */
+  richBlockUnparsable: messageErrorTemplate('', describeRichBlockParsingError),
   richMessageMarkupUnsupported: fixedBotApiError(
     400,
     'Bad Request: rich messages written in HTML or Markdown are not supported',
@@ -1589,18 +1605,6 @@ export const BOT_API_ERRORS = {
         'open-source code does not contain, which the emulator does not support',
     ),
   ),
-  richBlockNotObject: fixedBotApiError(
-    400,
-    'Bad Request: object expected as InputRichMessageBlock',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12270'),
-  ),
-  /** A block of a type the official server's `get_input_page_block` does not know. */
-  richBlockTypeUnsupported: {
-    status: () => 400,
-    description: ({ blockType }: { readonly blockType: string }) =>
-      `Bad Request: type "${blockType}" is unsupported`,
-    provenance: () => botApiServerSource('telegram-bot-api/Client.cpp#L12389'),
-  },
   richMediaBlockUnsupported: fixedBotApiError(
     400,
     'Bad Request: rich message blocks with an animation or an audio file are not supported',
@@ -1614,29 +1618,10 @@ export const BOT_API_ERRORS = {
         "code does not contain, so the description is the emulator's",
     ),
   ),
-  richBlockMediaTypeUnexpected: {
-    status: () => 400,
-    description: ({ mediaType, blockType }: {
-      readonly mediaType: string;
-      readonly blockType: string;
-    }) => `Bad Request: unexpected media type "${mediaType}" for block "${blockType}"`,
-    provenance: () => botApiServerSource('telegram-bot-api/Client.cpp#L12394-L12397'),
-  },
-  /** A media block whose `media` names neither an uploaded part, a `file_id` nor a URL. */
-  richBlockMediaNotFound: fixedBotApiError(
-    400,
-    'Bad Request: media not found',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12823'),
-  ),
   richHeadingSizeInvalid: fixedBotApiError(
     400,
     'Bad Request: invalid section heading size specified',
     tdlibSource('td/telegram/WebPageBlock.cpp#L5548'),
-  ),
-  richListItemNotObject: fixedBotApiError(
-    400,
-    'Bad Request: object expected as InputRichBlockListItem',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12256'),
   ),
   richListItemTypeInvalid: fixedBotApiError(
     400,
@@ -1652,26 +1637,6 @@ export const BOT_API_ERRORS = {
     400,
     'Bad Request: list must be either ordered or unordered',
     tdlibSource('td/telegram/WebPageBlock.cpp#L5612'),
-  ),
-  richBlockCaptionNotObject: fixedBotApiError(
-    400,
-    'Bad Request: richBlockCaption must be an object',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12068'),
-  ),
-  richTableCellNotObject: fixedBotApiError(
-    400,
-    'Bad Request: richBlockTableCell must be an object',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12074'),
-  ),
-  richTableCellAlignmentInvalid: fixedBotApiError(
-    400,
-    'Bad Request: invalid horizontal alignment specified',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12092'),
-  ),
-  richTableCellVerticalAlignmentInvalid: fixedBotApiError(
-    400,
-    'Bad Request: invalid vertical alignment specified',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12104'),
   ),
   richTableCellColumnSpanInvalid: fixedBotApiError(
     400,
@@ -1694,11 +1659,6 @@ export const BOT_API_ERRORS = {
     'Bad Request: invalid map properties specified',
     tdlibSource('td/telegram/WebPageBlock.cpp#L5764'),
   ),
-  richButtonRowAlignmentInvalid: fixedBotApiError(
-    400,
-    'Bad Request: invalid horizontal alignment specified',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12383'),
-  ),
   richButtonRowEmpty: fixedBotApiError(
     400,
     'Bad Request: button row must be non-empty',
@@ -1711,16 +1671,6 @@ export const BOT_API_ERRORS = {
       "The Bot API documents the limit, and Telegram's servers check it by rules the open-source " +
         "code does not contain, so the description is the emulator's",
     ),
-  ),
-  richButtonNotObject: fixedBotApiError(
-    400,
-    'Bad Request: inlineButton must be an Object',
-    botApiServerSource('telegram-bot-api/Client.cpp#L10380'),
-  ),
-  richButtonStyleInvalid: fixedBotApiError(
-    400,
-    'Bad Request: invalid button style specified',
-    botApiServerSource('telegram-bot-api/Client.cpp#L10245'),
   ),
   richLinkButtonStyleNotAllowed: fixedBotApiError(
     400,
@@ -1737,22 +1687,6 @@ export const BOT_API_ERRORS = {
       "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
         "code does not contain, so the description is the emulator's",
     ),
-  ),
-  /** Rich text that is neither a string, an array nor an object, such as a number. */
-  richTextInvalid: fixedBotApiError(
-    400,
-    'Bad Request: invalid rich text specified',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12249'),
-  ),
-  richTextTypeUnsupported: fixedBotApiError(
-    400,
-    'Bad Request: unsupported rich text type',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12246'),
-  ),
-  richTextDateTimeFormatInvalid: fixedBotApiError(
-    400,
-    'Bad Request: invalid date-time format specified',
-    botApiServerSource('telegram-bot-api/Client.cpp#L19829'),
   ),
   /** A date and time that is not positive, as TDLib's `FormattedDate::get_formatted_date` checks. */
   richTextDateInvalid: fixedBotApiError(
@@ -1960,10 +1894,7 @@ function describeMessageEntityError({ reason }: MessageEntityError): TelegramErr
         provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11935'),
       };
     case 'date_time_format_invalid':
-      return {
-        message: 'Invalid date-time format specified',
-        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L19829'),
-      };
+      return DATE_TIME_FORMAT_INVALID;
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled entity error: ${unhandledReason}`);
@@ -1975,11 +1906,6 @@ function describeButtonFailure(failure: ButtonFailure): TelegramErrorMessage {
   switch (failure.reason) {
     case 'request_outside_private_chat':
       return REQUEST_OUTSIDE_PRIVATE_CHAT_ERRORS[failure.requestKind];
-    case 'login_bot_username_in_rich_message':
-      return {
-        message: 'Bot username must be empty for login_url buttons in rich messages',
-        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10453-L10455'),
-      };
     case 'login_bot_username_invalid':
       return {
         message: 'LoginUrl bot username is invalid',
@@ -2142,6 +2068,100 @@ function describeInlineQueryResultError(error: InlineQueryResultError): Telegram
     default: {
       const unhandledError: never = error;
       throw new Error(`Unhandled inline query result error: ${JSON.stringify(unhandledError)}`);
+    }
+  }
+}
+
+function describeRichBlockParsingError(
+  { enclosingArrays, problem }: RichBlockParsingError,
+): TelegramErrorMessage {
+  const { message, provenance } = describeRichBlockParsingProblem(problem);
+  const prefixes = enclosingArrays.map((array) => `Can't parse ${array}: `).join('');
+  return { message: `${prefixes}${message}`, provenance };
+}
+
+function describeRichBlockParsingProblem(problem: RichBlockParsingProblem): TelegramErrorMessage {
+  switch (problem.reason) {
+    case 'block_not_object':
+      return {
+        message: 'Object expected as InputRichMessageBlock',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12270'),
+      };
+    case 'block_type_unsupported':
+      return {
+        message: `type "${problem.blockType}" is unsupported`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12389'),
+      };
+    case 'block_media_type_unexpected':
+      return {
+        message: `Unexpected media type "${problem.mediaType}" for block "${problem.blockType}"`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12394-L12397'),
+      };
+    case 'block_media_not_found':
+      return {
+        message: 'media not found',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12823'),
+      };
+    case 'list_item_not_object':
+      return {
+        message: 'Object expected as InputRichBlockListItem',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12256'),
+      };
+    case 'caption_not_object':
+      return {
+        message: 'RichBlockCaption must be an object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12068'),
+      };
+    case 'table_cell_not_object':
+      return {
+        message: 'RichBlockTableCell must be an object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12074'),
+      };
+    case 'table_cell_alignment_invalid':
+      return {
+        message: 'Invalid horizontal alignment specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12092'),
+      };
+    case 'table_cell_vertical_alignment_invalid':
+      return {
+        message: 'Invalid vertical alignment specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12104'),
+      };
+    case 'button_row_alignment_invalid':
+      return {
+        message: 'Invalid horizontal alignment specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12383'),
+      };
+    case 'button_not_object':
+      return {
+        message: 'InlineButton must be an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10380'),
+      };
+    case 'button_style_invalid':
+      return {
+        message: 'Invalid button style specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10245'),
+      };
+    case 'login_bot_username_not_allowed':
+      return {
+        message: 'Bot username must be empty for login_url buttons in rich messages',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10453-L10455'),
+      };
+    case 'text_invalid':
+      return {
+        message: 'Invalid rich text specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12249'),
+      };
+    case 'text_type_unsupported':
+      return {
+        message: 'Unsupported rich text type',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12246'),
+      };
+    case 'text_date_time_format_invalid':
+      return DATE_TIME_FORMAT_INVALID;
+    default: {
+      const unhandledProblem: never = problem;
+      throw new Error(`Unhandled rich block problem: ${JSON.stringify(unhandledProblem)}`);
     }
   }
 }
