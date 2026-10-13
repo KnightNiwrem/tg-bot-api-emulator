@@ -1,3 +1,5 @@
+import type { z } from 'zod';
+
 import {
   deleteAccountMessageContract,
   deleteSupergroupAccountMessageContract,
@@ -119,6 +121,7 @@ import {
   callEmptyOperation,
   callJsonAction,
   callJsonOperation,
+  callRefinedJsonAction,
   type ControlOperationTransport,
   describeOperationCall,
 } from './control_operation_caller.ts';
@@ -686,10 +689,13 @@ function createVirtualAccountClient(
     to: Target,
     body: SendAccountMessageBody,
   ): Promise<ActionOutcome<MessageIn<Target>>> {
-    const request = { params: accountParams, body };
-    const sending = await callJsonAction(transport, sendAccountMessageContract, request);
-    const call = describeOperationCall(transport, sendAccountMessageContract, request);
-    return selectResult(sending, ({ message }) => messageInChat(to, message, call));
+    const sending = await callRefinedJsonAction(
+      transport,
+      sendAccountMessageContract,
+      { params: accountParams, body },
+      sentMessageResponseSchemaFor(sendAccountMessageContract.success.body.schema, to),
+    );
+    return selectResult(sending, ({ message }) => message);
   }
 
   function getMessages<Target extends MessageTarget>(
@@ -799,12 +805,13 @@ function createVirtualAccountClient(
           media: toAccountMediaGroupBody(media, albumCall),
         },
       };
-      const sending = await callJsonAction(transport, sendAccountMediaGroupContract, request);
-      const call = describeOperationCall(transport, sendAccountMediaGroupContract, request);
-      return selectResult(
-        sending,
-        ({ messages }) => messages.map((message) => messageInChat(to, message, call)),
+      const sending = await callRefinedJsonAction(
+        transport,
+        sendAccountMediaGroupContract,
+        request,
+        sentAlbumResponseSchemaFor(to),
       );
+      return selectResult(sending, ({ messages }) => messages);
     },
     forwardMessage<Target extends MessageTarget>(
       { from, message_id, ...message }: AccountForwardMessageInput<Target>,
@@ -1192,10 +1199,16 @@ function createVirtualAccountClient(
     async pressReplyKeyboardButton<Target extends MessageTarget>(
       input: PressReplyKeyboardButtonInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const request = { params: accountParams, body: input };
-      const press = await callJsonAction(transport, pressReplyKeyboardButtonContract, request);
-      const call = describeOperationCall(transport, pressReplyKeyboardButtonContract, request);
-      return selectResult(press, ({ message }) => messageInChat(input.chat, message, call));
+      const press = await callRefinedJsonAction(
+        transport,
+        pressReplyKeyboardButtonContract,
+        { params: accountParams, body: input },
+        sentMessageResponseSchemaFor(
+          pressReplyKeyboardButtonContract.success.body.schema,
+          input.chat,
+        ),
+      );
+      return selectResult(press, ({ message }) => message);
     },
   });
 }
@@ -1355,26 +1368,52 @@ function toAccountMediaGroupFile(item: AccountMediaGroupItem, field: string, cal
 }
 
 /**
- * A message an action sent to `chat`, as a message of the chat's type. The action's contract
- * answers with a private or a supergroup message; one of the other chat's type breaks what the
- * action promises, so the client refuses it, as it refuses a response that breaks its contract.
- *
- * @throws {EmulationClientError} when the message is not of the chat's type.
+ * The response schema of an action that sends a message to a chat: the message, of a private chat
+ * or of a supergroup.
  */
-function messageInChat<Target extends MessageTarget>(
+type SentMessageResponseSchema = typeof sendAccountMessageContract.success.body.schema;
+
+/**
+ * `schema` refined to a message of `chat`'s type. The action's contract answers with a private or
+ * a supergroup message; one of the other chat's type breaks what the action promises, so the
+ * client refuses it as a response that breaks its contract, with the response's status and raw
+ * body. `chat` is read only once a response arrives, so a target that is no chat, which only an
+ * untyped caller can give, is sent as it is for the emulator to refuse.
+ */
+function sentMessageResponseSchemaFor<Target extends MessageTarget>(
+  schema: SentMessageResponseSchema,
   chat: Target,
-  message: PrivateMessage | SupergroupMessage,
-  call: RequestDetails,
-): MessageIn<Target> {
-  if (message.chat.type !== chat.type) {
-    throw new EmulationClientError(
-      `${call.method} ${call.url} returned a message of a ${message.chat.type} chat for a ${chat.type} chat`,
-      call,
-    );
-  }
-  // The check above tells that the message is of the chat's type, which TypeScript cannot relate
-  // to the generic target.
-  return message as MessageIn<Target>;
+) {
+  return schema.refine(
+    // TypeScript cannot relate the checked chat type to the generic target, so the check is
+    // stated as what it tells.
+    (response): response is z.output<SentMessageResponseSchema> & {
+      readonly message: MessageIn<Target>;
+    } => response.message.chat.type === chat.type,
+    {
+      path: ['message', 'chat', 'type'],
+      error: () => `Expected a message of the ${chat.type} chat it was sent to`,
+    },
+  );
+}
+
+/**
+ * The response schema of sending an album to `chat`, refined to messages of the chat's type, as
+ * `sentMessageResponseSchemaFor` refines a message's and, like it, reading `chat` only once a
+ * response arrives.
+ */
+function sentAlbumResponseSchemaFor<Target extends MessageTarget>(chat: Target) {
+  return sendAccountMediaGroupContract.success.body.schema.refine(
+    // TypeScript cannot relate the checked chat type to the generic target, so the check is
+    // stated as what it tells.
+    (response): response is z.output<typeof sendAccountMediaGroupContract.success.body.schema> & {
+      readonly messages: readonly MessageIn<Target>[];
+    } => response.messages.every((message) => message.chat.type === chat.type),
+    {
+      path: ['messages'],
+      error: () => `Expected messages of the ${chat.type} chat they were sent to`,
+    },
+  );
 }
 
 /** The prefix of every invite link, after which its hash follows. */
