@@ -82,11 +82,34 @@ export function callJsonAction<Contract extends JsonSuccessContract & ActingCont
   contract: Contract,
   request: ControlOperationRequest<Contract>,
 ): Promise<ActionOutcome<z.output<Contract['success']['body']['schema']>>> {
-  return requestJsonAction<Contract['success']['body']['schema']>(transport.fetch, {
+  return callRefinedJsonAction<Contract, Contract['success']['body']['schema']>(
+    transport,
+    contract,
+    request,
+    contract.success.body.schema,
+  );
+}
+
+/**
+ * Calls an action whose success response is JSON, and returns the JSON as `responseSchema` reads
+ * it, with the action's receipt. `responseSchema` is the contract's schema refined to what the call
+ * promises, such as a message of the chat it sends to; a response the refinement refuses fails as
+ * one that breaks the contract does, with the response's status and raw body.
+ */
+export function callRefinedJsonAction<
+  Contract extends JsonSuccessContract & ActingContract,
+  Schema extends Contract['success']['body']['schema'],
+>(
+  transport: ControlOperationTransport,
+  contract: Contract,
+  request: ControlOperationRequest<Contract>,
+  responseSchema: Schema,
+): Promise<ActionOutcome<z.output<Schema>>> {
+  return requestJsonAction<Schema>(transport.fetch, {
     method: contract.method,
     url: buildOperationUrl(transport.serverRoot, contract, request),
     expectedStatus: contract.success.status,
-    responseSchema: contract.success.body.schema,
+    responseSchema,
     body: request.body,
   });
 }
