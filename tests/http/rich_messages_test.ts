@@ -465,28 +465,28 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [{}, 'Bad Request: rich message must be non-empty'],
     [{ blocks: null }, 'Bad Request: invalid sendRichMessage parameters'],
-    [{ blocks: [1] }, 'Bad Request: object expected as InputRichMessageBlock'],
-    [
-      { blocks: [{ type: 'list', items: [1] }] },
-      'Bad Request: object expected as InputRichBlockListItem',
-    ],
     [
       { blocks: [{ type: 'map', location: { latitude: 52, longitude: 13 }, caption: 1 }] },
-      'Bad Request: richBlockCaption must be an object',
+      "Bad Request: can't parse InputRichBlock: RichBlockCaption must be an object",
     ],
     [
       { blocks: [{ type: 'table', cells: [[1]] }] },
-      'Bad Request: richBlockTableCell must be an object',
+      "Bad Request: can't parse InputRichBlock: Can't parse PageBlockTableCell: " +
+      'RichBlockTableCell must be an object',
     ],
     [
       { blocks: [{ type: 'table', cells: [[{ text: 'A', valign: 'sideways' }]] }] },
-      'Bad Request: invalid vertical alignment specified',
+      "Bad Request: can't parse InputRichBlock: Can't parse PageBlockTableCell: " +
+      'Invalid vertical alignment specified',
     ],
     [
       { blocks: [{ type: 'table', cells: [[{ text: 'A', rowspan: -1 }]] }] },
       'Bad Request: invalid table cell rowspan specified',
     ],
-    [{ blocks: [{ type: 'marquee' }] }, 'Bad Request: type "marquee" is unsupported'],
+    [
+      { blocks: [{ type: 'marquee' }] },
+      `Bad Request: can't parse InputRichBlock: type "marquee" is unsupported`,
+    ],
     [
       { blocks: [{ type: 'audio', audio: { type: 'audio', media: 'attach://song' } }] },
       'Bad Request: rich message blocks with an animation or an audio file are not supported',
@@ -503,8 +503,11 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       { blocks: [{ type: 'heading', text: 'Hi', size: 7 }] },
       'Bad Request: invalid section heading size specified',
     ],
-    [paragraph({ type: 'blink', text: 'Hi' }), 'Bad Request: unsupported rich text type'],
-    [paragraph(5), 'Bad Request: invalid rich text specified'],
+    [
+      paragraph({ type: 'blink', text: 'Hi' }),
+      "Bad Request: can't parse InputRichBlock: Unsupported rich text type",
+    ],
+    [paragraph(5), "Bad Request: can't parse InputRichBlock: Invalid rich text specified"],
     [paragraph('\uD800'), 'Bad Request: rich text must be encoded in UTF-8'],
     [
       paragraph({ type: 'date_time', text: 'Soon', unix_time: 0 }),
@@ -512,7 +515,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       paragraph({ type: 'date_time', text: 'Soon', unix_time: 1, date_time_format: 'x' }),
-      'Bad Request: invalid date-time format specified',
+      "Bad Request: can't parse InputRichBlock: Invalid date-time format specified",
     ],
     [
       paragraph({ type: 'custom_emoji', custom_emoji_id: 'smile', alternative_text: '🙂' }),
@@ -538,7 +541,8 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       { blocks: [{ type: 'table', cells: [[{ text: 'A', align: 'justify' }]] }] },
-      'Bad Request: invalid horizontal alignment specified',
+      "Bad Request: can't parse InputRichBlock: Can't parse PageBlockTableCell: " +
+      'Invalid horizontal alignment specified',
     ],
     [
       { blocks: [{ type: 'table', cells: [[{ text: 'A', colspan: -1 }]] }] },
@@ -553,7 +557,11 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       'Bad Request: invalid map properties specified',
     ],
     [buttonRow([]), 'Bad Request: button row must be non-empty'],
-    [buttonRow([1]), 'Bad Request: inlineButton must be an Object'],
+    [
+      buttonRow([1]),
+      "Bad Request: can't parse InputRichBlock: Can't parse RichMessageButton: " +
+      'InlineButton must be an Object',
+    ],
     [
       buttonRow(
         Array.from({ length: 9 }, (_, index) => ({ text: 'Go', callback_data: `${index}` })),
@@ -562,7 +570,8 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       buttonRow([{ text: 'Go', style: 'glow', callback_data: 'go' }]),
-      'Bad Request: invalid button style specified',
+      "Bad Request: can't parse InputRichBlock: Can't parse RichMessageButton: " +
+      'Invalid button style specified',
     ],
     [
       buttonRow([{ text: 'Go', style: 'link', url: 'https://grammy.dev' }]),
@@ -582,7 +591,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       photoBlock({ type: 'photo', media: 'attach://missing' }),
-      'Bad Request: media not found',
+      "Bad Request: can't parse InputRichBlock: media not found",
     ],
     [
       photoBlock({ type: 'photo', media: 'https://grammy.dev/logo.png' }),
@@ -590,7 +599,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       photoBlock({ type: 'document', media: 'attach://missing' }),
-      'Bad Request: unexpected media type "document" for block "photo"',
+      `Bad Request: can't parse InputRichBlock: Unexpected media type "document" for block "photo"`,
     ],
     [
       photoBlock({ type: 'photo', media: 'unknown-file-id' }),
@@ -622,6 +631,137 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
         }`,
       );
     }
+  }
+});
+
+Deno.test('sendRichMessage prefixes the faults the server finds while it reads the blocks', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
+  await sendText('/start');
+  const blocks = (...richBlocks: unknown[]) => ({ blocks: richBlocks });
+  const listOf = (...items: unknown[]) => ({ type: 'list', items });
+  const buttonRow = (buttons: unknown[], align?: string) => ({
+    type: 'buttons',
+    buttons,
+    ...(align === undefined ? {} : { align }),
+  });
+  const paragraph = (text: unknown) => ({ type: 'paragraph', text });
+  // The server's outermost `Can't parse` is lowercased when the description is sent; the nested
+  // ones and the problem itself keep their case.
+  const cases: Array<readonly [unknown, string]> = [
+    [
+      blocks(1),
+      "Bad Request: can't parse InputRichBlock: Object expected as InputRichMessageBlock",
+    ],
+    [
+      blocks(listOf(1)),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlockListItem: " +
+      'Object expected as InputRichBlockListItem',
+    ],
+    [
+      blocks(listOf({ blocks: [1] })),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlockListItem: " +
+      "Can't parse InputRichBlock: Object expected as InputRichMessageBlock",
+    ],
+    // Blocks that hold blocks read them as the message does.
+    [
+      blocks(paragraph('Fine'), { type: 'blockquote', blocks: [1] }),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: " +
+      'Object expected as InputRichMessageBlock',
+    ],
+    [
+      blocks({ type: 'details', summary: 'More', blocks: [paragraph(5)] }),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: " +
+      'Invalid rich text specified',
+    ],
+    [
+      blocks({ type: 'collage', blocks: [{ type: 'marquee' }] }),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: " +
+      'type "marquee" is unsupported',
+    ],
+    [
+      blocks({
+        type: 'slideshow',
+        blocks: [{ type: 'photo', photo: { type: 'photo', media: 'attach://missing' } }],
+      }),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: media not found",
+    ],
+    // Table cells and buttons are read as arrays too, but the rows of a table, rich text and its
+    // buttons, and a block's caption are not.
+    [
+      blocks({ type: 'table', cells: [[{ text: 'A' }], [{ text: { type: 'blink' } }]] }),
+      "Bad Request: can't parse InputRichBlock: Can't parse PageBlockTableCell: " +
+      'Unsupported rich text type',
+    ],
+    [
+      blocks(buttonRow([{ text: [{ type: 'blink' }], callback_data: 'go' }])),
+      "Bad Request: can't parse InputRichBlock: Can't parse RichMessageButton: " +
+      'Unsupported rich text type',
+    ],
+    [
+      blocks(buttonRow([{ text: 'Go', callback_data: 'go' }], 'justify')),
+      "Bad Request: can't parse InputRichBlock: Invalid horizontal alignment specified",
+    ],
+    [
+      blocks(paragraph(['Press ', { type: 'button', button: 1 }])),
+      "Bad Request: can't parse InputRichBlock: InlineButton must be an Object",
+    ],
+    [
+      blocks({
+        type: 'map',
+        location: { latitude: 52, longitude: 13 },
+        caption: { text: { type: 'blink' } },
+      }),
+      "Bad Request: can't parse InputRichBlock: Unsupported rich text type",
+    ],
+    [
+      blocks({
+        type: 'blockquote',
+        blocks: [listOf({ blocks: [buttonRow([{ text: 'Go', style: 'glow', url: 'a.io' }])] })],
+      }),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: " +
+      "Can't parse InputRichBlockListItem: Can't parse InputRichBlock: " +
+      "Can't parse RichMessageButton: Invalid button style specified",
+    ],
+    // TDLib checks the blocks once the server has read them, without a prefix, however deeply
+    // they are nested.
+    [
+      blocks({ type: 'heading', text: 'Hi', size: 7 }),
+      'Bad Request: invalid section heading size specified',
+    ],
+    [
+      blocks({ type: 'blockquote', blocks: [{ type: 'heading', text: 'Hi', size: 0 }] }),
+      'Bad Request: invalid section heading size specified',
+    ],
+    [blocks(listOf()), 'Bad Request: list must be non-empty'],
+    [blocks(listOf({ blocks: [listOf()] })), 'Bad Request: list must be non-empty'],
+    [
+      blocks({ type: 'table', cells: [[{ text: 'A', colspan: -1 }]] }),
+      'Bad Request: invalid table cell colspan specified',
+    ],
+    // Neither the emulator's own refusals nor its strict reading of the input gain a prefix.
+    [
+      blocks({ type: 'details', summary: 'More', blocks: [{ type: 'thinking', text: 'Hm' }] }),
+      'Bad Request: thinking blocks can be used only in rich message drafts',
+    ],
+    [
+      blocks(listOf({ blocks: [paragraph('Hi'), { type: 'divider', text: 'Hi' }] })),
+      'Bad Request: invalid sendRichMessage parameters',
+    ],
+    // Faults outside the blocks have no prefix either.
+    [undefined, 'Bad Request: rich message must be non-empty'],
+    [{}, 'Bad Request: rich message must be non-empty'],
+  ];
+  for (const [richMessage, description] of cases) {
+    const { body } = await callBotApi(api, `${botApiPath}/sendRichMessage`, {
+      chat_id: createdAccount.account.id,
+      ...(richMessage === undefined ? {} : { rich_message: richMessage }),
+    });
+    assertEquals(
+      isBadRequestResponse(body) ? body.description : body,
+      description,
+      `Expected ${JSON.stringify(richMessage)} to fail as Telegram fails it`,
+    );
   }
 });
 

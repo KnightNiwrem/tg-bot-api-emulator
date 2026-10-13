@@ -486,10 +486,15 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
       voiceNote({ type: 'voice_note', media: CLIP_URL }),
       'Bad Request: wrong type of the web page content',
     ],
-    [video({ type: 'video', media: 'attach://missing' }), 'Bad Request: media not found'],
+    // The server prefixes its own faults with the message's blocks and the details' blocks.
+    [
+      video({ type: 'video', media: 'attach://missing' }),
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: media not found",
+    ],
     [
       video({ type: 'voice_note', media: videoFileId }),
-      'Bad Request: unexpected media type "voice_note" for block "video"',
+      "Bad Request: can't parse InputRichBlock: Can't parse InputRichBlock: " +
+      'Unexpected media type "voice_note" for block "video"',
     ],
     // As for `sendVideo`, covers are not supported; a voice note takes no thumbnail.
     [
