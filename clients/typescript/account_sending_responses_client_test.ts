@@ -5,7 +5,7 @@
  */
 import { assertEquals, assertInstanceOf, assertRejects, assertStringIncludes } from '@std/assert';
 
-import { EmulationClientError } from './emulation_client_error.ts';
+import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
 import { TelegramEmulationClient } from './telegram_emulation_client.ts';
 import {
   TEST_ACTION_RECEIPT,
@@ -13,6 +13,7 @@ import {
 } from './test_support/action_receipt_headers.ts';
 import type {
   ActionOutcome,
+  ControlErrorBody,
   MessageTarget,
   PrivateMessageTarget,
   SupergroupMessageTarget,
@@ -106,10 +107,12 @@ const chatKinds = [
 
 /**
  * An account client whose emulator answers its session's and account's creation, and answers any
- * other request, such as a sent message, with `actionResponseText` and an action receipt.
+ * other request, such as a sent message, with `actionResponseText` and an action receipt, as
+ * `actionResponseStatus`.
  */
 async function createAccountAnsweringWith(
   actionResponseText: string,
+  actionResponseStatus = ACTION_RESPONSE_STATUS,
 ): Promise<VirtualAccountClient> {
   const fetch = (input: RequestInfo | URL): Promise<Response> => {
     const { pathname } = new URL(input instanceof Request ? input.url : input);
@@ -131,7 +134,7 @@ async function createAccountAnsweringWith(
     }
     return Promise.resolve(
       new Response(actionResponseText, {
-        status: ACTION_RESPONSE_STATUS,
+        status: actionResponseStatus,
         headers: { ...TEST_ACTION_RECEIPT_HEADERS, 'Content-Type': 'application/json' },
       }),
     );
@@ -192,6 +195,20 @@ for (const action of messageSendingActions) {
       );
     });
   }
+
+  Deno.test(`${action.name} sends a target that is no chat for the emulator to refuse`, async () => {
+    const refusal: ControlErrorBody = {
+      reason: 'invalid_request',
+      issues: [{ source: 'body', path: ['to'], code: 'invalid_type', message: 'Expected a chat' }],
+    };
+    const account = await createAccountAnsweringWith(writeResponseText(refusal), 400);
+    // An untyped caller can give any value, which the client sends as it is.
+    const noChat = null as unknown as MessageTarget;
+
+    const error = await assertRejects(() => action.send(account, noChat), EmulationControlError);
+
+    assertEquals(error.body, refusal, "Expected the emulator's refusal");
+  });
 }
 
 Deno.test('A sent message that breaks the contract is refused with the response', async () => {

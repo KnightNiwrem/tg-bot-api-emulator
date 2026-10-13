@@ -1377,7 +1377,8 @@ type SentMessageResponseSchema = typeof sendAccountMessageContract.success.body.
  * `schema` refined to a message of `chat`'s type. The action's contract answers with a private or
  * a supergroup message; one of the other chat's type breaks what the action promises, so the
  * client refuses it as a response that breaks its contract, with the response's status and raw
- * body.
+ * body. `chat` is read only once a response arrives, so a target that is no chat, which only an
+ * untyped caller can give, is sent as it is for the emulator to refuse.
  */
 function sentMessageResponseSchemaFor<Target extends MessageTarget>(
   schema: SentMessageResponseSchema,
@@ -1391,14 +1392,15 @@ function sentMessageResponseSchemaFor<Target extends MessageTarget>(
     } => response.message.chat.type === chat.type,
     {
       path: ['message', 'chat', 'type'],
-      error: `Expected a message of the ${chat.type} chat it was sent to`,
+      error: () => `Expected a message of the ${chat.type} chat it was sent to`,
     },
   );
 }
 
 /**
  * The response schema of sending an album to `chat`, refined to messages of the chat's type, as
- * `sentMessageResponseSchemaFor` refines a message's.
+ * `sentMessageResponseSchemaFor` refines a message's and, like it, reading `chat` only once a
+ * response arrives.
  */
 function sentAlbumResponseSchemaFor<Target extends MessageTarget>(chat: Target) {
   return sendAccountMediaGroupContract.success.body.schema.refine(
@@ -1409,7 +1411,7 @@ function sentAlbumResponseSchemaFor<Target extends MessageTarget>(chat: Target) 
     } => response.messages.every((message) => message.chat.type === chat.type),
     {
       path: ['messages'],
-      error: `Expected messages of the ${chat.type} chat they were sent to`,
+      error: () => `Expected messages of the ${chat.type} chat they were sent to`,
     },
   );
 }
