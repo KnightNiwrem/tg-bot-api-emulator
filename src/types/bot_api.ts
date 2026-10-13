@@ -8,6 +8,7 @@ import type { GeoLocation } from './geo_location.ts';
 import {
   getInvoiceTotalAmount,
   type StarsInvoice,
+  type StarsPayment,
   type TELEGRAM_STARS_CURRENCY,
 } from './invoice.ts';
 import type { ReactionEmoji } from './message_reaction.ts';
@@ -456,15 +457,53 @@ export interface BotApiWebAppDataServiceContent {
   };
 }
 
-/** The fields of a private service message about what an account sent the bot from its client. */
+/**
+ * An account's payment of an invoice the bot sent, in the field order of the official Bot API
+ * server's `JsonSuccessfulPaymentBot`. A one-off payment in Telegram Stars has no shipping option,
+ * order information or subscription, which the server omits when absent.
+ */
+export interface BotApiSuccessfulPayment {
+  readonly currency: typeof TELEGRAM_STARS_CURRENCY;
+  /** The total price in the smallest units of the currency. */
+  readonly total_amount: number;
+  /** The payload the bot sent with the invoice, unchanged. */
+  readonly invoice_payload: string;
+  readonly telegram_payment_charge_id: string;
+  readonly provider_payment_charge_id: string;
+}
+
+/** Shows a payment as the official Bot API server's `JsonSuccessfulPaymentBot` does. */
+export function toBotApiSuccessfulPayment(payment: StarsPayment): BotApiSuccessfulPayment {
+  return {
+    currency: payment.currency,
+    total_amount: payment.totalAmount,
+    invoice_payload: payment.invoicePayload,
+    telegram_payment_charge_id: payment.charge.telegramPaymentChargeId,
+    provider_payment_charge_id: payment.charge.providerPaymentChargeId,
+  };
+}
+
+/**
+ * The field of a service message about an account's payment of the bot's invoice, which takes the
+ * place of content.
+ */
+export interface BotApiSuccessfulPaymentServiceContent {
+  readonly successful_payment: BotApiSuccessfulPayment;
+}
+
+/**
+ * The fields of a private service message about what an account sent the bot from its client: the
+ * users or chat it shared, the data a Web App sent, or its payment of the bot's invoice.
+ */
 export type BotApiAccountServiceContent =
   | BotApiUsersSharedServiceContent
   | BotApiChatSharedServiceContent
-  | BotApiWebAppDataServiceContent;
+  | BotApiWebAppDataServiceContent
+  | BotApiSuccessfulPaymentServiceContent;
 
 /**
- * What a private message shows: content, a pin, the users or chat an account shared, or the data
- * a Web App sent.
+ * What a private message shows: content, a pin, the users or chat an account shared, the data a
+ * Web App sent, or an account's payment.
  */
 export type BotApiPrivateMessageContent =
   | BotApiPrivateWrittenContent
@@ -473,7 +512,7 @@ export type BotApiPrivateMessageContent =
 
 /**
  * What a private message shows as a replied message: content, a pin, the users or chat an account
- * shared, or the data a Web App sent.
+ * shared, the data a Web App sent, or an account's payment.
  */
 export type BotApiRepliedPrivateMessageContent =
   | BotApiPrivateWrittenContent

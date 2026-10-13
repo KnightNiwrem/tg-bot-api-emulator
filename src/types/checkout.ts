@@ -3,13 +3,17 @@
  * payment of an invoice, which starts an attempt that the bot receives as a pre-checkout query and
  * approves or refuses.
  *
+ * The account completes an approved attempt, which pays the invoice and sends the bot the
+ * payment's receipt.
+ *
  * The emulator's checkout rules are its own policies, which Telegram does not document: an invoice
- * has at most one active attempt, an attempt is answered once, and the account abandons an
- * attempt, or a test expires a pending one, by explicit controls rather than by time.
+ * has at most one active attempt and is paid at most once, an attempt is answered once, and the
+ * account completes or abandons an attempt, or a test expires a pending one, by explicit controls
+ * rather than by time.
  *
  * @module
  */
-import type { StarsInvoice } from './invoice.ts';
+import type { PaymentChargeIds, StarsInvoice } from './invoice.ts';
 import type { CanonicalMessageId } from './virtual_message.ts';
 
 /**
@@ -19,14 +23,28 @@ import type { CanonicalMessageId } from './virtual_message.ts';
 export type PreCheckoutQueryId = string;
 
 /**
+ * The payment a completed attempt made: the receipt it sent the bot, a service message of the
+ * invoice's private chat, and the charge's identifiers, which the receipt shows.
+ */
+export interface CheckoutPayment {
+  /** The receipt, which identifies it for as long as the session lasts, even once deleted. */
+  readonly receiptMessageId: CanonicalMessageId;
+  /** The ID of the receipt as the private chat numbers it, as message history shows it. */
+  readonly receiptChatMessageId: number;
+  readonly charge: PaymentChargeIds;
+}
+
+/**
  * Where a checkout attempt is in its life. An attempt starts `pending`, awaiting the bot's answer
  * to its pre-checkout query. The bot's answer approves it or refuses it with the reason it gives the
- * payer. The payer abandons a pending or approved attempt, and a pending attempt expires when a
- * test expires it. A refused, abandoned or expired attempt has ended for good.
+ * payer. The payer completes an approved attempt, which pays the invoice, and abandons a pending or
+ * approved one; a pending attempt expires when a test expires it. A completed, refused, abandoned or
+ * expired attempt has ended for good.
  */
 export type CheckoutAttemptState =
   | { readonly status: 'pending' }
   | { readonly status: 'approved' }
+  | { readonly status: 'completed'; readonly payment: CheckoutPayment }
   | {
     readonly status: 'refused';
     /** The bot's explanation for the payer of why the checkout cannot proceed; never empty. */
@@ -34,6 +52,12 @@ export type CheckoutAttemptState =
   }
   | { readonly status: 'abandoned' }
   | { readonly status: 'expired' };
+
+/** Any state of an attempt but completion: one that has made no payment. */
+export type UnpaidCheckoutAttemptState = Exclude<
+  CheckoutAttemptState,
+  { readonly status: 'completed' }
+>;
 
 /** The bot's answer to a pre-checkout query: an approval, or a refusal with its explanation. */
 export type PreCheckoutQueryAnswer = Extract<
@@ -73,4 +97,16 @@ export interface CheckoutAttempt {
    */
   readonly invoice: StarsInvoice;
   readonly state: CheckoutAttemptState;
+}
+
+/**
+ * The charge identifiers of an attempt's payment, which the emulator makes up from the attempt's
+ * query ID: stable, unique within the session, and in a format of its own that makes no claim about
+ * the identifiers Telegram or a payment provider issues.
+ */
+export function createSyntheticPaymentChargeIds(attemptId: PreCheckoutQueryId): PaymentChargeIds {
+  return {
+    telegramPaymentChargeId: `emulator_telegram_charge_${attemptId}`,
+    providerPaymentChargeId: `emulator_provider_charge_${attemptId}`,
+  };
 }

@@ -61,6 +61,42 @@ Deno.test('a checkout whose projection fails starts no attempt', async () => {
   assertEquals(fixture.submitCheckout().id, '1');
 });
 
+Deno.test("a completion whose receipt's projection fails pays nothing", async () => {
+  const fixture = await createQueryFixture();
+  const { session } = fixture;
+  const attempt = await fixture.approveCheckout();
+  const views = session.botMessageViews;
+  const viewPrivateMessage = views.viewPrivateMessageForBot.bind(views);
+  views.viewPrivateMessageForBot = () => {
+    throw new Error(FAILED_VIEW_MESSAGE);
+  };
+  const stateBefore = fixture.readState();
+
+  assertThrows(() => fixture.completeCheckout(attempt.id), Error, FAILED_VIEW_MESSAGE);
+  views.viewPrivateMessageForBot = viewPrivateMessage;
+
+  assertEquals(fixture.readState(), stateBefore, 'Expected the attempt still approved');
+  // The invoice is not paid, and the receipt's message ID was not used.
+  const { state } = fixture.completeCheckout(attempt.id);
+  assertEquals(
+    state.status === 'completed' ? state.payment.receiptChatMessageId : state.status,
+    fixture.invoiceMessageId + 1,
+  );
+});
+
+Deno.test('a completion after its session ended pays nothing', async () => {
+  const fixture = await createQueryFixture();
+  const { session } = fixture;
+  const attempt = await fixture.approveCheckout();
+  const stateBefore = fixture.readState();
+
+  session.end();
+  const execution = session.transactions.execute(() => fixture.completeCheckout(attempt.id));
+
+  assertEquals(execution, { executed: false, reason: 'session_ended' });
+  assertEquals(fixture.readState(), stateBefore);
+});
+
 Deno.test('an answer whose record fails leaves its query unanswered', async () => {
   const fixture = await createQueryFixture();
   const callbackQuery = fixture.pressButton();
@@ -303,6 +339,33 @@ async function createQueryFixture() {
       }
       return submission.attempt;
     },
+    /** Starts Ada's checkout of the invoice, which Alpha approves. */
+    approveCheckout: async () => {
+      const submission = session.checkouts.submitCheckout({
+        payerAccountId: adaId,
+        botId: alpha.id,
+        invoiceChatMessageId: invoiceMessageId,
+      });
+      if (!submission.submitted) {
+        throw new Error(`Expected the checkout to be submitted: ${submission.reason}`);
+      }
+      await harness.callMethodExpectingResult(alpha, 'answerPreCheckoutQuery', {
+        pre_checkout_query_id: submission.attempt.id,
+        ok: 'true',
+      });
+      return submission.attempt;
+    },
+    completeCheckout: (attemptId: string) => {
+      const completion = session.checkouts.completeCheckoutAttempt({
+        accountId: adaId,
+        attemptId,
+      });
+      if (!completion.completed) {
+        throw new Error(`Expected the checkout to be completed: ${completion.reason}`);
+      }
+      return completion.attempt;
+    },
+    invoiceMessageId,
     readCheckoutAttempt,
     /** The queries Alpha has been sent and the call records, through reads that record nothing. */
     readState: () => ({
@@ -315,6 +378,13 @@ async function createQueryFixture() {
         accountId: adaId,
         inlineQueryId: '1',
       }) ?? null,
+      messageIds: (() => {
+        const history = session.privateMessaging.getPrivateMessageHistory({
+          accountId: adaId,
+          botId: alpha.id,
+        });
+        return history.found ? history.messages.map(({ id }) => id) : history.reason;
+      })(),
       pendingUpdates: harness.countPendingUpdates([alpha]),
       activityHead: session.botActivity.getHeadPosition(),
     }),

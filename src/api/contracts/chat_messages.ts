@@ -17,7 +17,12 @@ import type {
   ExclusiveAlternatives,
   FieldNameOfAnyKind,
 } from './exclusive_alternatives.ts';
-import { type Invoice, invoiceSchema } from './invoices.ts';
+import {
+  type Invoice,
+  invoiceSchema,
+  type SuccessfulPayment,
+  successfulPaymentSchema,
+} from './invoices.ts';
 import { type InlineKeyboardMarkup, inlineKeyboardMarkupSchema } from './keyboard_buttons.ts';
 import { messageEntitySchema } from './message_entities.ts';
 import {
@@ -235,13 +240,14 @@ export type RepliedPinContent<PinnedMessage> =
 
 /**
  * The fields of a service message about what an account sent a bot from its client, the users or
- * chat it shared or the data a Web App sent, which other private messages never have.
+ * chat it shared, the data a Web App sent or its payment, which other private messages never have.
  */
 interface NoAccountServiceContent {
   readonly user_shared?: never;
   readonly users_shared?: never;
   readonly chat_shared?: never;
   readonly web_app_data?: never;
+  readonly successful_payment?: never;
 }
 
 /**
@@ -276,6 +282,7 @@ export type UsersSharedContent =
     };
     readonly chat_shared?: never;
     readonly web_app_data?: never;
+    readonly successful_payment?: never;
   };
 
 /**
@@ -297,6 +304,7 @@ export type ChatSharedContent =
       readonly request_id: number;
     };
     readonly web_app_data?: never;
+    readonly successful_payment?: never;
   };
 
 /**
@@ -317,29 +325,47 @@ export type WebAppDataContent =
       /** The data the Web App sent, as it sent it. */
       readonly data: string;
     };
+    readonly successful_payment?: never;
+  };
+
+/**
+ * The field of a service message about an account's payment of the bot's invoice, which takes the
+ * place of content.
+ */
+export type SuccessfulPaymentContent =
+  & NoContent
+  & NoServiceChange
+  & {
+    readonly user_shared?: never;
+    readonly users_shared?: never;
+    readonly chat_shared?: never;
+    readonly web_app_data?: never;
+    readonly successful_payment: SuccessfulPayment;
   };
 
 /**
  * What a private message shows: content, a bot's invoice, a pin, the users or chat an account
- * shared, or the data a Web App sent.
+ * shared, the data a Web App sent, or an account's payment of the bot's invoice.
  */
 export type PrivateMessageContent =
   | (PrivateWrittenContent & NoServiceChange & NoAccountServiceContent)
   | (PinContent<PrivateChat, PinnedPrivateMessage> & NoAccountServiceContent & NoInvoice)
   | (UsersSharedContent & NoInvoice)
   | (ChatSharedContent & NoInvoice)
-  | (WebAppDataContent & NoInvoice);
+  | (WebAppDataContent & NoInvoice)
+  | (SuccessfulPaymentContent & NoInvoice);
 
 /**
  * What a private message shows as a replied message, as `RepliedPinContent` shows a pin, or the
- * users or chat an account shared, or the data a Web App sent.
+ * users or chat an account shared, the data a Web App sent, or an account's payment.
  */
 export type RepliedPrivateMessageContent =
   | (PrivateWrittenContent & NoServiceChange & NoAccountServiceContent)
   | (RepliedPinContent<PinnedPrivateMessage> & NoAccountServiceContent & NoInvoice)
   | (UsersSharedContent & NoInvoice)
   | (ChatSharedContent & NoInvoice)
-  | (WebAppDataContent & NoInvoice);
+  | (WebAppDataContent & NoInvoice)
+  | (SuccessfulPaymentContent & NoInvoice);
 
 /**
  * What a supergroup message shows: content, or a change of the supergroup's members or title, or
@@ -767,7 +793,8 @@ const sharedUserSchema = z.strictObject({
 /**
  * A service message about what an account sent the bot from its client, as
  * `contentMessageSchemas` reads others: the users or the supergroup it shared, a single shared user
- * also showing as the legacy `user_shared`, or the data a Web App sent.
+ * also showing as the legacy `user_shared`, the data a Web App sent, or its payment of the bot's
+ * invoice.
  */
 function accountServiceMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
   return [
@@ -800,6 +827,11 @@ function accountServiceMessageSchemas<Header extends z.ZodRawShape>(header: Head
         button_text: z.string().min(1),
         data: z.string().min(1),
       }),
+      ...messageTrailerShape,
+    }),
+    z.strictObject({
+      ...header,
+      successful_payment: successfulPaymentSchema,
       ...messageTrailerShape,
     }),
   ] as const;
@@ -845,8 +877,8 @@ function repliedSupergroupMessage() {
 
 /**
  * A private message, which may be a bot's invoice, or a service message about a pin, about users
- * or a chat an account shared or about data a Web App sent, with its replied message, which may be
- * one too.
+ * or a chat an account shared, about data a Web App sent or about an account's payment, with its
+ * replied message, which may be one too.
  */
 export const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
   ...privateWrittenMessageSchemas({

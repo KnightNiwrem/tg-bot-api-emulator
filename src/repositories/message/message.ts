@@ -434,6 +434,11 @@ function copyContent(content: ChatMessageContent): ChatMessageContent {
       return { ...content, memberIds: [...content.memberIds] };
     case 'users_shared':
       return { ...content, users: content.users.map((user) => ({ ...user })) };
+    case 'successful_payment':
+      return {
+        ...content,
+        payment: { ...content.payment, charge: { ...content.payment.charge } },
+      };
     case 'member_left':
     case 'title_changed':
     case 'message_pinned':

@@ -127,12 +127,13 @@ Reads, such as `getMessages`, resolve to what they read, and ending a session re
 
 ## Account: payments
 
-| Operation                | Purpose                                                  | Guide                   |
-| ------------------------ | -------------------------------------------------------- | ----------------------- |
-| `submitCheckout`         | Confirms the checkout of a bot's invoice                 | [Payments](payments.md) |
-| `getCheckoutAttempt`     | Reads a checkout attempt with the bot's answer           | [Payments](payments.md) |
-| `abandonCheckoutAttempt` | Abandons a pending or approved checkout                  | [Payments](payments.md) |
-| `expireCheckoutAttempt`  | Ends a pending checkout as the bot's time to answer does | [Payments](payments.md) |
+| Operation                 | Purpose                                                  | Guide                   |
+| ------------------------- | -------------------------------------------------------- | ----------------------- |
+| `submitCheckout`          | Confirms the checkout of a bot's invoice                 | [Payments](payments.md) |
+| `getCheckoutAttempt`      | Reads a checkout attempt with the bot's answer           | [Payments](payments.md) |
+| `completeCheckoutAttempt` | Pays the invoice of an approved checkout                 | [Payments](payments.md) |
+| `abandonCheckoutAttempt`  | Abandons a pending or approved checkout                  | [Payments](payments.md) |
+| `expireCheckoutAttempt`   | Ends a pending checkout as the bot's time to answer does | [Payments](payments.md) |
 
 ## Account: supergroups
 

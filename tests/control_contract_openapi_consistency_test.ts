@@ -120,6 +120,7 @@ import {
 } from '../src/api/contracts/callback_queries.ts';
 import {
   abandonCheckoutAttemptContract,
+  completeCheckoutAttemptContract,
   expireCheckoutAttemptContract,
   getCheckoutAttemptContract,
   submitCheckoutContract,
@@ -228,6 +229,7 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   chooseInlineQueryResultContract,
   submitCheckoutContract,
   getCheckoutAttemptContract,
+  completeCheckoutAttemptContract,
   abandonCheckoutAttemptContract,
   expireCheckoutAttemptContract,
 ];

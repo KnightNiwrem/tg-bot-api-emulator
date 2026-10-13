@@ -1,0 +1,39 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's payment of a bot's invoice in Telegram Stars, in the field order of the official Bot
+  API server's `JsonSuccessfulPaymentBot`. A one-off payment in Telegram Stars has no shipping
+  option, order information or subscription, which are omitted.
+required:
+  - currency
+  - total_amount
+  - invoice_payload
+  - telegram_payment_charge_id
+  - provider_payment_charge_id
+properties:
+  currency:
+    type: string
+    const: XTR
+    description: Telegram Stars, the only currency of the emulator's invoices.
+  total_amount:
+    type: integer
+    minimum: 1
+    maximum: 999999999999
+    description: The invoice's total, in Telegram Stars, as the account confirmed it.
+  invoice_payload:
+    type: string
+    minLength: 1
+    description: The payload the bot sent with the invoice, unchanged.
+  telegram_payment_charge_id:
+    type: string
+    minLength: 1
+    description: >-
+      Synthetic identifier the emulator makes up for the charge, stable within the session. Its
+      format is the emulator's own and makes no claim about Telegram's.
+  provider_payment_charge_id:
+    type: string
+    minLength: 1
+    description: >-
+      Synthetic identifier the emulator makes up for the provider's charge, stable within the
+      session. Its format is the emulator's own and makes no claim about Telegram's, including
+      whether payments in Telegram Stars leave it empty.

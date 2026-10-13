@@ -17,6 +17,7 @@ import {
 } from '../../src/api/contracts/callback_queries.ts';
 import {
   abandonCheckoutAttemptContract,
+  completeCheckoutAttemptContract,
   expireCheckoutAttemptContract,
   getCheckoutAttemptContract,
   submitCheckoutContract,
@@ -1123,6 +1124,17 @@ function createVirtualAccountClient(
       });
       return response.checkout_attempt;
     },
+    async completeCheckoutAttempt(
+      checkoutAttemptId: string,
+    ): Promise<ActionOutcome<CheckoutAttemptIn<'completed'>>> {
+      const completion = await callRefinedJsonAction(
+        transport,
+        completeCheckoutAttemptContract,
+        { params: { ...accountParams, checkoutAttemptId } },
+        checkoutAttemptResponseSchemaFor('completed'),
+      );
+      return selectResult(completion, ({ checkout_attempt }) => checkout_attempt);
+    },
     async abandonCheckoutAttempt(
       checkoutAttemptId: string,
     ): Promise<ActionOutcome<CheckoutAttemptIn<'abandoned'>>> {
@@ -1418,8 +1430,8 @@ function toAccountMediaGroupFile(item: AccountMediaGroupItem, field: string, cal
 
 /**
  * The response schema of a checkout attempt's actions, refined to an attempt in `status`, which
- * the action leaves it in: a submission leaves it pending, an abandonment abandoned and an expiry
- * expired. An attempt in another status breaks what the action promises, so the client refuses it
+ * the action leaves it in: a submission leaves it pending, a completion completed, an abandonment
+ * abandoned and an expiry expired. An attempt in another status breaks what the action promises, so the client refuses it
  * as a response that breaks its contract, with the response's status and raw body.
  */
 function checkoutAttemptResponseSchemaFor<Status extends CheckoutAttemptStatus>(status: Status) {

@@ -2,9 +2,10 @@
 
 [Guide index](README.md) · [Feature reference: Payments](../../features/payments.md)
 
-This page shows how an account checks out an invoice a bot sends in Telegram Stars, how a test reads
-the bot's answer to the checkout, and how it ends a checkout the bot approved. The examples use the
-[shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
+This page shows how an account checks out and pays an invoice a bot sends in Telegram Stars, how a
+test reads the bot's answer to the checkout, and how it checks that only the payment unlocks what
+the bot sells. The examples use the [shared fixture](sessions-and-fixtures.md) and the
+[waiting pattern](observing-bot-behavior.md).
 
 ## Checking out an invoice
 
@@ -15,19 +16,28 @@ with the bot, as the payment form's final confirmation does, and returns the pen
 `answerPreCheckoutQuery`, so the test waits for that call before reading the answer with
 `account.getCheckoutAttempt`. A refused attempt carries the bot's `error_message`.
 
-An approval does not pay the invoice: it only lets the checkout proceed, and the emulator does not
-complete payments yet. A bot that grants access must wait for a `successful_payment` message, which
-the test below shows never arrives after an approval. `account.abandonCheckoutAttempt` ends a
-pending or approved attempt, as closing the payment form does, and `account.expireCheckoutAttempt`
-ends a pending one, as the bot's time to answer passing would. The bot is told of neither, and the
-invoice can then be checked out again with a new query.
-[Checkout](../../features/payments.md#checkout) describes the rules a checkout follows.
+An approval does not pay the invoice: it only lets the checkout proceed. A bot that grants access
+must wait for a `successful_payment` message, which arrives only once the account completes the
+approved attempt. `account.abandonCheckoutAttempt` ends a pending or approved attempt unpaid, as
+closing the payment form does, and `account.expireCheckoutAttempt` ends a pending one, as the bot's
+time to answer passing would. The bot is told of neither, and the invoice can then be checked out
+again with a new query. [Checkout](../../features/payments.md#checkout) describes the rules a
+checkout follows.
+
+## Paying an invoice
+
+`account.completeCheckoutAttempt` pays the invoice of an approved attempt. The bot receives the
+account's `successful_payment` service message in an ordinary `message` update, with the invoice's
+currency, total and payload, and charge identifiers whose format is the emulator's own. The
+completed attempt shows its `payment`, whose `receipt_message_id` is that message, so a test waits
+for the bot's reaction to it, here a reply. A paid invoice can never be checked out again.
+[Completion](../../features/payments.md#completion) describes the rules a payment follows.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
 
-Deno.test('an approved checkout grants nothing until it is paid', async () => {
+Deno.test('only the payment of an approved checkout grants access', async () => {
   const premiumUsers = new Set<number>();
   await withBotFixture({
     handlers: (bot) => {
@@ -41,6 +51,9 @@ Deno.test('an approved checkout grants nothing until it is paid', async () => {
       bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
       bot.on('message:successful_payment', (ctx) => {
         premiumUsers.add(ctx.from.id);
+        return ctx.reply('Premium unlocked', {
+          reply_parameters: { message_id: ctx.message.message_id },
+        });
       });
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
@@ -55,24 +68,34 @@ Deno.test('an approved checkout grants nothing until it is paid', async () => {
     );
     assertExists(invoice);
 
-    const { result: attempt, receipt } = await account.submitCheckout({
-      chat: privateChat,
-      message_id: invoice.message_id,
-    });
-    assertEquals(attempt.invoice.total_amount, 50);
+    // A checkout the bot approves grants nothing, and the account abandons it unpaid.
+    const checkOut = async () => {
+      const { result: attempt, receipt } = await account.submitCheckout({
+        chat: privateChat,
+        message_id: invoice.message_id,
+      });
+      await activity.waitFor({
+        method: 'answerPreCheckoutQuery',
+        ok: true,
+        parameters: { pre_checkout_query_id: attempt.id },
+      }, { after: receipt });
+      return await account.getCheckoutAttempt(attempt.id);
+    };
+    const abandoned = await checkOut();
+    assertEquals(abandoned.status, 'approved');
+    await account.abandonCheckoutAttempt(abandoned.id);
+    assertEquals(premiumUsers.has(account.id), false);
+
+    // Only the payment of the next approved checkout does.
+    const approved = await checkOut();
+    const { result: paid, receipt } = await account.completeCheckoutAttempt(approved.id);
+    assertEquals(paid.invoice.total_amount, 50);
     await activity.waitFor({
-      method: 'answerPreCheckoutQuery',
+      method: 'sendMessage',
       ok: true,
-      parameters: { pre_checkout_query_id: attempt.id },
+      parameters_json: { reply_parameters: { message_id: paid.payment.receipt_message_id } },
     }, { after: receipt });
-
-    const answered = await account.getCheckoutAttempt(attempt.id);
-    assertEquals(answered.status, 'approved');
-    assertEquals(premiumUsers.has(account.id), false);
-
-    const { result: abandoned } = await account.abandonCheckoutAttempt(attempt.id);
-    assertEquals(abandoned.status, 'abandoned');
-    assertEquals(premiumUsers.has(account.id), false);
+    assertEquals(premiumUsers.has(account.id), true);
   });
 });
 ```

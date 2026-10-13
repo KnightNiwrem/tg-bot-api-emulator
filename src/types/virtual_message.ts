@@ -1,7 +1,7 @@
 import type { Contact } from './contact.ts';
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
-import type { StarsInvoice } from './invoice.ts';
+import type { StarsInvoice, StarsPayment } from './invoice.ts';
 import type { UserReaction } from './message_reaction.ts';
 import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
@@ -399,14 +399,25 @@ export interface WebAppDataMessageContent {
 }
 
 /**
+ * A service message's record that an account paid an invoice of the bot of its private chat, which
+ * the account sends the bot as its receipt.
+ */
+export interface SuccessfulPaymentMessageContent {
+  readonly kind: 'successful_payment';
+  readonly payment: StarsPayment;
+}
+
+/**
  * What a private service message shows instead of content: a pin, the users or chat an account
- * shared with the bot, or the data a Web App sent the bot.
+ * shared with the bot, the data a Web App sent the bot, or an account's payment of the bot's
+ * invoice.
  */
 export type PrivateServiceContent =
   | MessagePinnedContent
   | UsersSharedMessageContent
   | ChatSharedMessageContent
-  | WebAppDataMessageContent;
+  | WebAppDataMessageContent
+  | SuccessfulPaymentMessageContent;
 
 /**
  * What a private message shows that its sender wrote: content any chat's messages show, or an
@@ -421,8 +432,8 @@ export type PrivateMessageContent = PrivateWrittenContent | PrivateServiceConten
 export type ChatMessageContent = SupergroupMessageContent | PrivateMessageContent;
 
 /**
- * Whether a message's content records a change of its chat, or what an account shared, as a
- * service message, rather than content its sender wrote.
+ * Whether a message's content records a change of its chat, or what an account shared or paid, as
+ * a service message, rather than content its sender wrote.
  */
 function isServiceContent(
   content: ChatMessageContent,
@@ -435,6 +446,7 @@ function isServiceContent(
     case 'users_shared':
     case 'chat_shared':
     case 'web_app_data':
+    case 'successful_payment':
       return true;
     case 'text':
     case 'photo':
@@ -482,6 +494,7 @@ export function isCaptionedMediaContent(
     case 'users_shared':
     case 'chat_shared':
     case 'web_app_data':
+    case 'successful_payment':
       return false;
     default: {
       const unhandledContent: never = content;
@@ -516,6 +529,7 @@ export function getContentText(content: ChatMessageContent): FormattedText {
     case 'users_shared':
     case 'chat_shared':
     case 'web_app_data':
+    case 'successful_payment':
       return { text: '', entities: [] };
     default: {
       const unhandledContent: never = content;

@@ -1,0 +1,63 @@
+description: >-
+  The account's completion of an approved checkout attempt, as the payment of its invoice does.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/CheckoutAttemptId.yaml
+post:
+  operationId: completeCheckoutAttempt
+  summary: Complete an approved checkout attempt as a virtual account
+  description: >-
+    Pays the invoice of an approved attempt in one step: marks the invoice paid for good and sends
+    the bot the account's service message with `successful_payment`, which carries the currency,
+    the total amount and the payload of the invoice as the account confirmed it, and synthetic
+    charge identifiers. The bot receives it in an ordinary `message` update, unless its
+    allowed_updates subscription excludes messages. The attempt then shows its `payment`. As
+    emulator policies, the invoice message must still exist and the account must not block the
+    bot; an attempt refused for either stays approved and can still be abandoned. Pending,
+    refused, abandoned, expired and completed attempts cannot be completed.
+  responses:
+    '200':
+      description: The attempt was completed; it is shown with its payment.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CheckoutAttemptResponse.yaml
+    '400':
+      description: The account path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
+    '404':
+      description: The session does not exist, or the account made no such checkout attempt.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_not_found
+                      - session_not_found
+    '409':
+      description: >-
+        The attempt is not approved, because the bot has not answered or refused it, or it has
+        ended; the invoice message was deleted; or the account blocks the bot.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_not_approved
+                      - invoice_message_deleted
+                      - bot_blocked

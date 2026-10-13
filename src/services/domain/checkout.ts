@@ -1,13 +1,19 @@
 import type { ChatDomainEvent } from '../../types/chat_domain_event.ts';
-import type {
-  CheckoutAttempt,
-  CheckoutAttemptState,
-  PreCheckoutQueryAnswer,
-  PreCheckoutQueryId,
+import {
+  type CheckoutAttempt,
+  type CheckoutPayment,
+  createSyntheticPaymentChargeIds,
+  type PreCheckoutQueryAnswer,
+  type PreCheckoutQueryId,
+  type UnpaidCheckoutAttemptState,
 } from '../../types/checkout.ts';
-import type { StarsInvoice } from '../../types/invoice.ts';
+import { createStarsPayment, type StarsInvoice } from '../../types/invoice.ts';
 import type { PrivateChatKey } from '../../types/virtual_chat.ts';
-import type { CanonicalMessageId } from '../../types/virtual_message.ts';
+import type {
+  CanonicalMessageId,
+  PrivateMessage,
+  SuccessfulPaymentMessageContent,
+} from '../../types/virtual_message.ts';
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageReader,
@@ -23,12 +29,13 @@ export interface SubmitCheckoutInput {
 
 /**
  * Why an account cannot check out an invoice: the account, the bot or the message does not exist
- * for it, the message is no invoice, the account blocks the bot, or the invoice's earlier attempt
- * is still pending or approved.
+ * for it, the message is no invoice, the invoice has been paid, the account blocks the bot, or the
+ * invoice's earlier attempt is still pending or approved.
  */
 export type SubmitCheckoutFailureReason =
   | Exclude<AccountChatMessageLookupFailureReason, 'chat_not_found' | 'not_a_member'>
   | 'message_not_invoice'
+  | 'invoice_already_paid'
   | 'bot_blocked'
   | 'checkout_attempt_active';
 
@@ -66,8 +73,41 @@ export type ExpireCheckoutAttemptResult =
     readonly reason: 'checkout_attempt_not_found' | 'checkout_attempt_not_pending';
   };
 
+/**
+ * Why an account cannot complete an attempt: it made no such attempt, the attempt is not approved,
+ * because the bot has not answered or refused it or the attempt has ended, the invoice message was
+ * deleted, or the account blocks the bot.
+ */
+export type CompleteCheckoutAttemptFailureReason =
+  | 'checkout_attempt_not_found'
+  | 'checkout_attempt_not_approved'
+  | 'invoice_message_deleted'
+  | 'bot_blocked';
+
+export type CompleteCheckoutAttemptResult =
+  | { readonly completed: true; readonly attempt: CheckoutAttempt }
+  | { readonly completed: false; readonly reason: CompleteCheckoutAttemptFailureReason };
+
 interface PrivateChatBlocking {
   isBotBlocked(chat: PrivateChatKey): boolean;
+}
+
+interface PrivateChatMessageLookup {
+  findChatMessage(chat: PrivateChatKey, messageId: CanonicalMessageId): PrivateMessage | undefined;
+}
+
+interface MessageBoxNumbering {
+  getMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number | undefined;
+}
+
+/** Records the receipt of a payment, as the payer's service message in the invoice's chat. */
+interface PaymentReceiptRecording {
+  recordPrivateChatServiceMessage(record: {
+    readonly conversation: PrivateChatKey['conversation'];
+    readonly sender: 'account';
+    readonly content: SuccessfulPaymentMessageContent;
+    readonly isSilent: boolean;
+  }): PrivateMessage;
 }
 
 interface CheckoutStore {
@@ -80,10 +120,12 @@ interface CheckoutStore {
   }): CheckoutAttempt;
   getAttempt(attemptId: PreCheckoutQueryId): CheckoutAttempt | undefined;
   findActiveAttempt(invoiceMessageId: CanonicalMessageId): CheckoutAttempt | undefined;
+  findPaidAttempt(invoiceMessageId: CanonicalMessageId): CheckoutAttempt | undefined;
   changeActiveAttemptState(
     attemptId: PreCheckoutQueryId,
-    state: CheckoutAttemptState,
+    state: UnpaidCheckoutAttemptState,
   ): CheckoutAttempt;
+  completeApprovedAttempt(attemptId: PreCheckoutQueryId, payment: CheckoutPayment): CheckoutAttempt;
 }
 
 /** The session's transactions: each command of the service runs in one, and emits its event into it. */
@@ -96,6 +138,11 @@ interface CheckoutTransactions {
 interface CheckoutServiceDependencies {
   readonly accountChatMessages: AccountChatMessageReader;
   readonly privateChats: PrivateChatBlocking;
+  /** Finds an attempt's invoice message by its canonical ID, as long as it is not deleted. */
+  readonly messages: PrivateChatMessageLookup;
+  /** Numbers a receipt as the private chat's history shows it. */
+  readonly messageBoxes: MessageBoxNumbering;
+  readonly receipts: PaymentReceiptRecording;
   readonly checkouts: CheckoutStore;
   /** Runs each command that changes the session as one transaction, which receives its event. */
   readonly transactions: CheckoutTransactions;
@@ -104,26 +151,41 @@ interface CheckoutServiceDependencies {
 /**
  * Carries out the checkout of invoices bots send to their private chats: an account confirms the
  * payment of an invoice, which starts an attempt that the bot receives as a pre-checkout query, and
- * the bot approves or refuses the attempt once. The payer abandons an attempt, or a test expires a
- * pending one, by explicit commands; nothing expires by time. Answering the query creates no
- * payment.
+ * the bot approves or refuses the attempt once. Answering the query creates no payment: the payer
+ * completes an approved attempt, which pays the invoice and sends the bot its receipt. The payer
+ * abandons an attempt, or a test expires a pending one, by explicit commands; nothing expires by
+ * time.
  *
  * An attempt keeps its invoice as the payer confirmed it, and the bot's answer reads only the
  * attempt, so neither a later deletion of the invoice nor a block of the bot changes what the bot
- * can answer. Each command runs as one transaction, published with the update it creates, or, should
- * any step fail, not at all.
+ * can answer; completion checks both again. Each command runs as one transaction, published with
+ * the update it creates, or, should any step fail, not at all.
  */
 export class CheckoutService {
   readonly #accountChatMessages: AccountChatMessageReader;
   readonly #privateChats: PrivateChatBlocking;
+  readonly #messages: PrivateChatMessageLookup;
+  readonly #messageBoxes: MessageBoxNumbering;
+  readonly #receipts: PaymentReceiptRecording;
   readonly #checkouts: CheckoutStore;
   readonly #transactions: CheckoutTransactions;
 
   constructor(
-    { accountChatMessages, privateChats, checkouts, transactions }: CheckoutServiceDependencies,
+    {
+      accountChatMessages,
+      privateChats,
+      messages,
+      messageBoxes,
+      receipts,
+      checkouts,
+      transactions,
+    }: CheckoutServiceDependencies,
   ) {
     this.#accountChatMessages = accountChatMessages;
     this.#privateChats = privateChats;
+    this.#messages = messages;
+    this.#messageBoxes = messageBoxes;
+    this.#receipts = receipts;
     this.#checkouts = checkouts;
     this.#transactions = transactions;
   }
@@ -132,8 +194,8 @@ export class CheckoutService {
    * Confirms the checkout of an invoice in the account's private chat with a bot, as the payer's
    * final confirmation of the payment form does, and publishes the pre-checkout query of the new
    * pending attempt for the bot. The payer, the bot, the currency, the amount and the payload all
-   * come from the stored invoice. As emulator policies, the invoice must have no active attempt and
-   * the account must not block the bot.
+   * come from the stored invoice. As emulator policies, the invoice must be unpaid and have no
+   * active attempt, and the account must not block the bot.
    */
   submitCheckout(input: SubmitCheckoutInput): SubmitCheckoutResult {
     return this.#transactions.withinTransaction(() => {
@@ -148,6 +210,9 @@ export class CheckoutService {
       const { message } = lookup;
       if (message.kind !== 'private_message' || message.content.kind !== 'invoice') {
         return { submitted: false, reason: 'message_not_invoice' };
+      }
+      if (this.#checkouts.findPaidAttempt(message.id) !== undefined) {
+        return { submitted: false, reason: 'invoice_already_paid' };
       }
       if (this.#privateChats.isBotBlocked(message.chat)) {
         return { submitted: false, reason: 'bot_blocked' };
@@ -185,6 +250,55 @@ export class CheckoutService {
       return {
         answered: true,
         attempt: this.#checkouts.changeActiveAttemptState(attempt.id, input.answer),
+      };
+    });
+  }
+
+  /**
+   * Completes an approved attempt of the account, as the payment of its invoice does: marks the
+   * invoice paid for good and sends the bot the payer's receipt, a service message of the private
+   * chat with the invoice's currency, amount and payload as the payer confirmed them, and synthetic
+   * charge identifiers. As emulator policies, the invoice message must still exist and the account
+   * must not block the bot; an attempt refused for either stays approved, so the payer can still
+   * abandon it.
+   */
+  completeCheckoutAttempt(key: AccountCheckoutAttemptKey): CompleteCheckoutAttemptResult {
+    return this.#transactions.withinTransaction(() => {
+      const attempt = this.getAccountCheckoutAttempt(key);
+      if (attempt === undefined) {
+        return { completed: false, reason: 'checkout_attempt_not_found' };
+      }
+      if (attempt.state.status !== 'approved') {
+        return { completed: false, reason: 'checkout_attempt_not_approved' };
+      }
+      const chat: PrivateChatKey = {
+        type: 'private',
+        conversation: { accountId: attempt.payerAccountId, botId: attempt.merchantBotId },
+      };
+      if (this.#messages.findChatMessage(chat, attempt.invoiceMessageId) === undefined) {
+        return { completed: false, reason: 'invoice_message_deleted' };
+      }
+      if (this.#privateChats.isBotBlocked(chat)) {
+        return { completed: false, reason: 'bot_blocked' };
+      }
+
+      const charge = createSyntheticPaymentChargeIds(attempt.id);
+      const receipt = this.#receipts.recordPrivateChatServiceMessage({
+        conversation: chat.conversation,
+        sender: 'account',
+        content: {
+          kind: 'successful_payment',
+          payment: createStarsPayment(attempt.invoice, charge),
+        },
+        isSilent: false,
+      });
+      return {
+        completed: true,
+        attempt: this.#checkouts.completeApprovedAttempt(attempt.id, {
+          receiptMessageId: receipt.id,
+          receiptChatMessageId: this.#requireBotMessageId(attempt.merchantBotId, receipt.id),
+          charge,
+        }),
       };
     });
   }
@@ -235,6 +349,19 @@ export class CheckoutService {
   ): CheckoutAttempt | undefined {
     const attempt = this.#checkouts.getAttempt(attemptId);
     return attempt?.payerAccountId === accountId ? attempt : undefined;
+  }
+
+  /**
+   * The ID of a committed message of a private chat, as the chat's bot numbers it.
+   *
+   * @throws {Error} when the bot's message box lacks the message, which its commit numbers.
+   */
+  #requireBotMessageId(botId: number, messageId: CanonicalMessageId): number {
+    const botMessageId = this.#messageBoxes.getMessageId(botId, messageId);
+    if (botMessageId === undefined) {
+      throw new Error(`Message ${messageId} is missing from the message box of bot ${botId}`);
+    }
+    return botMessageId;
   }
 }
 

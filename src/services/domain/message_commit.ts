@@ -30,6 +30,7 @@ import {
   type NewPrivateMessage,
   type NewSupergroupMessage,
   type PrivateMessage,
+  type SuccessfulPaymentMessageContent,
   type SupergroupMessage,
   type SupergroupMessageSender,
   type SupergroupServiceContent,
@@ -38,13 +39,17 @@ import {
 /** A change of a private chat that a caller made, recorded as a service message. */
 export interface PrivateChatServiceMessageRecord {
   readonly conversation: PrivateConversationKey;
-  /** The participant shown as having made the change: the one who pinned a message. */
+  /**
+   * The participant shown as having made the change: the one who pinned a message, or the account
+   * that paid the bot's invoice.
+   */
   readonly sender: PrivateConversationRole;
   /**
-   * The pin, the one change a caller records; users and chats an account shares, and data a Web
-   * App sends, are sent only through `MessageSendingService.sendAccountPrivateChatServiceMessage`.
+   * A pin, or the receipt of a payment, the changes callers record; users and chats an account
+   * shares, and data a Web App sends, are sent only through
+   * `MessageSendingService.sendAccountPrivateChatServiceMessage`.
    */
-  readonly content: MessagePinnedContent;
+  readonly content: MessagePinnedContent | SuccessfulPaymentMessageContent;
   /** Whether the service message notifies the other participant without sound. */
   readonly isSilent: boolean;
 }

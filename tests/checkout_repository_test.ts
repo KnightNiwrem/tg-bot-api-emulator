@@ -58,3 +58,42 @@ Deno.test('CheckoutRepository changes only an active attempt', () => {
     [ended, undefined],
   );
 });
+
+const PAYMENT = {
+  receiptMessageId: 'receipt',
+  receiptChatMessageId: 4,
+  charge: {
+    telegramPaymentChargeId: 'emulator_telegram_charge_1',
+    providerPaymentChargeId: 'emulator_provider_charge_1',
+  },
+} as const;
+
+Deno.test('CheckoutRepository completes only an approved attempt, and pays its invoice for good', () => {
+  const checkouts = new CheckoutRepository();
+  const attempt = checkouts.addPendingAttempt(ATTEMPT_INPUT);
+
+  assertThrows(
+    () => checkouts.completeApprovedAttempt(attempt.id, PAYMENT),
+    Error,
+    'is pending, not approved',
+  );
+  checkouts.changeActiveAttemptState(attempt.id, { status: 'approved' });
+  const completed = checkouts.completeApprovedAttempt(attempt.id, PAYMENT);
+
+  assertEquals(completed.state, { status: 'completed', payment: PAYMENT });
+  assertEquals(
+    [
+      checkouts.getAttempt(attempt.id),
+      checkouts.findPaidAttempt('invoice'),
+      checkouts.findActiveAttempt('invoice'),
+    ],
+    [completed, completed, undefined],
+  );
+  assertThrows(
+    () => checkouts.completeApprovedAttempt(attempt.id, PAYMENT),
+    Error,
+    'has already ended as completed',
+  );
+  assertThrows(() => checkouts.addPendingAttempt(ATTEMPT_INPUT), Error, 'was paid by attempt 1');
+  assertEquals(checkouts.findPaidAttempt('other'), undefined);
+});
