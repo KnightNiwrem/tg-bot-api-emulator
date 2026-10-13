@@ -372,8 +372,7 @@ class RichMessageReader {
   /**
    * Reads the JSON object of an `InputRichMessage`. Telegram reads the first of `blocks`,
    * `markdown`, and `html` it finds; the emulator requires exactly one, as the Bot API documents.
-   * TDLib accepts a message without blocks, which the emulator refuses as a message without a
-   * source, since Telegram's servers decide whether an empty message can be sent.
+   * `blocks` may be empty, as neither the Bot API nor TDLib requires a message to have blocks.
    */
   readRichMessage(parameter: string): SpecifiedRichMessage {
     if (parameter.length === 0) {
@@ -400,9 +399,6 @@ class RichMessageReader {
     }
     if (html !== undefined || markdown !== undefined || media !== undefined) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
-    }
-    if (blocks.length === 0) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richMessageBlocksEmpty.description());
     }
     return {
       richMessage: { blocks: this.#readBlocks(blocks), isRightToLeft: is_rtl },

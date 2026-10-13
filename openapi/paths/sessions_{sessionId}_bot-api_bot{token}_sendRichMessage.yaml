@@ -54,8 +54,8 @@ post:
     '400':
       description: >-
         The request cannot be decoded or has unsupported parameters, or Telegram would reject
-        it, checking in this order: `rich_message` is missing or empty, or has no blocks (`Bad
-        Request: rich message must be non-empty`), is not JSON (`Bad Request: can't parse rich
+        it, checking in this order: `rich_message` is missing or empty, or has none of `blocks`,
+        `markdown`, and `html` (`Bad Request: rich message must be non-empty`), is not JSON (`Bad Request: can't parse rich
         message JSON object`), or not an object (`Bad Request: object expected as rich
         message`); a block, a text, or a button cannot be read, with the Bot API server's or
         TDLib's description, such as `Bad Request: type "…" is unsupported`, `Bad Request:
