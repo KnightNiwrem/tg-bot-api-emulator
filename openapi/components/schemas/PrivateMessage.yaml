@@ -3,8 +3,8 @@ type: object
 additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
-  voice note, an audio file, a rich message, a poll, a contact, or a location, each with the fields
-  Telegram shows for it, or a service message recording that a participant pinned a message (`pinned_message`),
+  voice note, an audio file, a rich message, a poll, a contact, a location, or the bot's invoice,
+  each with the fields Telegram shows for it, or a service message recording that a participant pinned a message (`pinned_message`),
   or that the account shared users (`users_shared`) or a supergroup (`chat_shared`) in answer to a
   reply keyboard button's request, or that the Web App of such a button sent data
   (`web_app_data`).
@@ -40,6 +40,11 @@ oneOf:
     properties:
       location:
         $ref: ./Location.yaml
+  - required:
+      - invoice
+    properties:
+      invoice:
+        $ref: ./Invoice.yaml
   - required:
       - pinned_message
     properties:
@@ -189,6 +194,11 @@ properties:
   location:
     $ref: ./Location.yaml
     description: The static location of a location message.
+  invoice:
+    $ref: ./Invoice.yaml
+    description: >-
+      The invoice the bot sent for payment in Telegram Stars. Clients show a Pay button on it, for
+      which the message shows no `reply_markup`.
   pinned_message:
     description: >-
       The message a service message records the pin of, which is never a service message, as

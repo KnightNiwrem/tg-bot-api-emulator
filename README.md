@@ -7,9 +7,10 @@ using a session-specific API root.
 
 The emulator supports private chats and supergroups, polling and webhooks, text, photos, documents,
 videos, voice notes, audio files, albums of photos and videos, of documents or of audio files, rich
-messages, polls, contacts, static locations, pinned messages, emoji reactions in supergroups, invite
-links, keyboards, inline queries, and selected moderation methods. See the
-[feature documentation](docs/features/README.md) for the complete method inventory, missing
+messages, polls, contacts, static locations, invoices in Telegram Stars, pinned messages, emoji
+reactions in supergroups, invite links, keyboards, inline queries, and selected moderation methods.
+Payments are partial: bots send invoices, while checkout and payment completion are still to come.
+See the [feature documentation](docs/features/README.md) for the complete method inventory, missing
 features, and known differences from the official Bot API server and TDLib.
 
 ## Getting started

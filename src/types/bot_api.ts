@@ -5,6 +5,11 @@ import type { ButtonStyle } from './button_appearance.ts';
 import type { SupergroupAdministratorRight } from './chat_membership.ts';
 import type { Contact } from './contact.ts';
 import type { GeoLocation } from './geo_location.ts';
+import {
+  getInvoiceTotalAmount,
+  type StarsInvoice,
+  type TELEGRAM_STARS_CURRENCY,
+} from './invoice.ts';
 import type { ReactionEmoji } from './message_reaction.ts';
 import type { VirtualAccountProfile } from './virtual_account.ts';
 import type { PlainTextEntityType } from './virtual_message.ts';
@@ -342,6 +347,14 @@ export type BotApiMessageContent =
   | { readonly contact: BotApiContact }
   | { readonly location: BotApiLocation };
 
+/** The field of a bot's invoice, which only private messages show. */
+export interface BotApiInvoiceContent {
+  readonly invoice: BotApiInvoice;
+}
+
+/** The fields that show what a private message's sender wrote: content, or a bot's invoice. */
+export type BotApiPrivateWrittenContent = BotApiMessageContent | BotApiInvoiceContent;
+
 /**
  * The fields of a service message about a membership change, which take the place of content.
  * Telegram still sends each change's legacy fields before its current ones.
@@ -454,7 +467,7 @@ export type BotApiAccountServiceContent =
  * a Web App sent.
  */
 export type BotApiPrivateMessageContent =
-  | BotApiMessageContent
+  | BotApiPrivateWrittenContent
   | BotApiPinServiceContent<BotApiPinnedPrivateMessage, BotApiPrivateChat>
   | BotApiAccountServiceContent;
 
@@ -463,7 +476,7 @@ export type BotApiPrivateMessageContent =
  * shared, or the data a Web App sent.
  */
 export type BotApiRepliedPrivateMessageContent =
-  | BotApiMessageContent
+  | BotApiPrivateWrittenContent
   | BotApiRepliedPinServiceContent<BotApiPinnedPrivateMessage>
   | BotApiAccountServiceContent;
 
@@ -502,7 +515,7 @@ export type BotApiMessageOrigin = BotApiMessageOriginUser | BotApiMessageOriginH
 
 /**
  * The media of a message of another chat that a message replies to, whose caption shows as the
- * reply's quote instead, or its poll, contact, or location: nothing for text.
+ * reply's quote instead, or its poll, contact, location, or invoice: nothing for text.
  */
 export type BotApiExternalReplyMedia =
   | Record<never, never>
@@ -521,7 +534,8 @@ export type BotApiExternalReplyMedia =
   | { readonly voice: BotApiVoice }
   | { readonly audio: BotApiAudio }
   | { readonly contact: BotApiContact }
-  | { readonly location: BotApiLocation };
+  | { readonly location: BotApiLocation }
+  | BotApiInvoiceContent;
 
 /** A message of another chat that a message replies to, as Telegram's `ExternalReplyInfo`. */
 export type BotApiExternalReplyInfo =
@@ -646,7 +660,7 @@ export type BotApiRepliedSupergroupMessage = BotApiRepliedMessageInChat<
  */
 export type BotApiPinnedPrivateMessage = BotApiRepliedMessageInChat<
   BotApiPrivateChat,
-  BotApiMessageContent
+  BotApiPrivateWrittenContent
 >;
 
 /** A pinned supergroup message, as `BotApiPinnedPrivateMessage` describes a private one. */
@@ -738,6 +752,31 @@ export function toBotApiContact(
     ...(lastName.length === 0 ? {} : { last_name: lastName }),
     ...(vcard.length === 0 ? {} : { vcard }),
     ...(userId === undefined ? {} : { user_id: userId }),
+  };
+}
+
+/**
+ * An invoice, in the field order of the official Bot API server's `JsonInvoice`, which shows neither
+ * the invoice's payload nor its receipt.
+ */
+export interface BotApiInvoice {
+  readonly title: string;
+  readonly description: string;
+  /** Always present: empty for an invoice without a deep-linking start parameter. */
+  readonly start_parameter: string;
+  readonly currency: typeof TELEGRAM_STARS_CURRENCY;
+  /** The total price in the smallest units of the currency. */
+  readonly total_amount: number;
+}
+
+/** Shows an invoice as the official Bot API server's `JsonInvoice` does. */
+export function toBotApiInvoice(invoice: StarsInvoice): BotApiInvoice {
+  return {
+    title: invoice.title,
+    description: invoice.description,
+    start_parameter: invoice.startParameter,
+    currency: invoice.currency,
+    total_amount: getInvoiceTotalAmount(invoice),
   };
 }
 

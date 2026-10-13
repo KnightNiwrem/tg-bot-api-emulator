@@ -28,6 +28,7 @@ import {
   type BotApiPrivateChatBotMember,
   type BotApiPrivateMessage,
   type BotApiPrivateMessageContent,
+  type BotApiPrivateWrittenContent,
   type BotApiRepliedPrivateMessage,
   type BotApiRepliedPrivateMessageContent,
   type BotApiRepliedSupergroupMessage,
@@ -40,6 +41,7 @@ import {
   type BotApiUser,
   type BotApiUsersSharedServiceContent,
   toBotApiContact,
+  toBotApiInvoice,
   toBotApiLocation,
 } from '../types/bot_api.ts';
 import type {
@@ -80,6 +82,7 @@ import {
   type PrivateContentMessage,
   type PrivateMessage,
   type PrivateMessageContent,
+  type PrivateWrittenContent,
   type SupergroupContentMessage,
   type SupergroupMessage,
   type SupergroupMessageContent,
@@ -243,7 +246,7 @@ export function projectPinnedPrivateMessageForBot(
     ...projectPrivateMessageHeader(observed),
     ...projectMessageBody(
       message,
-      projectMessageContent(message.content, context),
+      projectPrivateWrittenContent(message.content, context),
       context,
       undefined,
       false,
@@ -523,6 +526,8 @@ function projectExternalReplyMedia(
       return { contact: toBotApiContact(media.contact) };
     case 'location':
       return { location: toBotApiLocation(media.location) };
+    case 'invoice':
+      return { invoice: toBotApiInvoice(media.invoice) };
     default: {
       const unhandledMedia: never = media;
       throw new Error(`Unhandled external reply media: ${JSON.stringify(unhandledMedia)}`);
@@ -568,7 +573,7 @@ function projectRepliedPrivateMessageContent(
 function projectPrivateMessageContent(
   content: Exclude<PrivateMessageContent, MessagePinnedContent>,
   context: MessageProjectionContext,
-): BotApiMessageContent | BotApiAccountServiceContent {
+): BotApiPrivateWrittenContent | BotApiAccountServiceContent {
   switch (content.kind) {
     case 'users_shared':
       return projectUsersSharedContent(content);
@@ -577,8 +582,22 @@ function projectPrivateMessageContent(
     case 'web_app_data':
       return { web_app_data: { button_text: content.buttonText, data: content.data } };
     default:
-      return projectMessageContent(content, context);
+      return projectPrivateWrittenContent(content, context);
   }
+}
+
+/**
+ * Projects what a private message's sender wrote: content, or a bot's invoice, which the official
+ * server's `JsonInvoice` shows without its payload. The emulator shows no `reply_markup` for the
+ * Pay button Telegram's clients show on an invoice sent without a keyboard.
+ */
+function projectPrivateWrittenContent(
+  content: PrivateWrittenContent,
+  context: MessageProjectionContext,
+): BotApiPrivateWrittenContent {
+  return content.kind === 'invoice'
+    ? { invoice: toBotApiInvoice(content.invoice) }
+    : projectMessageContent(content, context);
 }
 
 /**

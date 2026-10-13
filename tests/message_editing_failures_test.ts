@@ -48,7 +48,8 @@ type PrivateChatTargetReason =
   | 'account_not_found'
   | 'conversation_not_started'
   | 'message_not_found'
-  | 'message_not_editable';
+  | 'message_not_editable'
+  | 'invoice_editing_unsupported';
 type SupergroupTargetReason =
   | 'bot_not_found'
   | 'chat_not_found'

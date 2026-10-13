@@ -785,6 +785,7 @@ export class BotMessageViewService {
       case 'text':
       case 'contact':
       case 'location':
+      case 'invoice':
         return context;
       case 'rich_message':
         return {
@@ -866,7 +867,7 @@ export class BotMessageViewService {
 
   /**
    * Resolves what an observer sees of the media of a reply to another chat: the file of replied
-   * media, or the replied poll; a contact or location needs nothing resolved.
+   * media, or the replied poll; a contact, location, or invoice needs nothing resolved.
    */
   #observeExternalReplyMedia(
     media: ExternalReply['media'],
@@ -877,6 +878,7 @@ export class BotMessageViewService {
       case undefined:
       case 'contact':
       case 'location':
+      case 'invoice':
         return {};
       case 'poll':
         return { poll: this.#observePoll(this.#findPoll(media.pollId, message), { observerId }) };

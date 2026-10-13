@@ -35,6 +35,7 @@ import type {
   File,
   InaccessibleMessage,
   InlineQuery,
+  Invoice,
   MenuButton,
   Message,
   MessageEntity,
@@ -70,6 +71,7 @@ import type {
   BotApiEditedMessageUpdate,
   BotApiInaccessibleMessage,
   BotApiInlineQueryUpdate,
+  BotApiInvoice,
   BotApiMenuButton,
   BotApiMessage,
   BotApiMessageEntity,
@@ -305,7 +307,10 @@ type ConformsToGrammy<Local, Reference> = Conformance<Local, Reference, Referenc
 
 // ## The grammY variants of emitted objects
 
-/** A private message as grammY types each kind the emulator emits: content, a pin, or a sharing. */
+/**
+ * A private message as grammY types each kind the emulator emits: content, an invoice, a pin, or a
+ * sharing.
+ */
 type GrammyPrivateMessage =
   & Message
   & Update.NonChannel
@@ -321,6 +326,7 @@ type GrammyPrivateMessage =
     | Message.PollMessage
     | Message.ContactMessage
     | Message.LocationMessage
+    | Message.InvoiceMessage
     | Message.PinnedMessageMessage
     | Message.UsersSharedMessage
     | Message.ChatSharedMessage
@@ -416,6 +422,7 @@ interface BotApiWireTypeConformance {
       InaccessibleMessage & { chat: Chat.SupergroupChat }
     >
   >;
+  invoice: ExpectTrue<ConformsToGrammy<BotApiInvoice, Invoice>>;
   richMessage: ExpectTrue<
     ConformsToGrammy<BotApiRichMessage, NonNullable<Message['rich_message']>>
   >;

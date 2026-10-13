@@ -57,6 +57,8 @@ functions it follows.
   `RequestedDialogType.cpp`, `TargetDialogTypes.cpp` and `CallbackQueriesManager.cpp`: keyboards and
   callback queries.
 - `td/telegram/InlineQueriesManager.cpp`: inline mode.
+- `td/telegram/InputInvoice.cpp`, `LabeledPricePart.cpp` and `misc.cpp`'s `check_currency_amount`:
+  invoices and their prices.
 - `td/telegram/DialogParticipant.cpp`, `DialogParticipant.h`, `DialogParticipantManager.cpp`,
   `DialogManager.cpp` and `DialogInviteLinkManager.cpp`: supergroups, members, administrator rights
   and invite links.

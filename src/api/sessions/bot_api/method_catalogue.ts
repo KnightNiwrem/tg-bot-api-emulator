@@ -12,6 +12,7 @@ import { MESSAGE_PINNING_METHODS } from './methods/message_pinning.ts';
 import { MESSAGE_REACTION_METHODS } from './methods/message_reactions.ts';
 import { MESSAGE_REPETITION_METHODS } from './methods/message_repetition.ts';
 import { MESSAGE_SENDING_METHODS } from './methods/message_sending.ts';
+import { PAYMENT_METHODS } from './methods/payments.ts';
 import { QUERY_ANSWER_METHODS } from './methods/query_answers.ts';
 import { UPDATE_DELIVERY_METHODS } from './methods/update_delivery.ts';
 
@@ -31,6 +32,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   ...MESSAGE_SENDING_METHODS,
   ...MESSAGE_REPETITION_METHODS,
   ...MESSAGE_EDITING_METHODS,
+  ...PAYMENT_METHODS,
 ];
 
 /** Keyed by lowercase name, because Telegram matches method names case-insensitively. */

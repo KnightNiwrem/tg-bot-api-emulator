@@ -234,8 +234,9 @@ and copies of a rich message disable its [buttons](rich-messages.md#sending-and-
 not work away from the original. A forward of a poll shows the same poll, while a copy shows a
 [new poll without votes](polls.md#forwards-copies-and-replies). Forwards and copies of a
 [contact or location](contacts-and-locations.md#forwards-copies-and-replies) repeat it unchanged,
-the user of an account's own contact included. `show_caption_above_media` applies to a copied photo
-or video when a replacement caption is supplied. As the official server's
+the user of an account's own contact included. The emulator neither forwards nor copies an
+[invoice](payments.md#invoices-among-other-messages). `show_caption_above_media` applies to a copied
+photo or video when a replacement caption is supplied. As the official server's
 [`process_forward_message_query`][forward-video-start] and `process_copy_message_query` read it, a
 `video_start_timestamp` gives a forwarded or copied video the second from which it plays, a negative
 one its beginning, as TDLib's [`set_message_content_video_start_timestamp`][video-start-replacement]

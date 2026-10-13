@@ -55,8 +55,8 @@ import { getOwnContact, type VirtualAccount } from '../../types/virtual_account.
 import {
   type CaptionedMediaContent,
   type ChatMessage,
+  type CommonContentMessage,
   type ContactMessageContent,
-  type ContentMessage,
   countTextCharacters,
   type FormattedText,
   getContentText,
@@ -867,7 +867,7 @@ export function replaceMessageCaption(
  * `canChangeAlbumMediaKind` allows; only media is sent in albums.
  */
 export function replaceMessageMedia(
-  { content, mediaGroupId }: Pick<ContentMessage, 'content' | 'mediaGroupId'>,
+  { content, mediaGroupId }: Pick<CommonContentMessage, 'content' | 'mediaGroupId'>,
   media: MediaContent,
   context: FormattedTextFixingContext,
 ): ContentReplacement<

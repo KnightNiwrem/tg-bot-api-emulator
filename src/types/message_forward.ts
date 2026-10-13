@@ -6,6 +6,7 @@ import type {
 import { type MessageRepetition, repeatRichMessage } from './rich_message.ts';
 import {
   type ChatMessage,
+  type CommonContentMessage,
   type ContentMessage,
   getMessageSenderId,
   hasProtectedContent,
@@ -49,7 +50,7 @@ export function isForwardable(
  * `forwardInlineKeyboard` decides.
  */
 export function createMessageForward(
-  message: ContentMessage,
+  message: CommonContentMessage,
   getPrivateForwardName: PrivateForwardNameLookup,
 ): MessageForward {
   const forwardInfo = getMessageOrigin(message, getPrivateForwardName);

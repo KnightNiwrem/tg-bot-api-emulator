@@ -29,6 +29,8 @@ import {
   type PermissionGovernedContent,
 } from '../../types/chat_permissions.ts';
 import type { InlineKeyboard } from '../../types/inline_keyboard.ts';
+import type { InvoiceRefusal } from '../../types/invoice.ts';
+import { normalizeStarsInvoice, type SpecifiedStarsInvoice } from './invoice_normalization.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../../types/media_album.ts';
 import type { MessageForward } from '../../types/message_forward.ts';
 import type { ExternalReplyTarget } from '../../types/message_reply.ts';
@@ -55,6 +57,7 @@ import type {
   NewSupergroupMessage,
   PrivateMessage,
   SupergroupMessage,
+  TextQuote,
   WebAppDataMessageContent,
 } from '../../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../../text_entities/formatted_text.ts';
@@ -147,6 +150,28 @@ export interface BotAlbum<Address extends ChatAddress> {
   readonly chat: Address;
   /** The album's media in the order the chat shows them, each with its caption. */
   readonly contents: readonly MediaContent[];
+  /** As `BotMessage` describes it. */
+  readonly replyTo?: BotMessageReplyTarget;
+  /** As `BotMessage` describes it. */
+  readonly externalReply?: ExternalReplyTarget;
+  /** As `BotMessage` describes it. */
+  readonly quote?: SpecifiedQuote;
+  /** As `BotMessage` describes it. */
+  readonly isContentProtected?: boolean;
+  /** As `BotMessage` describes it. */
+  readonly isSilent?: boolean;
+  /** As `BotMessage` describes it. */
+  readonly messageEffectId?: string;
+}
+
+/**
+ * An invoice a bot sends to its private chat with an account, for payment in Telegram Stars. It
+ * carries no keyboard: Telegram's clients show their own Pay button on it.
+ */
+export interface BotInvoice {
+  readonly fromBotId: number;
+  readonly chat: PrivateChatAddress;
+  readonly invoice: SpecifiedStarsInvoice;
   /** As `BotMessage` describes it. */
   readonly replyTo?: BotMessageReplyTarget;
   /** As `BotMessage` describes it. */
@@ -470,6 +495,23 @@ export type BotAlbumSendResult<Types extends BotSendingTargetingTypes> =
       }
       | ContentTextNormalizationFailure
       | Types['contentRefusal']
+    )
+  );
+
+export type BotInvoiceSendResult =
+  | { readonly sent: true; readonly message: PrivateMessage }
+  | (
+    & { readonly sent: false }
+    & (
+      | {
+        readonly reason:
+          | 'bot_not_found'
+          | BotPrivateChatSendingTypes['accessFailureReason']
+          | 'reply_message_not_found'
+          | 'quote_invalid'
+          | BotPrivateChatSendingTypes['lateRefusalReason'];
+      }
+      | InvoiceRefusal
     )
   );
 
@@ -832,6 +874,66 @@ export class MessageSendingService {
       : this.#sendBotMessage(this.#botSupergroupTargeting, { ...input, chat });
   }
 
+  /**
+   * Sends an invoice from a bot to its private chat with an account, in `#sendBotMessage`'s order
+   * of checks: the chat is reached, the replied message found, and the message effect resolved
+   * before the invoice is checked as `normalizeStarsInvoice` checks it; then the quote, and last
+   * the account's block. The invoice is stored with the message, its payload included, which no
+   * projection of the message shows.
+   */
+  sendBotPrivateChatInvoice(
+    { fromBotId, chat, invoice, replyTo, externalReply, quote, ...delivery }: BotInvoice,
+  ): BotInvoiceSendResult {
+    return this.#transactions.withinTransaction(() => {
+      const targeting = this.#botPrivateChatTargeting;
+      if (this.#bots.getById(fromBotId) === undefined) {
+        return { sent: false, reason: 'bot_not_found' };
+      }
+      const reach = targeting.reachChat(fromBotId, chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const replyResolution = this.#resolveBotReplyTarget(targeting, reach, replyTo);
+      if (!replyResolution.resolved) {
+        return { sent: false, reason: 'reply_message_not_found' };
+      }
+      const { repliedMessage } = replyResolution;
+      const effect = targeting.resolveMessageEffect(delivery.messageEffectId);
+      if (!effect.resolved) {
+        return { sent: false, reason: effect.reason };
+      }
+      const invoiceNormalization = normalizeStarsInvoice(invoice);
+      if (!invoiceNormalization.normalized) {
+        return { sent: false, ...invoiceNormalization.failure };
+      }
+      const finalCheck = this.#makeFinalBotSendChecks(targeting, reach, {
+        repliedMessage,
+        externalReply,
+        quote,
+      });
+      if (!finalCheck.passed) {
+        return { sent: false, reason: finalCheck.reason };
+      }
+
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        message: this.#commits.commitPrivateMessage({
+          ...effect.fields,
+          chat: reach.key,
+          sender: 'bot',
+          sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
+          content: { kind: 'invoice', invoice: invoiceNormalization.invoice },
+          replyToMessageId: repliedMessage?.id,
+          externalReply: externalReply?.externalReply,
+          quote: finalCheck.quote,
+          isContentProtected: delivery.isContentProtected,
+          isSilent: delivery.isSilent,
+        }),
+      };
+    });
+  }
+
   /** Sends a media album from a bot to one of its chats, as `#sendBotAlbum` checks it. */
   sendChatAlbum({ chat, ...input }: BotAlbum<ChatAddress>): BotAlbumSendResult<
     BotChatSendingTypes
@@ -1024,17 +1126,13 @@ export class MessageSendingService {
       if (keyboardRefusal !== undefined) {
         return { sent: false, reason: keyboardRefusal };
       }
-      const quoteResolution = resolveReplyQuote(
-        getReplyQuoteSource(repliedMessage, input.externalReply),
-        input.quote,
-        this.#textFixingContext,
-      );
-      if (!quoteResolution.resolved) {
-        return { sent: false, reason: quoteResolution.reason };
-      }
-      const lateRefusal = targeting.findLateRefusal(reach);
-      if (lateRefusal !== undefined) {
-        return { sent: false, reason: lateRefusal };
+      const finalCheck = this.#makeFinalBotSendChecks(targeting, reach, {
+        repliedMessage,
+        externalReply: input.externalReply,
+        quote: input.quote,
+      });
+      if (!finalCheck.passed) {
+        return { sent: false, reason: finalCheck.reason };
       }
 
       targeting.admitMessage(reach);
@@ -1045,7 +1143,7 @@ export class MessageSendingService {
           content: storeOutgoingContent(content, this.#files, this.#polls),
           replyToMessageId: repliedMessage?.id,
           externalReply: input.externalReply?.externalReply,
-          quote: quoteResolution.quote,
+          quote: finalCheck.quote,
           inlineKeyboard: input.inlineKeyboard,
           replyInterfaceMarkup: input.replyInterfaceMarkup,
           forwardInfo: input.forwardInfo,
@@ -1100,17 +1198,13 @@ export class MessageSendingService {
       if (contentRefusal !== undefined) {
         return { sent: false, ...contentRefusal };
       }
-      const quoteResolution = resolveReplyQuote(
-        getReplyQuoteSource(repliedMessage, input.externalReply),
-        input.quote,
-        this.#textFixingContext,
-      );
-      if (!quoteResolution.resolved) {
-        return { sent: false, reason: quoteResolution.reason };
-      }
-      const lateRefusal = targeting.findLateRefusal(reach);
-      if (lateRefusal !== undefined) {
-        return { sent: false, reason: lateRefusal };
+      const finalCheck = this.#makeFinalBotSendChecks(targeting, reach, {
+        repliedMessage,
+        externalReply: input.externalReply,
+        quote: input.quote,
+      });
+      if (!finalCheck.passed) {
+        return { sent: false, reason: finalCheck.reason };
       }
 
       targeting.admitMessage(reach);
@@ -1125,7 +1219,7 @@ export class MessageSendingService {
             ...effect.fields,
             replyToMessageId: repliedMessage?.id,
             externalReply: input.externalReply?.externalReply,
-            quote: quoteResolution.quote,
+            quote: finalCheck.quote,
             isContentProtected: input.isContentProtected,
             isSilent: input.isSilent,
           },
@@ -1311,6 +1405,36 @@ export class MessageSendingService {
         message: targeting.commitMessage(reach, fromAccountId, forward, undefined),
       };
     });
+  }
+
+  /**
+   * Makes the checks every send of a bot makes last, in Telegram's order: the quote the bot chose
+   * is found in the replied message, as Telegram's servers check it, then the chat checks whatever
+   * it checks once everything else passed.
+   */
+  #makeFinalBotSendChecks<Types extends BotSendingTargetingTypes>(
+    targeting: BotSendingTargeting<Types>,
+    reached: Types['reached'],
+    { repliedMessage, externalReply, quote }: {
+      readonly repliedMessage: Types['message'] | undefined;
+      readonly externalReply: ExternalReplyTarget | undefined;
+      readonly quote: SpecifiedQuote | undefined;
+    },
+  ):
+    | { readonly passed: true; readonly quote?: TextQuote }
+    | { readonly passed: false; readonly reason: 'quote_invalid' | Types['lateRefusalReason'] } {
+    const quoteResolution = resolveReplyQuote(
+      getReplyQuoteSource(repliedMessage, externalReply),
+      quote,
+      this.#textFixingContext,
+    );
+    if (!quoteResolution.resolved) {
+      return { passed: false, reason: quoteResolution.reason };
+    }
+    const lateRefusal = targeting.findLateRefusal(reached);
+    return lateRefusal === undefined
+      ? { passed: true, quote: quoteResolution.quote }
+      : { passed: false, reason: lateRefusal };
   }
 
   /**

@@ -425,6 +425,11 @@ function copyContent(content: ChatMessageContent): ChatMessageContent {
       return { ...content, contact: { ...content.contact } };
     case 'location':
       return { ...content, location: { ...content.location } };
+    case 'invoice':
+      return {
+        ...content,
+        invoice: { ...content.invoice, price: { ...content.invoice.price } },
+      };
     case 'members_joined':
       return { ...content, memberIds: [...content.memberIds] };
     case 'users_shared':

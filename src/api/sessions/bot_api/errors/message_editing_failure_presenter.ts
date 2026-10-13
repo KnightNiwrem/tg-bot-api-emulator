@@ -59,6 +59,7 @@ const FIXED_MESSAGE_EDITING_ERRORS = {
   ...FIXED_MESSAGE_CONTENT_ERRORS,
   ...BOT_CHAT_ACCESS_ERRORS,
   message_not_editable: BOT_API_ERRORS.messageNotEditable,
+  invoice_editing_unsupported: BOT_API_ERRORS.invoiceEditingUnsupported,
   message_has_no_text: BOT_API_ERRORS.messageHasNoText,
   message_has_no_caption: BOT_API_ERRORS.messageHasNoCaption,
   message_media_not_editable: BOT_API_ERRORS.messageMediaNotEditable,

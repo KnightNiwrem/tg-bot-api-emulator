@@ -22,6 +22,8 @@ import type {
   SpecifiedQuote,
   TextInvalidFailure,
 } from '../domain/message_content.ts';
+import type { SpecifiedStarsInvoice } from '../domain/invoice_normalization.ts';
+import { type InvoiceRefusal, isInvoiceRefusal } from '../../types/invoice.ts';
 import type { PollLimitFailure } from '../domain/poll_normalization.ts';
 import type {
   MessageSendingService,
@@ -140,6 +142,25 @@ export type ServerRefusedUploadFailure =
  * `on_message_send_failed` does, an upload Telegram's servers refuse fails the album with the
  * position of the first message whose upload they refuse, counted from 1.
  */
+/**
+ * Where and how `sendInvoice` sends an invoice, and what it replies to. An invoice carries no reply
+ * markup: Telegram's clients show their own Pay button on it.
+ */
+export type SendInvoiceOptions = SendDeliveryOptions & {
+  /** Omitted for an invoice that replies to no message. */
+  readonly replyTo?: ReplyTarget;
+};
+
+/**
+ * An invoice a bot sent, as the bot sees it, or why it was not sent: as for any message, or because
+ * it is an invoice that Telegram refuses, or one to a chat other than a private chat, where the
+ * emulator does not send invoices.
+ */
+export type SendInvoiceResult =
+  | SendResult
+  | ({ readonly sent: false } & InvoiceRefusal)
+  | { readonly sent: false; readonly reason: 'invoice_chat_not_private' };
+
 export type SendMediaGroupResult =
   | { readonly sent: true; readonly messages: readonly BotApiMessage[] }
   | Extract<SendResult, { readonly sent: false }>
@@ -162,7 +183,7 @@ interface SupergroupMessageReading {
 /** The sending that a bot's messages and albums go through, by the address of their chat. */
 type BotMessageSending = Pick<
   MessageSendingService,
-  'sendChatMessage' | 'sendChatAlbum' | 'lacksSendPermission'
+  'sendChatMessage' | 'sendChatAlbum' | 'sendBotPrivateChatInvoice' | 'lacksSendPermission'
 >;
 
 interface BotMessageViews {
@@ -369,6 +390,44 @@ export class BotMessageSender {
     // As for a single message, the album ends the bot's chat action.
     this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
     return { sent: true, messages };
+  }
+
+  /**
+   * Sends an invoice for payment in Telegram Stars to the bot's private chat with an account, which
+   * replies as `send` resolves a reply. The emulator sends invoices only to private chats, and
+   * refuses another chat before anything else.
+   */
+  sendInvoice(
+    botId: number,
+    invoice: SpecifiedStarsInvoice,
+    { replyTo, chatId, isContentProtected, isSilent, messageEffectId }: SendInvoiceOptions,
+  ): SendInvoiceResult {
+    const chat = getBotApiChatAddress(chatId);
+    if (chat.type !== 'private') {
+      return { sent: false, reason: 'invoice_chat_not_private' };
+    }
+    const replyResolution = this.#resolveOutgoingReply(botId, replyTo);
+    if (!replyResolution.resolved) {
+      return { sent: false, reason: replyResolution.reason };
+    }
+    const result = this.#messageSending.sendBotPrivateChatInvoice({
+      fromBotId: botId,
+      chat,
+      invoice,
+      ...replyResolution.reply,
+      isContentProtected,
+      isSilent,
+      messageEffectId,
+    });
+    if (!result.sent) {
+      return isInvoiceRefusal(result)
+        ? result
+        : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
+    }
+    const message = this.#botMessageViews.viewMessageForBot(result.message, botId);
+    // As for any message, the invoice ends the bot's chat action.
+    this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
+    return { sent: true, message };
   }
 
   /** Finds a message of one of the bot's chats, which the bot may repeat or reply to from another chat. */

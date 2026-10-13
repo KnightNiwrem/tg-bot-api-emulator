@@ -1,6 +1,7 @@
 import type { Contact } from './contact.ts';
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
+import type { StarsInvoice } from './invoice.ts';
 import type { UserReaction } from './message_reaction.ts';
 import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
@@ -279,7 +280,19 @@ export interface LocationMessageContent {
   readonly location: GeoLocation;
 }
 
-/** What a message shows: text, captioned media, a rich message, a poll, a contact, or a location. */
+/**
+ * An invoice a bot sent to its private chat with an account, which carries no text or caption.
+ * Only bots send invoices, and only to their private chats.
+ */
+export interface InvoiceMessageContent {
+  readonly kind: 'invoice';
+  readonly invoice: StarsInvoice;
+}
+
+/**
+ * What a message of any chat shows that its sender wrote: text, captioned media, a rich message, a
+ * poll, a contact, or a location.
+ */
 export type MessageContent =
   | TextMessageContent
   | CaptionedMediaContent
@@ -395,8 +408,14 @@ export type PrivateServiceContent =
   | ChatSharedMessageContent
   | WebAppDataMessageContent;
 
+/**
+ * What a private message shows that its sender wrote: content any chat's messages show, or an
+ * invoice, which only a private chat's bot sends.
+ */
+export type PrivateWrittenContent = MessageContent | InvoiceMessageContent;
+
 /** What a private message shows: content its sender wrote, or a service message's record. */
-export type PrivateMessageContent = MessageContent | PrivateServiceContent;
+export type PrivateMessageContent = PrivateWrittenContent | PrivateServiceContent;
 
 /** What a message of any chat shows: content its sender wrote, or a service message's record. */
 export type ChatMessageContent = SupergroupMessageContent | PrivateMessageContent;
@@ -427,6 +446,7 @@ function isServiceContent(
     case 'poll':
     case 'contact':
     case 'location':
+    case 'invoice':
       return false;
     default: {
       const unhandledContent: never = content;
@@ -437,7 +457,7 @@ function isServiceContent(
 
 /**
  * Whether a message's content is captioned media, rather than text, a rich message, a poll, a
- * contact, a location, or a service message.
+ * contact, a location, an invoice, or a service message.
  */
 export function isCaptionedMediaContent(
   content: ChatMessageContent,
@@ -454,6 +474,7 @@ export function isCaptionedMediaContent(
     case 'poll':
     case 'contact':
     case 'location':
+    case 'invoice':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
@@ -472,8 +493,9 @@ export function isCaptionedMediaContent(
 /**
  * The text a message's content carries: the text of a text message, or the caption of captioned
  * media, which is empty when it has none. As TDLib's `get_message_content_text` has none for
- * them, a rich message, a contact, a location, and a service message carry no text; it reads only
- * the description of a poll, which the emulator does not support, so a poll carries none either.
+ * them, a rich message, a contact, a location, an invoice without paid media, and a service message
+ * carry no text; it reads only the description of a poll, which the emulator does not support, so a
+ * poll carries none either.
  */
 export function getContentText(content: ChatMessageContent): FormattedText {
   if (isCaptionedMediaContent(content)) {
@@ -486,6 +508,7 @@ export function getContentText(content: ChatMessageContent): FormattedText {
     case 'poll':
     case 'contact':
     case 'location':
+    case 'invoice':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
@@ -569,7 +592,7 @@ export interface ExternalReply {
 
 /**
  * What a reply to a message of another chat shows of the replied content besides its text: media
- * without its caption, a poll as it is now, a contact, or a location. TDLib's
+ * without its caption, a poll as it is now, a contact, a location, or an invoice. TDLib's
  * `is_supported_reply_message_content` lists them all, and the Bot API's `ExternalReplyInfo` has a
  * field for each.
  */
@@ -577,7 +600,8 @@ export type ExternalReplyMedia =
   | CaptionedMediaContent
   | PollMessageContent
   | ContactMessageContent
-  | LocationMessageContent;
+  | LocationMessageContent
+  | InvoiceMessageContent;
 
 /**
  * What a message's sender chose to send, which a message to store and the stored message share,
@@ -871,7 +895,7 @@ export function isSupergroupContentMessage(
 }
 
 /** A private message that shows content its sender wrote, rather than a service message. */
-export type PrivateContentMessage = PrivateMessage<MessageContent>;
+export type PrivateContentMessage = PrivateMessage<PrivateWrittenContent>;
 
 /** Whether a private message shows content its sender wrote, which only such a message has. */
 export function isPrivateContentMessage(
@@ -882,6 +906,17 @@ export function isPrivateContentMessage(
 
 /** A message of any chat that shows content its sender wrote, rather than a service message. */
 export type ContentMessage = PrivateContentMessage | SupergroupContentMessage;
+
+/**
+ * A message of any chat that shows content messages of every chat type can show, which is all
+ * content its sender wrote but a private chat's invoice.
+ */
+export type CommonContentMessage = PrivateMessage<MessageContent> | SupergroupContentMessage;
+
+/** Whether a content message shows content messages of every chat type can show: no invoice. */
+export function hasCommonContent(message: ContentMessage): message is CommonContentMessage {
+  return message.content.kind !== 'invoice';
+}
 
 /** Whether a message of any chat shows content its sender wrote. */
 export function isContentMessage(message: ChatMessage): message is ContentMessage {

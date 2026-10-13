@@ -1,0 +1,103 @@
+description: >-
+  Telegram Bot API method for sending an invoice. The emulator supports one-off invoices in Telegram
+  Stars that a bot sends to its private chat with an account, without a keyboard: clients show
+  their own Pay button, which the returned message shows no `reply_markup` for. The invoice's
+  `start_parameter` is cleaned as TDLib cleans input strings and always shown, empty when there is
+  none; its payload is kept exactly as sent and never shown. The fields the Bot API documents as
+  ignored for payments in Telegram Stars are read and ignored, and no shipping query follows. The
+  other parameters work as for `sendMessage`. An invoice cannot be edited, forwarded or copied.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendInvoice
+  summary: Send an invoice in Telegram Stars from the authenticated virtual bot to an account
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendInvoiceRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/SendInvoiceRequest.yaml
+        encoding:
+          prices:
+            contentType: application/json
+          suggested_tip_amounts:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendInvoiceRequest.yaml
+        encoding:
+          prices:
+            contentType: application/json
+          suggested_tip_amounts:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+  responses:
+    '200':
+      description: >-
+        The invoice was stored in the private conversation. No bot receives an update for a bot's
+        message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters (`Bad Request: invalid
+        sendInvoice parameters`); or Telegram would reject it, checking in this order: `title`,
+        `description`, or `payload` is missing or empty (`Bad Request: parameter "title" is
+        required`, and alike); the payload is not well-formed Unicode (`Bad Request: the payload
+        must be encoded in UTF-8`); `currency` or `prices` is missing; `prices` is not JSON (`Bad
+        Request: can't parse prices JSON object`), not an array (`Bad Request: expected an Array of
+        LabeledPrice`), or holds a price without a label or an integer amount (`Bad Request: can't
+        parse LabeledPrice: ...`); `max_tip_amount` is not an integer, or `suggested_tip_amounts`
+        is not a JSON array. The emulator then refuses what it does not support: a currency other
+        than `XTR`, a `provider_token`, `provider_data`, a product photo, tips (`Bad Request: tips
+        are not supported for payments in Telegram Stars`), after TDLib's refusal of a negative
+        `max_tip_amount`. The send options are then read as for `sendMessage`, and a keyboard
+        other than an empty inline keyboard is refused (`Bad Request: invoice keyboards are not
+        supported; ...`), as is a supergroup (`Bad Request: invoices outside private chats are not
+        supported`). Once the chat, the reply, and the message effect pass as for `sendMessage`,
+        TDLib checks the invoice: a title, description, start parameter, or price label that is
+        not well-formed Unicode (`Bad Request: invoice title must be encoded in UTF-8`, and alike),
+        no price (`Bad Request: there must be at least one price part`), a price beyond
+        999999999999 (`Bad Request: too big amount of the currency specified`), or a total that is
+        not positive (`Bad Request: total price must be positive`); then the limits the Bot API
+        documents, in the emulator's wording: exactly one price, a title of 1–32 characters, a
+        description of 1–255 characters, and a payload of 1–128 bytes. A refused invoice stores
+        nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

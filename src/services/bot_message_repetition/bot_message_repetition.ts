@@ -12,6 +12,7 @@ import { getBotApiChatAddress } from '../../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
+  hasCommonContent,
   isCaptionedMediaContent,
   isContentMessage,
   type MediaGroupId,
@@ -58,7 +59,13 @@ export type RepetitionFailure<NotRepeatableReason extends string> = {
   readonly reason: 'message_not_found' | NotRepeatableReason;
 };
 
-export type ForwardMessageResult = SendResult | RepetitionFailure<'message_not_forwardable'>;
+/**
+ * Why a message cannot be forwarded: Telegram does not forward it, or it is an invoice, which
+ * Telegram forwards but the emulator does not.
+ */
+type ForwardRefusalReason = 'message_not_forwardable' | 'invoice_forwarding_unsupported';
+
+export type ForwardMessageResult = SendResult | RepetitionFailure<ForwardRefusalReason>;
 
 export type CopyMessageRequest = SendRequestOptions & {
   /** The copied message: the Bot API `from_chat_id` and `message_id`. */
@@ -115,7 +122,8 @@ export type RepeatMessagesResult =
       | 'repeated_messages_not_found'
       | 'message_effect_not_allowed_for_several_messages'
       | 'repeated_message_ids_not_increasing'
-      | 'messages_not_repeatable';
+      | 'messages_not_repeatable'
+      | 'invoice_forwarding_unsupported';
   };
 
 interface BotMessageSending {
@@ -152,6 +160,19 @@ interface BotMessageRepeaterDependencies {
   /** The time that the open periods of copied polls count from. */
   readonly currentUnixTimeSeconds: () => number;
 }
+
+/**
+ * Why a message is not repeated: it cannot be, which skips it in a request of several messages, or
+ * the emulator does not support repeating it, which refuses the whole request.
+ */
+type RepetitionRefusal =
+  | { readonly reason: 'message_not_repeatable' }
+  | { readonly reason: 'invoice_forwarding_unsupported' };
+
+/** What a forward or copy repeats of the original, or why the original is not repeated. */
+type RepetitionDecision =
+  | ({ readonly repeated: true } & MessageRepetition)
+  | ({ readonly repeated: false } & RepetitionRefusal);
 
 /** What a forward or copy repeats of the original. */
 interface MessageRepetition {
@@ -231,8 +252,13 @@ export class BotMessageRepeater {
       lookup.chatProtectsContent,
       videoStartTimestampSeconds,
     );
-    if (forward === undefined) {
-      return { sent: false, reason: 'message_not_forwardable' };
+    if (!forward.repeated) {
+      return {
+        sent: false,
+        reason: forward.reason === 'message_not_repeatable'
+          ? 'message_not_forwardable'
+          : forward.reason,
+      };
     }
     const { content, forwardInfo, inlineKeyboard } = forward;
     const result = this.#messageSender.send(
@@ -302,7 +328,8 @@ export class BotMessageRepeater {
    * Forwards up to 100 messages of one of the bot's chats to a private chat or a supergroup, each
    * as `forwardMessage` does, as TDLib's `forward_messages` does. A message that is not found, that
    * cannot be forwarded, or whose content the bot may not send to the chat, is skipped; the request
-   * fails only when none is left.
+   * fails only when none is left. An invoice among the messages refuses the request, as the
+   * emulator does not forward invoices.
    */
   forwardMessages(botId: number, request: RepeatMessagesRequest): RepeatMessagesResult {
     return this.#repeatMessages(
@@ -325,7 +352,9 @@ export class BotMessageRepeater {
     const caption: CopiedCaption = removesCaptions ? { kind: 'removed' } : { kind: 'kept' };
     return this.#repeatMessages(botId, request, (message) => {
       const content = this.#createCopy(botId, message, { caption });
-      return content === undefined ? undefined : { content };
+      return content === undefined
+        ? { repeated: false, reason: 'message_not_repeatable' }
+        : { repeated: true, content };
     });
   }
 
@@ -333,7 +362,7 @@ export class BotMessageRepeater {
    * Sends the repetitions of messages of one of the bot's chats to a chat, in the order of their
    * IDs, as TDLib's `forward_messages_impl` does: a message that `repeat` cannot repeat is skipped,
    * and a message that replies to an earlier message of the request replies to that message's
-   * repetition.
+   * repetition. A message the emulator does not support repeating refuses the request.
    *
    * As for `forwardMessage`, the messages are checked before the chat they go to; every repetition
    * goes to that chat, so a chat the bot cannot send to fails before any message is sent.
@@ -342,7 +371,7 @@ export class BotMessageRepeater {
     botId: number,
     { chatId, fromChatId, messageIds, isContentProtected, isSilent, messageEffectId }:
       RepeatMessagesRequest,
-    repeat: (message: ChatMessage, chatProtectsContent: boolean) => MessageRepetition | undefined,
+    repeat: (message: ChatMessage, chatProtectsContent: boolean) => RepetitionDecision,
   ): RepeatMessagesResult {
     const repeatedMessages: Array<{
       readonly messageId: number;
@@ -379,13 +408,19 @@ export class BotMessageRepeater {
     ) {
       return { sent: false, reason: 'repeated_message_ids_not_increasing' };
     }
-    const repetitions = repeatedMessages.flatMap(({ message, chatProtectsContent }) => {
+    const repetitions: Array<
+      { readonly message: ChatMessage; readonly repetition: MessageRepetition }
+    > = [];
+    for (const { message, chatProtectsContent } of repeatedMessages) {
       const repetition = repeat(message, chatProtectsContent);
-      return repetition === undefined ||
-          this.#messageSender.lacksSendPermission(botId, chatId, repetition.content)
-        ? []
-        : [{ message, repetition }];
-    });
+      if (!repetition.repeated) {
+        if (repetition.reason !== 'message_not_repeatable') {
+          return { sent: false, reason: repetition.reason };
+        }
+      } else if (!this.#messageSender.lacksSendPermission(botId, chatId, repetition.content)) {
+        repetitions.push({ message, repetition });
+      }
+    }
     if (repetitions.length === 0) {
       return { sent: false, reason: 'messages_not_repeatable' };
     }
@@ -433,23 +468,28 @@ export class BotMessageRepeater {
   /**
    * Creates the forward of a message, which shows who first sent it and when, as
    * `createMessageForward` does. As on Telegram, a message whose sender or chat protected it cannot
-   * be forwarded, nor can a service message, as `isForwardable` decides; returns `undefined` for
-   * them. A video start timestamp replaces that of a forwarded video, as `withVideoStartTimestamp`
-   * does. A forward of a poll shows the same poll, whose votes it shares.
+   * be forwarded, nor can a service message, as `isForwardable` decides. Telegram forwards an
+   * invoice, but the emulator does not. A video start timestamp replaces that of a forwarded video,
+   * as `withVideoStartTimestamp` does. A forward of a poll shows the same poll, whose votes it
+   * shares.
    */
   #createForward(
     message: ChatMessage,
     chatProtectsContent: boolean,
     videoStartTimestampSeconds?: number,
-  ): MessageRepetition | undefined {
+  ): RepetitionDecision {
     if (!isForwardable(message, chatProtectsContent)) {
-      return undefined;
+      return { repeated: false, reason: 'message_not_repeatable' };
+    }
+    if (!hasCommonContent(message)) {
+      return { repeated: false, reason: 'invoice_forwarding_unsupported' };
     }
     const { content, forwardInfo, inlineKeyboard } = createMessageForward(
       message,
       this.#getPrivateForwardName,
     );
     return {
+      repeated: true,
       content: {
         kind: 'existing',
         content: videoStartTimestampSeconds === undefined
@@ -468,7 +508,8 @@ export class BotMessageRepeater {
    * start timestamp replaces that of a copied video, as for a forward. A copy of a poll is a new
    * poll, as `#createPollCopy` creates it, which ignores a new caption. As TDLib lets bots do, a bot
    * may copy a message whose sender protected it. Returns `undefined` for a message that cannot be
-   * copied: a service message, or a quiz whose solution the bot does not see.
+   * copied: a service message, an invoice, which TDLib's `can_forward_message_content` does not
+   * copy, or a quiz whose solution the bot does not see.
    */
   #createCopy(
     botId: number,
@@ -478,7 +519,7 @@ export class BotMessageRepeater {
       readonly videoStartTimestampSeconds?: number;
     },
   ): OutgoingMessageContent | undefined {
-    if (!isContentMessage(message)) {
+    if (!isContentMessage(message) || !hasCommonContent(message)) {
       return undefined;
     }
     const repeatedContent = getRepeatedContent(message.content, 'copy');

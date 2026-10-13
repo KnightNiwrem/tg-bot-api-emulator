@@ -422,6 +422,13 @@ const CHAT_MESSAGE_EDIT_CASES: CasesByReason<ChatMessageEditFailure> = {
   message_not_editable: [
     [{ reason: 'message_not_editable' }, 400, "Bad Request: message can't be edited"],
   ],
+  invoice_editing_unsupported: [
+    [
+      { reason: 'invoice_editing_unsupported' },
+      400,
+      'Bad Request: editing invoice messages is not supported',
+    ],
+  ],
   album_media_kind_changed: [
     [
       { reason: 'album_media_kind_changed' },
@@ -564,6 +571,32 @@ Deno.test('every catalogue entry names where its description comes from', () => 
     richBlockUnparsable: RICH_BLOCK_PARSING_PROBLEMS.map((problem) =>
       BOT_API_ERRORS.richBlockUnparsable.provenance({ enclosingArrays: [], problem })
     ),
+    labeledPriceInvalid: [
+      BOT_API_ERRORS.labeledPriceInvalid.provenance({ reason: 'price_not_object' }),
+      BOT_API_ERRORS.labeledPriceInvalid.provenance({
+        reason: 'field_missing',
+        fieldName: 'label',
+      }),
+      BOT_API_ERRORS.labeledPriceInvalid.provenance({
+        reason: 'field_missing',
+        fieldName: 'amount',
+      }),
+      BOT_API_ERRORS.labeledPriceInvalid.provenance({ reason: 'label_empty' }),
+      BOT_API_ERRORS.labeledPriceInvalid.provenance({ reason: 'amount_not_integer' }),
+    ],
+    invoiceOptionUnsupported: (
+      [
+        'currency',
+        'payment_provider',
+        'provider_data',
+        'product_photo',
+        'tips',
+        'reply_markup',
+      ] as const
+    ).map((option) => BOT_API_ERRORS.invoiceOptionUnsupported.provenance({ option })),
+    invoiceTextEncodingInvalid: (
+      ['title', 'description', 'start_parameter', 'price_label'] as const
+    ).map((text) => BOT_API_ERRORS.invoiceTextEncodingInvalid.provenance({ text })),
     inlineQueryResultInvalid: [
       BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
         reason: 'result_type_unsupported',

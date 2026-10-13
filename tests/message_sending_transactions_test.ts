@@ -98,6 +98,40 @@ Deno.test('a private message whose record fails leaves the chat as its account s
   );
 });
 
+Deno.test('an invoice whose record fails stores no invoice and allocates no message ID', async () => {
+  using fixture = createSendingFixture();
+  const { alpha, adaId } = fixture;
+  await fixture.expectResult(
+    fixture.callMethod(alpha, 'sendChatAction', { chat_id: String(adaId), action: 'typing' }),
+  );
+  const lastMessageId = readMessageId(
+    await fixture.expectResult(
+      fixture.callMethod(alpha, 'sendMessage', { chat_id: String(adaId), text: 'Your order' }),
+    ),
+  );
+  await fixture.expectResult(
+    fixture.callMethod(alpha, 'sendChatAction', { chat_id: String(adaId), action: 'typing' }),
+  );
+  const stateBefore = fixture.readPrivateChat();
+  const sendInvoice = () =>
+    fixture.callMethod(alpha, 'sendInvoice', {
+      chat_id: String(adaId),
+      title: 'Premium access',
+      description: 'Unlocks every premium chapter',
+      payload: 'order-42',
+      currency: 'XTR',
+      prices: JSON.stringify([{ label: 'Access', amount: 50 }]),
+    });
+
+  // The invoice, and the chat action it ends, are staged before the record fails.
+  const restoreRecording = fixture.failCallRecording();
+  await assertRejects(sendInvoice, Error, FAILED_RECORDING_MESSAGE);
+  restoreRecording();
+
+  assertEquals(fixture.readPrivateChat(), stateBefore);
+  assertEquals(readMessageId(await fixture.expectResult(sendInvoice())), lastMessageId + 1);
+});
+
 Deno.test('a forward of several messages whose record fails forwards none of them', async () => {
   using fixture = createSendingFixture();
   const { alpha, adaId, chatId } = fixture;

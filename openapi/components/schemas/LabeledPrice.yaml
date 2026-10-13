@@ -1,0 +1,15 @@
+type: object
+additionalProperties: false
+description: A part of an invoice's price, of which an invoice in Telegram Stars has exactly one.
+required:
+  - label
+  - amount
+properties:
+  label:
+    type: string
+    minLength: 1
+  amount:
+    type: integer
+    description: >-
+      The amount in Telegram Stars. The invoice's total must be positive and at most
+      999999999999, TDLib's limit for any currency; Telegram may limit amounts in Stars further.
