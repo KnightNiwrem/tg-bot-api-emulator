@@ -8,12 +8,14 @@ import type {
   BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
+  BotApiPreCheckoutQuery,
   BotApiPrivateMessage,
   BotApiSupergroupMessage,
   BotApiUpdateType,
 } from '../../types/bot_api.ts';
 import type { BotApiPoll, BotApiPollAnswer } from '../../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../../types/callback_query.ts';
+import type { CheckoutAttempt } from '../../types/checkout.ts';
 import type {
   BotBlockChangedEvent,
   CallbackQueryCreatedEvent,
@@ -50,6 +52,7 @@ interface BotMessageViews {
     callbackQuery: CallbackQuery,
     message: ChatMessage,
   ): BotApiCallbackQuery;
+  viewPreCheckoutQueryForBot(attempt: CheckoutAttempt): BotApiPreCheckoutQuery;
   viewPollForCreator(poll: Poll): BotApiPoll;
   viewPollAnswerForBot(event: PollAnswerChangedEvent): BotApiPollAnswer;
   viewInlineQueryForBot(inlineQuery: InlineQuery): BotApiInlineQuery;
@@ -74,6 +77,7 @@ interface BotUpdateMailboxes {
   enqueueMessageUpdate(botId: number, message: BotApiMessage): void;
   enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiMessage): void;
   enqueueCallbackQueryUpdate(botId: number, callbackQuery: BotApiCallbackQuery): void;
+  enqueuePreCheckoutQueryUpdate(botId: number, preCheckoutQuery: BotApiPreCheckoutQuery): void;
   enqueuePollUpdate(botId: number, poll: BotApiPoll): void;
   enqueuePollAnswerUpdate(botId: number, pollAnswer: BotApiPollAnswer): void;
   enqueueInlineQueryUpdate(botId: number, inlineQuery: BotApiInlineQuery): void;
@@ -193,6 +197,9 @@ export class BotUpdateDeliveryService {
         return;
       case 'callback_query_created':
         this.#deliverCallbackQuery(event);
+        return;
+      case 'pre_checkout_query_created':
+        this.#deliverPreCheckoutQuery(event.attempt);
         return;
       case 'poll_answer_changed':
         this.#deliverPollAnswerChange(event);
@@ -389,6 +396,17 @@ export class BotUpdateDeliveryService {
     this.#botUpdates.enqueueCallbackQueryUpdate(
       observingBotId,
       this.#botMessageViews.viewCallbackQueryForBot(callbackQuery, message),
+    );
+  }
+
+  /** A pre-checkout query is observed only by the bot that sent the invoice. */
+  #deliverPreCheckoutQuery(attempt: CheckoutAttempt): void {
+    if (!this.#isSubscribed(attempt.merchantBotId, 'pre_checkout_query')) {
+      return;
+    }
+    this.#botUpdates.enqueuePreCheckoutQueryUpdate(
+      attempt.merchantBotId,
+      this.#botMessageViews.viewPreCheckoutQueryForBot(attempt),
     );
   }
 

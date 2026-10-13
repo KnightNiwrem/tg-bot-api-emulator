@@ -294,7 +294,8 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
 
 - **Game and payment buttons.** These inline buttons need their
   [missing features](README.md#unimplemented-areas). Tests cannot exercise those button definitions
-  or actions; an [invoice](payments.md) is sent without a keyboard.
+  or actions; an [invoice](payments.md) is sent without a keyboard, and accounts check it out
+  through the [checkout control](payments.md#checkout) in place of its Pay button.
 - **Running Web Apps.** The emulator neither loads nor runs a Web App and models no Web App session,
   so tests cannot exercise a Web App's page, its `initData` or what it does besides
   [sending data](#sending-web-app-data). Web Apps opened from inline buttons, the menu button or the

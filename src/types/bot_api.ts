@@ -780,6 +780,22 @@ export function toBotApiInvoice(invoice: StarsInvoice): BotApiInvoice {
   };
 }
 
+/**
+ * An account's confirmed checkout of the bot's invoice, in the field order of the official Bot API
+ * server's `JsonPreCheckoutQuery`, which carries the bot's payload. An invoice in Telegram Stars has
+ * no shipping option or order information, which the server omits when absent.
+ */
+export interface BotApiPreCheckoutQuery {
+  readonly id: string;
+  /** The account that pays. */
+  readonly from: VirtualAccountProfile;
+  readonly currency: typeof TELEGRAM_STARS_CURRENCY;
+  /** The total price in the smallest units of the currency. */
+  readonly total_amount: number;
+  /** The payload the bot sent with the invoice, unchanged. */
+  readonly invoice_payload: string;
+}
+
 /** A location, in the field order of the official Bot API server's `JsonLocation`. */
 export interface BotApiLocation {
   readonly latitude: number;
@@ -994,6 +1010,12 @@ export interface BotApiCallbackQueryUpdate {
   readonly callback_query: BotApiCallbackQuery;
 }
 
+/** An account's confirmed checkout of an invoice the bot sent, which the bot answers. */
+export interface BotApiPreCheckoutQueryUpdate {
+  readonly update_id: number;
+  readonly pre_checkout_query: BotApiPreCheckoutQuery;
+}
+
 export interface BotApiInlineQueryUpdate {
   readonly update_id: number;
   readonly inline_query: BotApiInlineQuery;
@@ -1059,6 +1081,7 @@ export type BotApiUpdate =
   | BotApiInlineQueryUpdate
   | BotApiChosenInlineResultUpdate
   | BotApiCallbackQueryUpdate
+  | BotApiPreCheckoutQueryUpdate
   | BotApiPollUpdate
   | BotApiPollAnswerUpdate
   | BotApiMyChatMemberUpdate
@@ -1070,7 +1093,7 @@ export type BotApiUpdate =
 /**
  * The ID of the chat an update happened in, as grammY's `ctx.chat` finds it; `undefined` for an
  * inline query, a chosen inline result, a press of a button on a message sent through inline mode,
- * or a poll or poll answer, which the bot knows no chat of.
+ * a pre-checkout query, or a poll or poll answer, which the bot knows no chat of.
  */
 export function getBotApiUpdateChatId(update: BotApiUpdate): number | undefined {
   if ('message' in update) {
@@ -1113,6 +1136,9 @@ export function getBotApiUpdateUserId(update: BotApiUpdate): number | undefined 
   }
   if ('callback_query' in update) {
     return update.callback_query.from.id;
+  }
+  if ('pre_checkout_query' in update) {
+    return update.pre_checkout_query.from.id;
   }
   if ('inline_query' in update) {
     return update.inline_query.from.id;

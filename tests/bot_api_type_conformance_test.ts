@@ -45,6 +45,7 @@ import type {
   PhotoSize,
   Poll,
   PollAnswer,
+  PreCheckoutQuery,
   RichBlockMap,
   Update,
   User,
@@ -85,6 +86,7 @@ import type {
   BotApiPinnedSupergroupMessage,
   BotApiPollAnswerUpdate,
   BotApiPollUpdate,
+  BotApiPreCheckoutQueryUpdate,
   BotApiPrivateChat,
   BotApiPrivateChatFullInfo,
   BotApiPrivateMessage,
@@ -462,6 +464,12 @@ interface BotApiWireTypeConformance {
       GrammyUpdateCarrying<'callback_query', CallbackQuery>
     >
   >;
+  preCheckoutQueryUpdate: ExpectTrue<
+    ConformsToGrammy<
+      BotApiPreCheckoutQueryUpdate,
+      GrammyUpdateCarrying<'pre_checkout_query', PreCheckoutQuery>
+    >
+  >;
   inlineQueryUpdate: ExpectTrue<
     ConformsToGrammy<BotApiInlineQueryUpdate, GrammyUpdateCarrying<'inline_query', InlineQuery>>
   >;
@@ -555,6 +563,7 @@ type EveryUpdateVariantChecked = ExpectTrue<
     | BotApiMessageUpdate
     | BotApiEditedMessageUpdate
     | BotApiCallbackQueryUpdate
+    | BotApiPreCheckoutQueryUpdate
     | BotApiInlineQueryUpdate
     | BotApiChosenInlineResultUpdate
     | BotApiPollUpdate

@@ -8,6 +8,7 @@ import type {
   BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
+  BotApiPreCheckoutQuery,
   BotApiUpdate,
 } from '../../types/bot_api.ts';
 import type { BotApiPoll, BotApiPollAnswer } from '../../types/bot_api_poll.ts';
@@ -97,6 +98,16 @@ export class BotUpdateRepository {
     return this.#enqueueUpdate(
       botId,
       (update_id) => ({ update_id, callback_query: callbackQuery }),
+    );
+  }
+
+  enqueuePreCheckoutQueryUpdate(
+    botId: number,
+    preCheckoutQuery: BotApiPreCheckoutQuery,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, pre_checkout_query: preCheckoutQuery }),
     );
   }
 

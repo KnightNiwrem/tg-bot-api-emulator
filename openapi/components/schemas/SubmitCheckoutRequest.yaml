@@ -1,0 +1,13 @@
+type: object
+additionalProperties: false
+description: The invoice to check out, by its message in the account's private chat with the bot.
+required:
+  - chat
+  - message_id
+properties:
+  chat:
+    $ref: ./PrivateMessageTarget.yaml
+  message_id:
+    type: integer
+    minimum: 1
+    description: Identifier of the invoice message, as message history shows it.

@@ -14,6 +14,7 @@ import { BotUpdateSubscriptionRepository } from '../repositories/bot_update_subs
 import { BotWebhookRepository } from '../repositories/bot_webhook/bot_webhook.ts';
 import { CallbackQueryRepository } from '../repositories/callback_query/callback_query.ts';
 import { ChatActionRepository } from '../repositories/chat_action/chat_action.ts';
+import { CheckoutRepository } from '../repositories/checkout/checkout.ts';
 import { ChatInviteLinkRepository } from '../repositories/chat_invite_link/chat_invite_link.ts';
 import { FileRepository } from '../repositories/file/file.ts';
 import { InlineQueryRepository } from '../repositories/inline_query/inline_query.ts';
@@ -49,6 +50,7 @@ import { BotUpdatePollingService } from '../services/update_polling/bot_update_p
 import { CallbackQueryService } from '../services/domain/callback_query.ts';
 import { ChatActionService } from '../services/domain/chat_action.ts';
 import { ChatAdmissionService } from '../services/domain/chat_admission.ts';
+import { CheckoutService } from '../services/domain/checkout.ts';
 import { InlineQueryService } from '../services/domain/inline_query.ts';
 import { MediaFileService } from '../services/domain/media_file.ts';
 import { normalizeBotDraftText, normalizeCaption } from '../services/domain/message_content.ts';
@@ -308,6 +310,12 @@ export function createEmulationSession(
     callbackQueries: new CallbackQueryRepository(journal),
     transactions,
   });
+  const checkouts = new CheckoutService({
+    accountChatMessages,
+    privateChats,
+    checkouts: new CheckoutRepository(journal),
+    transactions,
+  });
   const pollService = new PollService({
     accountChatMessages,
     polls,
@@ -460,6 +468,7 @@ export function createEmulationSession(
     replyInterfaces,
     botBlocking,
     callbackQueries,
+    checkouts,
     polls: pollService,
     inlineQueries,
     botCommands,

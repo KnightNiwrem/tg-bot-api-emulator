@@ -25,6 +25,7 @@ import {
   projectPinnedSupergroupMessage,
   projectPoll,
   projectPollAnswerForBot,
+  projectPreCheckoutQueryForBot,
   projectPrivateChat,
   projectPrivateMessageForBot,
   projectRepliedPrivateMessageForBot,
@@ -50,6 +51,7 @@ import type {
   BotApiMyChatMemberUpdated,
   BotApiPinnedPrivateMessage,
   BotApiPinnedSupergroupMessage,
+  BotApiPreCheckoutQuery,
   BotApiPrivateMessage,
   BotApiRepliedPrivateMessage,
   BotApiRepliedSupergroupMessage,
@@ -59,6 +61,7 @@ import type {
 import type { BotApiPoll, BotApiPollAnswer } from '../../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../../types/callback_query.ts';
 import type { ChatInviteLink } from '../../types/chat_invite_link.ts';
+import type { CheckoutAttempt } from '../../types/checkout.ts';
 import {
   getStoredFileThumbnail,
   type StoredFile,
@@ -325,6 +328,17 @@ export class BotMessageViewService {
     return projectInlineQueryForBot(
       inlineQuery,
       this.#findAccountProfile(inlineQuery.accountId, `inline query ${inlineQuery.id}`),
+    );
+  }
+
+  /**
+   * Returns a checkout attempt's pre-checkout query as the bot that sent the invoice receives it,
+   * from the payer.
+   */
+  viewPreCheckoutQueryForBot(attempt: CheckoutAttempt): BotApiPreCheckoutQuery {
+    return projectPreCheckoutQueryForBot(
+      attempt,
+      this.#findAccountProfile(attempt.payerAccountId, `pre-checkout query ${attempt.id}`),
     );
   }
 

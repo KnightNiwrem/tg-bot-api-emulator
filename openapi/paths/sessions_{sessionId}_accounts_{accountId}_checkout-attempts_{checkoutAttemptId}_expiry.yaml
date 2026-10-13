@@ -1,0 +1,55 @@
+description: >-
+  The expiry of a pending checkout attempt, an emulator control that ends the attempt as the
+  passing of the bot's time to answer would. The emulator expires no checkout by time.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/CheckoutAttemptId.yaml
+post:
+  operationId: expireCheckoutAttempt
+  summary: Expire a pending checkout attempt
+  description: >-
+    Ends a pending attempt as expired. The bot receives no update, the pre_checkout_query update
+    already queued for it stays queued, and a later answer to the query fails. The invoice can
+    then be checked out again, with a new attempt and a fresh pre-checkout query identifier.
+  responses:
+    '200':
+      description: The attempt expired; it is shown as expiry left it.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CheckoutAttemptResponse.yaml
+    '400':
+      description: The account path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
+    '404':
+      description: The session does not exist, or the account made no such checkout attempt.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_not_found
+                      - session_not_found
+    '409':
+      description: The attempt is no longer pending; the bot answered it, or it ended.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - checkout_attempt_not_pending

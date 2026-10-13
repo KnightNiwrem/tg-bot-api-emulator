@@ -16,6 +16,12 @@ import {
   pressCallbackButtonContract,
 } from '../../src/api/contracts/callback_queries.ts';
 import {
+  abandonCheckoutAttemptContract,
+  expireCheckoutAttemptContract,
+  getCheckoutAttemptContract,
+  submitCheckoutContract,
+} from '../../src/api/contracts/checkouts.ts';
+import {
   expirePrivateChatActionContract,
   expireSupergroupChatActionContract,
   getPrivateChatActionsContract,
@@ -178,6 +184,9 @@ import type {
   ChatAction,
   ChatJoin,
   ChatJoinRequest,
+  CheckoutAttempt,
+  CheckoutAttemptIn,
+  CheckoutAttemptStatus,
   ChooseInlineQueryResultInput,
   CreatedVirtualAccount,
   CreatedVirtualBot,
@@ -224,6 +233,7 @@ import type {
   SetMessageReactionInput,
   SetWebhookDeliveryInput,
   ShownMessageDraftInput,
+  SubmitCheckoutInput,
   Supergroup,
   SupergroupAdministrator,
   SupergroupBotCommands,
@@ -1096,6 +1106,45 @@ function createVirtualAccountClient(
       });
       return response.callback_query;
     },
+    async submitCheckout(
+      input: SubmitCheckoutInput,
+    ): Promise<ActionOutcome<CheckoutAttemptIn<'pending'>>> {
+      const submission = await callRefinedJsonAction(
+        transport,
+        submitCheckoutContract,
+        { params: accountParams, body: input },
+        checkoutAttemptResponseSchemaFor('pending'),
+      );
+      return selectResult(submission, ({ checkout_attempt }) => checkout_attempt);
+    },
+    async getCheckoutAttempt(checkoutAttemptId: string): Promise<CheckoutAttempt> {
+      const response = await callJsonOperation(transport, getCheckoutAttemptContract, {
+        params: { ...accountParams, checkoutAttemptId },
+      });
+      return response.checkout_attempt;
+    },
+    async abandonCheckoutAttempt(
+      checkoutAttemptId: string,
+    ): Promise<ActionOutcome<CheckoutAttemptIn<'abandoned'>>> {
+      const abandonment = await callRefinedJsonAction(
+        transport,
+        abandonCheckoutAttemptContract,
+        { params: { ...accountParams, checkoutAttemptId } },
+        checkoutAttemptResponseSchemaFor('abandoned'),
+      );
+      return selectResult(abandonment, ({ checkout_attempt }) => checkout_attempt);
+    },
+    async expireCheckoutAttempt(
+      checkoutAttemptId: string,
+    ): Promise<ActionOutcome<CheckoutAttemptIn<'expired'>>> {
+      const expiry = await callRefinedJsonAction(
+        transport,
+        expireCheckoutAttemptContract,
+        { params: { ...accountParams, checkoutAttemptId } },
+        checkoutAttemptResponseSchemaFor('expired'),
+      );
+      return selectResult(expiry, ({ checkout_attempt }) => checkout_attempt);
+    },
     answerPoll<Target extends MessageTarget>(
       { chat, message_id, ...answer }: AnswerPollInput<Target>,
     ): Promise<ActionOutcome<AccountPollAnswer<Target>>> {
@@ -1365,6 +1414,26 @@ function toAccountMediaGroupFile(item: AccountMediaGroupItem, field: string, cal
     return { audio: toAccountAudioUpload(item, `${field}.audio`, call) };
   }
   return { video: toAccountVideoUpload(item, `${field}.video`, call) };
+}
+
+/**
+ * The response schema of a checkout attempt's actions, refined to an attempt in `status`, which
+ * the action leaves it in: a submission leaves it pending, an abandonment abandoned and an expiry
+ * expired. An attempt in another status breaks what the action promises, so the client refuses it
+ * as a response that breaks its contract, with the response's status and raw body.
+ */
+function checkoutAttemptResponseSchemaFor<Status extends CheckoutAttemptStatus>(status: Status) {
+  return getCheckoutAttemptContract.success.body.schema.refine(
+    // TypeScript cannot relate the checked status to the generic one, so the check is stated as
+    // what it tells.
+    (response): response is z.output<typeof getCheckoutAttemptContract.success.body.schema> & {
+      readonly checkout_attempt: CheckoutAttemptIn<Status>;
+    } => response.checkout_attempt.status === status,
+    {
+      path: ['checkout_attempt', 'status'],
+      error: () => `Expected a checkout attempt that is ${status}`,
+    },
+  );
 }
 
 /**

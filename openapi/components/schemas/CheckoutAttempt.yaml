@@ -1,0 +1,72 @@
+description: >-
+  An account's checkout of an invoice a bot sent to its private chat. An attempt is `pending` until
+  the bot answers its pre-checkout query, then `approved`, or `refused` with the bot's
+  `error_message`, which is present exactly when the attempt is refused. The account abandons a
+  pending or approved attempt, and a test expires a pending one. A refused, abandoned or expired
+  attempt has ended for good. An approval creates no payment.
+oneOf:
+  - type: object
+    additionalProperties: false
+    description: An attempt that awaits the bot's answer, was approved, or ended without a refusal.
+    required:
+      - id
+      - chat
+      - message_id
+      - invoice
+      - status
+    properties:
+      id:
+        type: string
+        minLength: 1
+        description: Identifier the bot receives in its `pre_checkout_query` update.
+      chat:
+        $ref: ./PrivateMessageTarget.yaml
+      message_id:
+        type: integer
+        minimum: 1
+        description: Identifier of the invoice message, as message history shows it.
+      invoice:
+        $ref: ./Invoice.yaml
+        description: The invoice as the account confirmed it, which the attempt keeps unchanged.
+      status:
+        type: string
+        enum:
+          - pending
+          - approved
+          - abandoned
+          - expired
+        description: >-
+          `pending` until the bot answers; `approved` once the bot approved it; `abandoned` once
+          the account abandoned it; `expired` once a test expired it while pending.
+  - type: object
+    additionalProperties: false
+    description: An attempt the bot refused, with its explanation.
+    required:
+      - id
+      - chat
+      - message_id
+      - invoice
+      - status
+      - error_message
+    properties:
+      id:
+        type: string
+        minLength: 1
+        description: Identifier the bot receives in its `pre_checkout_query` update.
+      chat:
+        $ref: ./PrivateMessageTarget.yaml
+      message_id:
+        type: integer
+        minimum: 1
+        description: Identifier of the invoice message, as message history shows it.
+      invoice:
+        $ref: ./Invoice.yaml
+        description: The invoice as the account confirmed it, which the attempt keeps unchanged.
+      status:
+        type: string
+        const: refused
+      error_message:
+        type: string
+        minLength: 1
+        description: >-
+          The bot's explanation of why the checkout cannot proceed, as the account's app shows it.

@@ -47,6 +47,10 @@ import type {
   pressCallbackButtonContract,
 } from '../../src/api/contracts/callback_queries.ts';
 import type {
+  getCheckoutAttemptContract,
+  submitCheckoutContract,
+} from '../../src/api/contracts/checkouts.ts';
+import type {
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
 } from '../../src/api/contracts/message_drafts.ts';
@@ -1088,6 +1092,30 @@ export type CallbackQueryStatus = CallbackQuery['status'];
 /** The bot's answer to a callback query. */
 export type CallbackQueryAnswer = NonNullable<CallbackQuery['answer']>;
 
+/** The invoice to check out, by its message in the account's private chat with the bot. */
+export type SubmitCheckoutInput = ReadonlySnapshot<
+  ControlOperationRequest<typeof submitCheckoutContract>['body']
+>;
+
+/**
+ * An account's checkout of an invoice a bot sent, with the invoice as the account confirmed it and
+ * the bot's answer once given.
+ */
+export type CheckoutAttempt = ReadonlySnapshot<
+  ControlOperationResult<typeof getCheckoutAttemptContract>['checkout_attempt']
+>;
+
+/**
+ * Where a checkout attempt is in its life: `pending` until the bot answers, then `approved` or
+ * `refused`; `abandoned` or `expired` once ended by a control.
+ */
+export type CheckoutAttemptStatus = CheckoutAttempt['status'];
+
+/** A checkout attempt in the given status, as an operation that leaves it so returns it. */
+export type CheckoutAttemptIn<Status extends CheckoutAttemptStatus> =
+  & CheckoutAttempt
+  & { readonly status: Status };
+
 /** An inline query an account types in a chat, for the inline bot whose username precedes it. */
 export type SendInlineQueryInput = ReadonlySnapshot<
   ControlOperationRequest<typeof sendInlineQueryContract>['body']
@@ -1485,6 +1513,35 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   pressButton(input: PressButtonInput): Promise<ActionOutcome<CallbackQuery>>;
   /** Returns a callback query this account created, with the bot's answer once given. */
   getCallbackQuery(callbackQueryId: string): Promise<CallbackQuery>;
+  /**
+   * Confirms the checkout of an invoice a bot sent to this account's private chat, as the final
+   * confirmation of the payment form does, which starts a pending attempt and sends the bot a
+   * `pre_checkout_query` update. The payment's details all come from the invoice. The bot answers
+   * asynchronously; read the answer with `getCheckoutAttempt`. Fails while the invoice has a
+   * pending or approved attempt, and while this account blocks the bot.
+   */
+  submitCheckout(input: SubmitCheckoutInput): Promise<ActionOutcome<CheckoutAttemptIn<'pending'>>>;
+  /**
+   * Returns a checkout attempt this account made, with the bot's answer once given: its approval,
+   * or its refusal with the bot's `error_message`.
+   */
+  getCheckoutAttempt(checkoutAttemptId: string): Promise<CheckoutAttempt>;
+  /**
+   * Abandons a pending or approved checkout attempt of this account, as closing the payment form
+   * does. The bot is not told, and its later answer fails. The invoice can then be checked out
+   * again, with a new pre-checkout query.
+   */
+  abandonCheckoutAttempt(
+    checkoutAttemptId: string,
+  ): Promise<ActionOutcome<CheckoutAttemptIn<'abandoned'>>>;
+  /**
+   * Expires a pending checkout attempt of this account, as the passing of the bot's time to answer
+   * would; the emulator expires no checkout by time. The bot is not told, and its later answer
+   * fails. The invoice can then be checked out again, with a new pre-checkout query.
+   */
+  expireCheckoutAttempt(
+    checkoutAttemptId: string,
+  ): Promise<ActionOutcome<CheckoutAttemptIn<'expired'>>>;
   /**
    * Votes in the poll a message of a private chat or a supergroup shows, choosing options by
    * position, or changes this account's answer, as the poll allows. Choosing the options already

@@ -24,6 +24,7 @@ import {
   type BotApiMyChatMemberUpdated,
   type BotApiPinnedPrivateMessage,
   type BotApiPinnedSupergroupMessage,
+  type BotApiPreCheckoutQuery,
   type BotApiPrivateChat,
   type BotApiPrivateChatBotMember,
   type BotApiPrivateMessage,
@@ -50,6 +51,7 @@ import type {
   BotApiPollAnswer,
 } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
+import type { CheckoutAttempt } from '../types/checkout.ts';
 import type {
   BotBlockChangedEvent,
   ChatJoinRequestedEvent,
@@ -64,6 +66,7 @@ import type {
   SupergroupAdministratorRights,
 } from '../types/chat_membership.ts';
 import { getInlineQueryChatType, type InlineQuery } from '../types/inline_query.ts';
+import { getInvoiceTotalAmount } from '../types/invoice.ts';
 import { countPollVoters, type Poll, type PollType } from '../types/poll.ts';
 import type { StoredFileId } from '../types/stored_file.ts';
 import type { VirtualAccountProfile } from '../types/virtual_account.ts';
@@ -919,6 +922,23 @@ export function projectInlineQueryForBot(
     chat_type: getInlineQueryChatType(inlineQuery),
     query: inlineQuery.query,
     offset: inlineQuery.offset,
+  };
+}
+
+/**
+ * Projects a checkout attempt as the bot that sent its invoice receives its pre-checkout query,
+ * from the invoice as the payer confirmed it.
+ */
+export function projectPreCheckoutQueryForBot(
+  attempt: CheckoutAttempt,
+  payer: VirtualAccountProfile,
+): BotApiPreCheckoutQuery {
+  return {
+    id: attempt.id,
+    from: payer,
+    currency: attempt.invoice.currency,
+    total_amount: getInvoiceTotalAmount(attempt.invoice),
+    invoice_payload: attempt.invoice.payload,
   };
 }
 

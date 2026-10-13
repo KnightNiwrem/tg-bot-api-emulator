@@ -32,7 +32,7 @@ thresholds, which tests replace with
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages                |
 | [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies   |
 | [Contacts and locations](contacts-and-locations.md)   | Contacts, static locations, requests, forwards, copies, replies             |
-| [Payments](payments.md)                               | Partial: invoices in Telegram Stars; checkout and payment are still to come |
+| [Payments](payments.md)                               | Partial: invoices in Telegram Stars and checkout; payment is still to come  |
 | [Pinned messages](pinned-messages.md)                 | Multiple pins per chat, pinning rights, service messages and `getChat`      |
 | [Reactions](reactions.md)                             | Emoji reactions in supergroups, `message_reaction` updates, albums          |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                       |
@@ -61,7 +61,7 @@ case-insensitive. The legacy aliases below are also accepted.
 | Files            | `getFile`, plus HTTP file downloads                                                                                                                                                         |
 | Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                                                                  |
 | Polls            | `sendPoll`, `stopPoll`                                                                                                                                                                      |
-| Payments         | `sendInvoice`                                                                                                                                                                               |
+| Payments         | `sendInvoice`, `answerPreCheckoutQuery`                                                                                                                                                     |
 | Commands         | `setMyCommands`, `getMyCommands`, `deleteMyCommands`                                                                                                                                        |
 | Bot profile      | `setMyDescription`, `getMyDescription`, `setMyShortDescription`, `getMyShortDescription`                                                                                                    |
 | Bot settings     | `setChatMenuButton`, `getChatMenuButton`, `setMyDefaultAdministratorRights`, `getMyDefaultAdministratorRights`                                                                              |
@@ -94,7 +94,7 @@ above determines whether an individual method is available.
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
   reactions](reactions.md#real-gaps), chat photos and other chat settings, and
   [subscription invite links](invite-links.md#real-gaps).
-- [Checkout and payment of invoices](payments.md#real-gaps), which are the next steps of the partial
+- [Payment completion of invoices](payments.md#real-gaps), which is the next step of the partial
   payments support, other payments than one-off invoices in Telegram Stars in private chats,
   shipping, Star balances, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps other than the data a

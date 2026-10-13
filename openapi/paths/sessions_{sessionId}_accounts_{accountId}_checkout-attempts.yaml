@@ -1,0 +1,84 @@
+description: Checkout attempts an account made of the invoices bots sent to its private chats.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+post:
+  operationId: submitCheckout
+  summary: Confirm the checkout of a bot's invoice as a virtual account
+  description: >-
+    Confirms the checkout of an invoice the bot sent to the account's private chat, as the final
+    confirmation of the payment form does; opening the form is not modeled. The payer, the bot,
+    the currency, the amount and the payload all come from the stored invoice. The checkout starts
+    a pending attempt with a fresh identifier, which keeps the invoice as it is now. Unless the
+    bot has an allowed_updates subscription that excludes pre_checkout_query updates, it receives
+    a pre_checkout_query update from the account, and answers asynchronously with
+    answerPreCheckoutQuery; read the answer from the created attempt. As emulator policies, an
+    invoice has at most one pending or approved attempt, and an account that blocks the bot
+    cannot check out. An approval creates no payment.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SubmitCheckoutRequest.yaml
+  responses:
+    '201':
+      description: The checkout was confirmed and its pending attempt created.
+      headers:
+        Location:
+          description: Relative URL of the created checkout attempt.
+          required: true
+          schema:
+            type: string
+            format: uri-reference
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CheckoutAttemptResponse.yaml
+    '400':
+      description: The request is invalid, or the message is no invoice.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - message_not_invoice
+    '404':
+      description: >-
+        The session, account or bot does not exist, or the private chat has no message with the
+        given ID.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - message_not_found
+                      - session_not_found
+    '409':
+      description: >-
+        The account blocks the bot, or the invoice has a pending or approved attempt, which must
+        end before another checkout.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_blocked
+                      - checkout_attempt_active
