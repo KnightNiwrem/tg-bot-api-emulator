@@ -1,0 +1,29 @@
+type: object
+additionalProperties: false
+description: >-
+  The payment a completed checkout attempt made: the receipt it sent the bot, the account's
+  `successful_payment` service message, and the charge's identifiers, which the receipt shows too.
+  The receipt stays recorded here once deleted, and the invoice stays paid.
+required:
+  - receipt_message_id
+  - telegram_payment_charge_id
+  - provider_payment_charge_id
+properties:
+  receipt_message_id:
+    type: integer
+    minimum: 1
+    description: >-
+      Identifier of the `successful_payment` service message, as message history shows it.
+  telegram_payment_charge_id:
+    type: string
+    minLength: 1
+    description: >-
+      Synthetic identifier the emulator makes up for the charge, stable within the session. Its
+      format is the emulator's own and makes no claim about Telegram's.
+  provider_payment_charge_id:
+    type: string
+    minLength: 1
+    description: >-
+      Synthetic identifier the emulator makes up for the provider's charge, stable within the
+      session. Its format is the emulator's own and makes no claim about Telegram's, including
+      whether payments in Telegram Stars leave it empty.

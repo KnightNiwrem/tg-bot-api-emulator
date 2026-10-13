@@ -44,6 +44,7 @@ import {
   toBotApiContact,
   toBotApiInvoice,
   toBotApiLocation,
+  toBotApiSuccessfulPayment,
 } from '../types/bot_api.ts';
 import type {
   BotApiCustomEmojiEntity,
@@ -570,8 +571,9 @@ function projectRepliedPrivateMessageContent(
 }
 
 /**
- * Projects what a private message shows other than a pin: content, what an account shared, or the
- * data a Web App sent.
+ * Projects what a private message shows other than a pin: content, what an account shared, the data
+ * a Web App sent, or an account's payment, as the official server's `JsonSuccessfulPaymentBot`
+ * shows it.
  */
 function projectPrivateMessageContent(
   content: Exclude<PrivateMessageContent, MessagePinnedContent>,
@@ -584,6 +586,8 @@ function projectPrivateMessageContent(
       return projectChatSharedContent(content);
     case 'web_app_data':
       return { web_app_data: { button_text: content.buttonText, data: content.data } };
+    case 'successful_payment':
+      return { successful_payment: toBotApiSuccessfulPayment(content.payment) };
     default:
       return projectPrivateWrittenContent(content, context);
   }

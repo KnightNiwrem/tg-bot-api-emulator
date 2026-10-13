@@ -1,7 +1,7 @@
 /**
- * Invoices a bot sends for payment in Telegram Stars. The emulator supports one-off invoices from a
- * bot to its private chat with an account; shipping, tips, product photos, subscriptions, paid
- * media and real payment providers are not supported.
+ * Invoices a bot sends for payment in Telegram Stars, and their payments. The emulator supports
+ * one-off invoices from a bot to its private chat with an account; shipping, tips, product photos,
+ * subscriptions, paid media and real payment providers are not supported.
  *
  * @module
  */
@@ -102,4 +102,37 @@ export function isInvoiceRefusal(
   failure: { readonly reason: string },
 ): failure is InvoiceRefusal {
   return INVOICE_REFUSAL_REASONS.has(failure.reason);
+}
+
+/**
+ * The identifiers of a payment's charge, which the payment's receipt shows the bot. The emulator
+ * makes up both, since it charges no account; their format is its own, and makes no claim about the
+ * identifiers Telegram or a payment provider issues.
+ */
+export interface PaymentChargeIds {
+  readonly telegramPaymentChargeId: string;
+  readonly providerPaymentChargeId: string;
+}
+
+/**
+ * An invoice's payment in Telegram Stars, as its receipt records it: the currency, the amount and
+ * the bot's payload of the invoice as the payer confirmed it, and the charge's identifiers.
+ */
+export interface StarsPayment {
+  readonly currency: typeof TELEGRAM_STARS_CURRENCY;
+  /** What the payer paid, in the smallest units of the currency, which for Stars is one Star. */
+  readonly totalAmount: number;
+  /** The bot's payload of the invoice, exactly as the bot sent it. */
+  readonly invoicePayload: string;
+  readonly charge: PaymentChargeIds;
+}
+
+/** Records the payment of an invoice as the payer confirmed it, charged under `charge`. */
+export function createStarsPayment(invoice: StarsInvoice, charge: PaymentChargeIds): StarsPayment {
+  return {
+    currency: invoice.currency,
+    totalAmount: getInvoiceTotalAmount(invoice),
+    invoicePayload: invoice.payload,
+    charge,
+  };
 }

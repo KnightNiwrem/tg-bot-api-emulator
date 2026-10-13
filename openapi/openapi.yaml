@@ -201,6 +201,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts.yaml
   /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts_{checkoutAttemptId}.yaml
+  /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}/completion:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts_{checkoutAttemptId}_completion.yaml
   /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}/abandonment:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_checkout-attempts_{checkoutAttemptId}_abandonment.yaml
   /sessions/{sessionId}/accounts/{accountId}/checkout-attempts/{checkoutAttemptId}/expiry:

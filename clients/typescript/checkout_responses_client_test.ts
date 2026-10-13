@@ -13,7 +13,7 @@ import {
 } from './test_support/action_receipt_headers.ts';
 import type {
   ActionOutcome,
-  CheckoutAttemptStatus,
+  CheckoutAttempt,
   PrivateMessageTarget,
   VirtualAccountClient,
 } from './types.ts';
@@ -39,12 +39,25 @@ const attempt = {
   status: 'pending',
 } as const;
 
-/** An action on a checkout attempt: how the account takes it, its URL, status and promise. */
+const completedAttempt = {
+  ...attempt,
+  status: 'completed',
+  payment: {
+    receipt_message_id: 4,
+    telegram_payment_charge_id: 'emulator_telegram_charge_1',
+    provider_payment_charge_id: 'emulator_provider_charge_1',
+  },
+} as const;
+
+/**
+ * An action on a checkout attempt: how the account takes it, its URL and response status, and the
+ * attempt it promises to leave.
+ */
 interface CheckoutAction {
   readonly name: string;
   readonly url: string;
   readonly responseStatus: number;
-  readonly leavesStatus: CheckoutAttemptStatus;
+  readonly leaves: CheckoutAttempt;
   readonly act: (account: VirtualAccountClient) => Promise<ActionOutcome<unknown>>;
 }
 
@@ -53,21 +66,28 @@ const checkoutActions: readonly CheckoutAction[] = [
     name: 'submitCheckout',
     url: ATTEMPTS_URL,
     responseStatus: 201,
-    leavesStatus: 'pending',
+    leaves: attempt,
     act: (account) => account.submitCheckout({ chat: SHOP, message_id: attempt.message_id }),
+  },
+  {
+    name: 'completeCheckoutAttempt',
+    url: `${ATTEMPTS_URL}/1/completion`,
+    responseStatus: 200,
+    leaves: completedAttempt,
+    act: (account) => account.completeCheckoutAttempt(attempt.id),
   },
   {
     name: 'abandonCheckoutAttempt',
     url: `${ATTEMPTS_URL}/1/abandonment`,
     responseStatus: 200,
-    leavesStatus: 'abandoned',
+    leaves: { ...attempt, status: 'abandoned' },
     act: (account) => account.abandonCheckoutAttempt(attempt.id),
   },
   {
     name: 'expireCheckoutAttempt',
     url: `${ATTEMPTS_URL}/1/expiry`,
     responseStatus: 200,
-    leavesStatus: 'expired',
+    leaves: { ...attempt, status: 'expired' },
     act: (account) => account.expireCheckoutAttempt(attempt.id),
   },
 ];
@@ -122,7 +142,7 @@ function writeResponseText(body: unknown): string {
 
 for (const action of checkoutActions) {
   Deno.test(`${action.name} refuses an attempt in another status, keeping the response`, async () => {
-    const otherStatus = action.leavesStatus === 'pending' ? 'approved' : 'pending';
+    const otherStatus = action.leaves.status === 'pending' ? 'approved' : 'pending';
     const responseText = writeResponseText({
       checkout_attempt: { ...attempt, status: otherStatus },
     });
@@ -142,8 +162,8 @@ for (const action of checkoutActions) {
     );
   });
 
-  Deno.test(`${action.name} reads an attempt that is ${action.leavesStatus}`, async () => {
-    const answered = { ...attempt, status: action.leavesStatus };
+  Deno.test(`${action.name} reads an attempt that is ${action.leaves.status}`, async () => {
+    const answered = action.leaves;
     const account = await createAccountAnsweringWith(
       writeResponseText({ checkout_attempt: answered }),
       action.responseStatus,
@@ -175,6 +195,25 @@ Deno.test("A refused checkout attempt without the bot's explanation is refused",
 
   await assertRejects(
     () => account.getCheckoutAttempt(attempt.id),
+    EmulationClientError,
+    'does not match its contract',
+  );
+});
+
+Deno.test('A completed checkout attempt is read with its payment, and refused without it', async () => {
+  const account = await createAccountAnsweringWith(
+    writeResponseText({ checkout_attempt: completedAttempt }),
+    200,
+  );
+  assertEquals(await account.getCheckoutAttempt(attempt.id), completedAttempt);
+
+  const { payment: _payment, ...withoutPayment } = completedAttempt;
+  const accountWithoutPayment = await createAccountAnsweringWith(
+    writeResponseText({ checkout_attempt: withoutPayment }),
+    200,
+  );
+  await assertRejects(
+    () => accountWithoutPayment.getCheckoutAttempt(attempt.id),
     EmulationClientError,
     'does not match its contract',
   );

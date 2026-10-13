@@ -313,6 +313,9 @@ export function createEmulationSession(
   const checkouts = new CheckoutService({
     accountChatMessages,
     privateChats,
+    messages,
+    messageBoxes,
+    receipts: messageCommitter,
     checkouts: new CheckoutRepository(journal),
     transactions,
   });

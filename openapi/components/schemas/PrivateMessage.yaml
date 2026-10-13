@@ -6,8 +6,8 @@ description: >-
   voice note, an audio file, a rich message, a poll, a contact, a location, or the bot's invoice,
   each with the fields Telegram shows for it, or a service message recording that a participant pinned a message (`pinned_message`),
   or that the account shared users (`users_shared`) or a supergroup (`chat_shared`) in answer to a
-  reply keyboard button's request, or that the Web App of such a button sent data
-  (`web_app_data`).
+  reply keyboard button's request, that the Web App of such a button sent data
+  (`web_app_data`), or that the account paid the bot's invoice (`successful_payment`).
 required:
   - message_id
   - from
@@ -67,6 +67,11 @@ oneOf:
     properties:
       web_app_data:
         $ref: ./WebAppData.yaml
+  - required:
+      - successful_payment
+    properties:
+      successful_payment:
+        $ref: ./SuccessfulPayment.yaml
 properties:
   message_id:
     type: integer
@@ -75,7 +80,7 @@ properties:
       Message ID in the conversation bot's message sequence, which spans all of that bot's
       private chats. Other observers can number the same message differently.
   from:
-    description: The account or bot that wrote the message, or that pinned a message.
+    description: The account or bot that wrote the message, pinned a message, or paid an invoice.
     oneOf:
       - $ref: ./Account.yaml
       - $ref: ./MessageSenderBot.yaml
@@ -238,6 +243,11 @@ properties:
     description: >-
       The data the Web App of a `web_app` button sent. The service message replies to nothing, as
       Telegram's `messages.sendWebViewData` takes no reply.
+  successful_payment:
+    $ref: ./SuccessfulPayment.yaml
+    description: >-
+      The account's payment of the bot's invoice, which completing an approved checkout attempt
+      sends. The service message replies to nothing, as the official server shows it to the bot.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: >-

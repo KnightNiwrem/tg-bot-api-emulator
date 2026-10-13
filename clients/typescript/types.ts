@@ -92,6 +92,7 @@ import type {
   RepliedPrivateMessageContent,
   RepliedSupergroupMessage,
   SharedUser,
+  SuccessfulPaymentContent,
   SupergroupChat,
   SupergroupMessage,
   SupergroupMessageContent,
@@ -100,7 +101,7 @@ import type {
   UsersSharedContent,
   WebAppDataContent,
 } from '../../src/api/contracts/chat_messages.ts';
-import type { Invoice } from '../../src/api/contracts/invoices.ts';
+import type { Invoice, SuccessfulPayment } from '../../src/api/contracts/invoices.ts';
 import type {
   getPrivateChatBotCommandsContract,
   getPrivateChatMenuButtonContract,
@@ -197,6 +198,8 @@ export type {
   RichText,
   RichTextObject,
   SharedUser,
+  SuccessfulPayment,
+  SuccessfulPaymentContent,
   SupergroupChat,
   SupergroupMessage,
   SupergroupMessageContent,
@@ -1107,9 +1110,15 @@ export type CheckoutAttempt = ReadonlySnapshot<
 
 /**
  * Where a checkout attempt is in its life: `pending` until the bot answers, then `approved` or
- * `refused`; `abandoned` or `expired` once ended by a control.
+ * `refused`; `completed` once paid, or `abandoned` or `expired` once ended by a control.
  */
 export type CheckoutAttemptStatus = CheckoutAttempt['status'];
+
+/**
+ * The payment of a completed checkout attempt: the ID of its `successful_payment` receipt in the
+ * private chat, and the charge's identifiers, which the emulator makes up in a format of its own.
+ */
+export type CheckoutPayment = CheckoutAttemptIn<'completed'>['payment'];
 
 /** A checkout attempt in the given status, as an operation that leaves it so returns it. */
 export type CheckoutAttemptIn<Status extends CheckoutAttemptStatus> =
@@ -1517,15 +1526,24 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * Confirms the checkout of an invoice a bot sent to this account's private chat, as the final
    * confirmation of the payment form does, which starts a pending attempt and sends the bot a
    * `pre_checkout_query` update. The payment's details all come from the invoice. The bot answers
-   * asynchronously; read the answer with `getCheckoutAttempt`. Fails while the invoice has a
-   * pending or approved attempt, and while this account blocks the bot.
+   * asynchronously; read the answer with `getCheckoutAttempt`. Fails once the invoice is paid,
+   * while it has a pending or approved attempt, and while this account blocks the bot.
    */
   submitCheckout(input: SubmitCheckoutInput): Promise<ActionOutcome<CheckoutAttemptIn<'pending'>>>;
   /**
    * Returns a checkout attempt this account made, with the bot's answer once given: its approval,
-   * or its refusal with the bot's `error_message`.
+   * or its refusal with the bot's `error_message`; and, once completed, its `payment`.
    */
   getCheckoutAttempt(checkoutAttemptId: string): Promise<CheckoutAttempt>;
+  /**
+   * Completes an approved checkout attempt of this account, as paying its invoice does: the
+   * invoice is paid for good, and the bot receives this account's `successful_payment` service
+   * message in a `message` update. Fails for an attempt that is not approved, once the invoice
+   * message is deleted, and while this account blocks the bot; the attempt then stays approved.
+   */
+  completeCheckoutAttempt(
+    checkoutAttemptId: string,
+  ): Promise<ActionOutcome<CheckoutAttemptIn<'completed'>>>;
   /**
    * Abandons a pending or approved checkout attempt of this account, as closing the payment form
    * does. The bot is not told, and its later answer fails. The invoice can then be checked out

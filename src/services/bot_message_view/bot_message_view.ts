@@ -826,6 +826,7 @@ export class BotMessageViewService {
       case 'users_shared':
       case 'chat_shared':
       case 'web_app_data':
+      case 'successful_payment':
         return context;
       default: {
         const unhandledContent: never = content;

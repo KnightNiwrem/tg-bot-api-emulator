@@ -1,6 +1,7 @@
 /**
  * Wire facts of the invoices a bot sends to its private chats, as the Bot API's `Invoice` shows
- * them: payable in Telegram Stars, without the bot's payload or the invoice's receipt.
+ * them: payable in Telegram Stars, without the bot's payload or the invoice's receipt. Their
+ * payments, as the Bot API's `SuccessfulPayment` shows them to the bot, are apart.
  */
 import { z } from 'zod';
 
@@ -31,3 +32,21 @@ export const invoiceSchema = z.strictObject({
 
 /** An invoice a bot sent to its private chat with an account, payable in Telegram Stars. */
 export type Invoice = ReadonlySnapshot<z.output<typeof invoiceSchema>>;
+
+/**
+ * An account's payment of a bot's invoice, in the field order of the official Bot API server's
+ * `JsonSuccessfulPaymentBot`: the invoice's currency, total and the bot's payload, unchanged, and
+ * the charge's identifiers, which the emulator makes up in a format of its own.
+ */
+export const successfulPaymentSchema = z.strictObject({
+  currency: z.literal(TELEGRAM_STARS_CURRENCY),
+  /** The total paid in Telegram Stars. */
+  total_amount: z.int().min(1).max(MAX_INVOICE_TOTAL_AMOUNT),
+  /** The payload the bot sent with the invoice, unchanged. */
+  invoice_payload: z.string().min(1),
+  telegram_payment_charge_id: z.string().min(1),
+  provider_payment_charge_id: z.string().min(1),
+});
+
+/** An account's payment of an invoice a bot sent, as the bot receives it. */
+export type SuccessfulPayment = ReadonlySnapshot<z.output<typeof successfulPaymentSchema>>;

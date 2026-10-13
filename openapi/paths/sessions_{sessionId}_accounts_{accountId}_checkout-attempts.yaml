@@ -13,8 +13,9 @@ post:
     bot has an allowed_updates subscription that excludes pre_checkout_query updates, it receives
     a pre_checkout_query update from the account, and answers asynchronously with
     answerPreCheckoutQuery; read the answer from the created attempt. As emulator policies, an
-    invoice has at most one pending or approved attempt, and an account that blocks the bot
-    cannot check out. An approval creates no payment.
+    invoice has at most one pending or approved attempt and is paid at most once, and an account
+    that blocks the bot cannot check out. An approval creates no payment; completing the approved
+    attempt does.
   requestBody:
     required: true
     content:
@@ -70,8 +71,9 @@ post:
                       - session_not_found
     '409':
       description: >-
-        The account blocks the bot, or the invoice has a pending or approved attempt, which must
-        end before another checkout.
+        The invoice has been paid, which it is for good, even once its receipt is deleted; the
+        account blocks the bot; or the invoice has a pending or approved attempt, which must end
+        before another checkout.
       content:
         application/json:
           schema:
@@ -80,5 +82,6 @@ post:
               - properties:
                   reason:
                     enum:
+                      - invoice_already_paid
                       - bot_blocked
                       - checkout_attempt_active

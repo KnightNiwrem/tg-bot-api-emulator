@@ -47,6 +47,7 @@ import type {
   PollAnswer,
   PreCheckoutQuery,
   RichBlockMap,
+  SuccessfulPayment,
   Update,
   User,
   UserFromGetMe,
@@ -93,6 +94,7 @@ import type {
   BotApiRepliedPrivateMessage,
   BotApiRepliedSupergroupMessage,
   BotApiStoppedMessageGenerationUpdate,
+  BotApiSuccessfulPayment,
   BotApiSupergroupChat,
   BotApiSupergroupChatFullInfo,
   BotApiSupergroupMessage,
@@ -310,8 +312,8 @@ type ConformsToGrammy<Local, Reference> = Conformance<Local, Reference, Referenc
 // ## The grammY variants of emitted objects
 
 /**
- * A private message as grammY types each kind the emulator emits: content, an invoice, a pin, or a
- * sharing.
+ * A private message as grammY types each kind the emulator emits: content, an invoice, a pin, a
+ * sharing, Web App data, or a successful payment.
  */
 type GrammyPrivateMessage =
   & Message
@@ -333,6 +335,7 @@ type GrammyPrivateMessage =
     | Message.UsersSharedMessage
     | Message.ChatSharedMessage
     | Message.WebAppDataMessage
+    | Message.SuccessfulPaymentMessage
   );
 
 /** A supergroup message as grammY types each kind the emulator emits: content, or a change. */
@@ -425,6 +428,7 @@ interface BotApiWireTypeConformance {
     >
   >;
   invoice: ExpectTrue<ConformsToGrammy<BotApiInvoice, Invoice>>;
+  successfulPayment: ExpectTrue<ConformsToGrammy<BotApiSuccessfulPayment, SuccessfulPayment>>;
   richMessage: ExpectTrue<
     ConformsToGrammy<BotApiRichMessage, NonNullable<Message['rich_message']>>
   >;

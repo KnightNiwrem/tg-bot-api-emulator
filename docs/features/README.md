@@ -32,7 +32,7 @@ thresholds, which tests replace with
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages                |
 | [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies   |
 | [Contacts and locations](contacts-and-locations.md)   | Contacts, static locations, requests, forwards, copies, replies             |
-| [Payments](payments.md)                               | Partial: invoices in Telegram Stars and checkout; payment is still to come  |
+| [Payments](payments.md)                               | Invoices in Telegram Stars, checkout, payment and receipts                  |
 | [Pinned messages](pinned-messages.md)                 | Multiple pins per chat, pinning rights, service messages and `getChat`      |
 | [Reactions](reactions.md)                             | Emoji reactions in supergroups, `message_reaction` updates, albums          |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                       |
@@ -94,9 +94,8 @@ above determines whether an individual method is available.
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
   reactions](reactions.md#real-gaps), chat photos and other chat settings, and
   [subscription invite links](invite-links.md#real-gaps).
-- [Payment completion of invoices](payments.md#real-gaps), which is the next step of the partial
-  payments support, other payments than one-off invoices in Telegram Stars in private chats,
-  shipping, Star balances, gifts, paid broadcasts and paid media.
+- [Payments](payments.md#real-gaps) other than one-off invoices in Telegram Stars in private chats,
+  shipping, refunds, Star balances, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps other than the data a
   [keyboard button's Web App sends](keyboards-and-callbacks.md#sending-web-app-data), login
   authorization, Passport and boosts.

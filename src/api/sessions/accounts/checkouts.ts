@@ -3,6 +3,7 @@ import { basePath } from 'hono/route';
 
 import {
   abandonCheckoutAttemptContract,
+  completeCheckoutAttemptContract,
   expireCheckoutAttemptContract,
   getCheckoutAttemptContract,
   submitCheckoutContract,
@@ -19,8 +20,8 @@ const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
 /**
  * Routes through which an account checks out the invoices bots send to its private chats, reads
- * each checkout attempt with the bot's answer, and abandons it, and through which a test expires a
- * pending attempt.
+ * each checkout attempt with the bot's answer and its payment, and completes or abandons it, and
+ * through which a test expires a pending attempt.
  */
 export function createCheckoutRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
@@ -60,6 +61,27 @@ export function createCheckoutRoutes(): Hono<SessionRouteContextTypes> {
       return attempt === undefined
         ? { status: 404, body: { reason: 'checkout_attempt_not_found' } }
         : { status: 200, body: { checkout_attempt: presentCheckoutAttemptForPayer(attempt) } };
+    },
+  );
+
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    completeCheckoutAttemptContract,
+    ({ params: { accountId, checkoutAttemptId } }, context) => {
+      const result = context.get('emulationSession').checkouts.completeCheckoutAttempt({
+        accountId,
+        attemptId: checkoutAttemptId,
+      });
+      if (result.completed) {
+        return {
+          status: 200,
+          body: { checkout_attempt: presentCheckoutAttemptForPayer(result.attempt) },
+        };
+      }
+      return result.reason === 'checkout_attempt_not_found'
+        ? { status: 404, body: { reason: result.reason } }
+        : { status: 409, body: { reason: result.reason } };
     },
   );
 
@@ -109,8 +131,8 @@ export function createCheckoutRoutes(): Hono<SessionRouteContextTypes> {
 }
 
 /**
- * A message that is no invoice rejects the request; a blocked bot or an invoice whose earlier
- * attempt is still active conflicts; a missing account, bot or message is not found.
+ * A message that is no invoice rejects the request; a paid invoice, a blocked bot or an invoice
+ * whose earlier attempt is still active conflicts; a missing account, bot or message is not found.
  */
 function refuseCheckoutSubmission(
   reason: Extract<
@@ -125,6 +147,7 @@ function refuseCheckoutSubmission(
     case 'bot_not_found':
     case 'message_not_found':
       return { status: 404, body: { reason } };
+    case 'invoice_already_paid':
     case 'bot_blocked':
     case 'checkout_attempt_active':
       return { status: 409, body: { reason } };
@@ -137,7 +160,8 @@ function refuseCheckoutSubmission(
 
 /**
  * Shows a checkout attempt to the account that pays: the invoice as the account confirmed it,
- * without the bot's payload, and the bot's explanation of a refusal.
+ * without the bot's payload, the bot's explanation of a refusal, and the payment of a completed
+ * attempt, apart from the invoice: its receipt and charge identifiers.
  */
 function presentCheckoutAttemptForPayer(attempt: CheckoutAttempt) {
   const identity = {
@@ -147,7 +171,22 @@ function presentCheckoutAttemptForPayer(attempt: CheckoutAttempt) {
     invoice: toBotApiInvoice(attempt.invoice),
   };
   const { state } = attempt;
-  return state.status === 'refused'
-    ? { ...identity, status: state.status, error_message: state.errorMessage }
-    : { ...identity, status: state.status };
+  switch (state.status) {
+    case 'refused':
+      return { ...identity, status: state.status, error_message: state.errorMessage };
+    case 'completed': {
+      const { receiptChatMessageId, charge } = state.payment;
+      return {
+        ...identity,
+        status: state.status,
+        payment: {
+          receipt_message_id: receiptChatMessageId,
+          telegram_payment_charge_id: charge.telegramPaymentChargeId,
+          provider_payment_charge_id: charge.providerPaymentChargeId,
+        },
+      };
+    }
+    default:
+      return { ...identity, status: state.status };
+  }
 }
