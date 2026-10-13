@@ -17,6 +17,7 @@ import type {
   ExclusiveAlternatives,
   FieldNameOfAnyKind,
 } from './exclusive_alternatives.ts';
+import { type Invoice, invoiceSchema } from './invoices.ts';
 import { type InlineKeyboardMarkup, inlineKeyboardMarkupSchema } from './keyboard_buttons.ts';
 import { messageEntitySchema } from './message_entities.ts';
 import {
@@ -141,6 +142,20 @@ interface MessageContentFields {
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
+/** The fields that show what a private message's sender wrote: content, or a bot's invoice. */
+interface PrivateWrittenContentFields extends MessageContentFields {
+  readonly invoice: {
+    /** An invoice the conversation's bot sent, payable in Telegram Stars. */
+    readonly invoice: Invoice;
+  };
+}
+
+/**
+ * The fields that show what a private message's sender wrote: any kind of `MessageContent`, or an
+ * invoice, which only a private chat's bot sends. Each kind declares the others' fields absent.
+ */
+export type PrivateWrittenContent = ExclusiveAlternatives<PrivateWrittenContentFields>;
+
 /** The fields of a service message's change of its chat, which content never has. */
 interface NoServiceChange {
   readonly new_chat_participant?: never;
@@ -154,6 +169,9 @@ interface NoServiceChange {
 
 /** The fields of content, which a service message never has. */
 type NoContent = AbsentFields<FieldNameOfAnyKind<MessageContentFields>>;
+
+/** The field of an invoice, which a private service message never has. */
+type NoInvoice = AbsentFields<'invoice'>;
 
 /**
  * The fields of a service message about members joining or leaving a supergroup, which take the
@@ -302,26 +320,26 @@ export type WebAppDataContent =
   };
 
 /**
- * What a private message shows: content, a pin, the users or chat an account shared, or the data
- * a Web App sent.
+ * What a private message shows: content, a bot's invoice, a pin, the users or chat an account
+ * shared, or the data a Web App sent.
  */
 export type PrivateMessageContent =
-  | (MessageContent & NoServiceChange & NoAccountServiceContent)
-  | (PinContent<PrivateChat, PinnedPrivateMessage> & NoAccountServiceContent)
-  | UsersSharedContent
-  | ChatSharedContent
-  | WebAppDataContent;
+  | (PrivateWrittenContent & NoServiceChange & NoAccountServiceContent)
+  | (PinContent<PrivateChat, PinnedPrivateMessage> & NoAccountServiceContent & NoInvoice)
+  | (UsersSharedContent & NoInvoice)
+  | (ChatSharedContent & NoInvoice)
+  | (WebAppDataContent & NoInvoice);
 
 /**
  * What a private message shows as a replied message, as `RepliedPinContent` shows a pin, or the
  * users or chat an account shared, or the data a Web App sent.
  */
 export type RepliedPrivateMessageContent =
-  | (MessageContent & NoServiceChange & NoAccountServiceContent)
-  | (RepliedPinContent<PinnedPrivateMessage> & NoAccountServiceContent)
-  | UsersSharedContent
-  | ChatSharedContent
-  | WebAppDataContent;
+  | (PrivateWrittenContent & NoServiceChange & NoAccountServiceContent)
+  | (RepliedPinContent<PinnedPrivateMessage> & NoAccountServiceContent & NoInvoice)
+  | (UsersSharedContent & NoInvoice)
+  | (ChatSharedContent & NoInvoice)
+  | (WebAppDataContent & NoInvoice);
 
 /**
  * What a supergroup message shows: content, or a change of the supergroup's members or title, or
@@ -377,12 +395,13 @@ interface ExternalReplyMediaFields {
   readonly audio: { readonly audio: Audio };
   readonly contact: { readonly contact: Contact };
   readonly location: { readonly location: Location };
+  readonly invoice: { readonly invoice: Invoice };
 }
 
 /**
  * A message of another chat that a message replies to: who first wrote it and when, the
  * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead,
- * its poll as it is now, or its contact or location.
+ * its poll as it is now, or its contact, location, or invoice.
  */
 export type ExternalReplyInfo =
   & {
@@ -456,7 +475,7 @@ export type PinnedPrivateMessage =
   & MessageHeader<PrivateChat>
   & MessageReplyInfo
   & MessageAlbumInfo
-  & MessageContent
+  & PrivateWrittenContent
   & NoServiceChange
   & MessageTrailer;
 
@@ -604,7 +623,7 @@ const externalReplyShape = {
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
   // The replied message's media, which only a photo, document, video, voice, or audio message has,
-  // or its poll, contact, or location.
+  // or its poll, contact, location, or invoice.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
     z.strictObject({ ...externalReplyShape, poll: pollSchema }),
@@ -623,6 +642,7 @@ const messageReplyInfoShape = {
     z.strictObject({ ...externalReplyShape, audio: audioSchema }),
     z.strictObject({ ...externalReplyShape, contact: contactSchema }),
     z.strictObject({ ...externalReplyShape, location: sharedLocationSchema }),
+    z.strictObject({ ...externalReplyShape, invoice: invoiceSchema }),
   ]).optional(),
   quote: z.strictObject({
     text: z.string().min(1),
@@ -677,18 +697,29 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
 }
 
 /**
- * A service message about a pin, with fields as `contentMessageSchemas` reads them: the pinned
+ * A private message with the given fields before its content, of each kind of content its sender
+ * writes: as `contentMessageSchemas` reads them, or a bot's invoice.
+ */
+function privateWrittenMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
+  return [
+    ...contentMessageSchemas(header),
+    z.strictObject({ ...header, invoice: invoiceSchema, ...messageTrailerShape }),
+  ] as const;
+}
+
+/**
+ * A service message about a pin, with fields as the pinned message's schemas read them: the pinned
  * message, which is never a service message, as a reply shows it, or, once deleted, inaccessible.
  */
 function pinServiceMessageSchema<
   Header extends z.ZodRawShape,
-  PinnedHeader extends z.ZodRawShape,
+  PinnedMessageSchemas extends readonly z.ZodType[],
   ChatSchema extends z.ZodType,
->(header: Header, pinnedMessageHeader: PinnedHeader, chatSchema: ChatSchema) {
+>(header: Header, pinnedMessageSchemas: PinnedMessageSchemas, chatSchema: ChatSchema) {
   return z.strictObject({
     ...header,
     pinned_message: z.union([
-      ...contentMessageSchemas(pinnedMessageHeader),
+      ...pinnedMessageSchemas,
       z.strictObject({
         message_id: z.int().positive(),
         chat: chatSchema,
@@ -703,10 +734,13 @@ function pinServiceMessageSchema<
  * A service message about a pin as a replied message shows it, as `pinServiceMessageSchema` reads
  * it, but without a deleted pinned message, which the server leaves out there.
  */
-function repliedPinServiceMessageSchema<Header extends z.ZodRawShape>(header: Header) {
+function repliedPinServiceMessageSchema<
+  Header extends z.ZodRawShape,
+  PinnedMessageSchemas extends readonly z.ZodType[],
+>(header: Header, pinnedMessageSchemas: PinnedMessageSchemas) {
   return z.strictObject({
     ...header,
-    pinned_message: z.union(contentMessageSchemas(header)).optional(),
+    pinned_message: z.union(pinnedMessageSchemas).optional(),
     ...messageTrailerShape,
   });
 }
@@ -788,8 +822,11 @@ const supergroupMessageHeader = {
 /** The message a private message replies to, which never shows its own reply. */
 function repliedPrivateMessage() {
   return z.union([
-    ...contentMessageSchemas(privateMessageHeader),
-    repliedPinServiceMessageSchema(privateMessageHeader),
+    ...privateWrittenMessageSchemas(privateMessageHeader),
+    repliedPinServiceMessageSchema(
+      privateMessageHeader,
+      privateWrittenMessageSchemas(privateMessageHeader),
+    ),
     ...accountServiceMessageSchemas(privateMessageHeader),
   ]).optional();
 }
@@ -799,19 +836,26 @@ function repliedSupergroupMessage() {
   return z.union([
     ...contentMessageSchemas(supergroupMessageHeader),
     ...supergroupChangeMessageSchemas(supergroupMessageHeader),
-    repliedPinServiceMessageSchema(supergroupMessageHeader),
+    repliedPinServiceMessageSchema(
+      supergroupMessageHeader,
+      contentMessageSchemas(supergroupMessageHeader),
+    ),
   ]).optional();
 }
 
 /**
- * A private message, which may be a service message about a pin, about users or a chat an account
- * shared or about data a Web App sent, with its replied message, which may be one too.
+ * A private message, which may be a bot's invoice, or a service message about a pin, about users
+ * or a chat an account shared or about data a Web App sent, with its replied message, which may be
+ * one too.
  */
 export const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
-  ...contentMessageSchemas({ ...privateMessageHeader, reply_to_message: repliedPrivateMessage() }),
+  ...privateWrittenMessageSchemas({
+    ...privateMessageHeader,
+    reply_to_message: repliedPrivateMessage(),
+  }),
   pinServiceMessageSchema(
     { ...privateMessageHeader, reply_to_message: repliedPrivateMessage() },
-    privateMessageHeader,
+    privateWrittenMessageSchemas(privateMessageHeader),
     privateChatSchema,
   ),
   ...accountServiceMessageSchemas({
@@ -835,7 +879,7 @@ export const supergroupMessageSchema: z.ZodType<SupergroupMessage> = z.union([
   }),
   pinServiceMessageSchema(
     { ...supergroupMessageHeader, reply_to_message: repliedSupergroupMessage() },
-    supergroupMessageHeader,
+    contentMessageSchemas(supergroupMessageHeader),
     supergroupChatSchema,
   ),
 ]).meta({ [TELEGRAM_TYPE_ANNOTATION]: 'Message' });

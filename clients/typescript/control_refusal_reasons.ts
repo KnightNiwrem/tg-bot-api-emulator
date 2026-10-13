@@ -61,6 +61,7 @@ export const CONTROL_REFUSAL_REASONS = [
   'invite_link_not_expirable',
   'invite_link_not_found',
   'invite_link_revoked',
+  'invoice_forwarding_unsupported',
   'join_request_missing',
   'join_request_not_found',
   'join_request_pending',

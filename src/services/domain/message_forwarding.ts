@@ -4,7 +4,7 @@ import {
   type PrivateForwardNameLookup,
 } from '../../types/message_forward.ts';
 import type { AccountChatAddress } from '../../types/virtual_chat.ts';
-import type { ChatMessage } from '../../types/virtual_message.ts';
+import { type ChatMessage, hasCommonContent } from '../../types/virtual_message.ts';
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageReader,
@@ -26,6 +26,8 @@ export interface ForwardAccountMessageInput {
 export type ForwardAccountMessageFailureReason =
   | AccountChatMessageLookupFailureReason
   | 'message_not_forwardable'
+  /** The message is an invoice, which Telegram forwards but the emulator does not. */
+  | 'invoice_forwarding_unsupported'
   | 'bot_blocked'
   /** The account may not send the forwarded message's kind of content to the supergroup. */
   | 'send_permission_missing';
@@ -70,7 +72,8 @@ export class MessageForwardingService {
 
   /**
    * Forwards a message an account can read to a chat it can write to. The forwarded message is
-   * resolved first; protected content, and service messages, cannot be forwarded.
+   * resolved first; protected content, and service messages, cannot be forwarded, and the emulator
+   * does not forward invoices.
    */
   forwardAccountMessage(input: ForwardAccountMessageInput): ForwardAccountMessageResult {
     const lookup = this.#accountChatMessages.findMessage({
@@ -86,6 +89,9 @@ export class MessageForwardingService {
       lookup.chat.hasProtectedContent;
     if (!isForwardable(lookup.message, chatProtectsContent)) {
       return { forwarded: false, reason: 'message_not_forwardable' };
+    }
+    if (!hasCommonContent(lookup.message)) {
+      return { forwarded: false, reason: 'invoice_forwarding_unsupported' };
     }
 
     const forward = createMessageForward(lookup.message, this.#getPrivateForwardName);

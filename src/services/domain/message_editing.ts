@@ -39,7 +39,8 @@ import {
   type CanonicalMessageId,
   type ChatMessage,
   type ChatMessageOfType,
-  type ContentMessage,
+  type CommonContentMessage,
+  hasCommonContent,
   type InlineMessageId,
   isContentMessage,
   type MessageEdit,
@@ -183,6 +184,8 @@ interface BotEditTargetingTypes {
   readonly buttonFailureReason: string;
   /** Why the bot may not show the new content in the chat. */
   readonly permissionFailure: { readonly reason: string };
+  /** Why the emulator does not edit an invoice, which only a private chat holds. */
+  readonly invoiceEditRefusalReason: string;
 }
 
 /** A message the bot reached to edit, or why it did not. */
@@ -214,6 +217,11 @@ interface BotEditTargeting<Types extends BotEditTargetingTypes> {
     inlineKeyboard: InlineKeyboard | undefined,
     content: NormalizedOutgoingContent,
   ): Types['buttonFailureReason'] | undefined;
+  /**
+   * Why the emulator does not edit the reached invoice, though Telegram lets its bot replace the
+   * invoice's inline keyboard. Only a private chat holds invoices.
+   */
+  refuseInvoiceEdit(): Types['invoiceEditRefusalReason'];
   /** Stores the edit of the reached message and returns the message as the edit left it. */
   storeEdit(
     message: Types['reached']['message'],
@@ -235,6 +243,7 @@ export interface BotPrivateChatEditTypes {
     | 'message_not_found';
   readonly buttonFailureReason: never;
   readonly permissionFailure: never;
+  readonly invoiceEditRefusalReason: 'invoice_editing_unsupported';
 }
 
 /**
@@ -251,6 +260,7 @@ export interface BotSupergroupEditTypes {
   readonly lookupFailureReason: SupergroupBotAccessFailureReason | 'message_not_found';
   readonly buttonFailureReason: 'button_type_invalid';
   readonly permissionFailure: SendPermissionMissingFailure;
+  readonly invoiceEditRefusalReason: never;
 }
 
 /**
@@ -264,6 +274,7 @@ export interface BotInlineMessageEditTypes {
   readonly lookupFailureReason: 'message_not_found';
   readonly buttonFailureReason: 'button_type_invalid';
   readonly permissionFailure: never;
+  readonly invoiceEditRefusalReason: never;
 }
 
 /**
@@ -277,11 +288,15 @@ type MessageEditOutcome<Edited extends ChatMessage, Failure extends { readonly r
   | { readonly edited: true; readonly message: Edited }
   | ({ readonly edited: false } & Failure);
 
-/** Why a bot's edit fails before its new content is read: the bot, or the message it targets. */
+/**
+ * Why a bot's edit fails before its new content is read: the bot, or the message it targets, which
+ * may be an invoice, whose edits the emulator does not support.
+ */
 type BotEditTargetFailureReason<Types extends BotEditTargetingTypes> =
   | 'bot_not_found'
   | Types['lookupFailureReason']
-  | 'message_not_editable';
+  | 'message_not_editable'
+  | Types['invoiceEditRefusalReason'];
 
 /** Why a bot's edited message is refused as a whole: its buttons, or because nothing changes. */
 type BotEditedMessageFailureReason<Types extends BotEditTargetingTypes> =
@@ -758,8 +773,8 @@ export class MessageEditingService {
         return { stopped: false, reason: target.reason };
       }
       const { message } = target;
-      // A service message shows no poll.
-      if (!isContentMessage(message)) {
+      // A service message, like an invoice, shows no poll.
+      if (!isContentMessage(message) || !hasCommonContent(message)) {
         return { stopped: false, reason: 'message_has_no_poll' };
       }
       const pollLookup = findStoppablePoll(message, input.fromBotId, this.#polls);
@@ -803,8 +818,11 @@ export class MessageEditingService {
       }
       const { message } = target;
       // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward
-      // or a service message.
-      if (!isContentMessage(message) || !canAccountEditMessage(message, input.fromAccountId)) {
+      // or a service message. An invoice is its bot's, never the account's.
+      if (
+        !isContentMessage(message) || !hasCommonContent(message) ||
+        !canAccountEditMessage(message, input.fromAccountId)
+      ) {
         return { edited: false, reason: 'message_not_editable' };
       }
       const replacement = replaceAccountMessageContent(
@@ -833,7 +851,8 @@ export class MessageEditingService {
 
   /**
    * Reaches the message a bot's edit targets, which the bot must be allowed to edit, as
-   * `canBotEditMessage` decides. A service message has no content to edit.
+   * `canBotEditMessage` decides. A service message has no content to edit. The emulator does not
+   * edit an invoice in any way, though Telegram lets its bot replace its inline keyboard.
    */
   #reachEditableMessage<Types extends BotEditTargetingTypes>(
     targeting: BotEditTargeting<Types>,
@@ -842,20 +861,26 @@ export class MessageEditingService {
     | {
       readonly found: true;
       readonly reached: Types['reached'];
-      readonly message: Types['reached']['message'] & ContentMessage;
+      readonly message: Types['reached']['message'] & CommonContentMessage;
     }
     | {
       readonly found: false;
-      readonly reason: Types['lookupFailureReason'] | 'message_not_editable';
+      readonly reason:
+        | Types['lookupFailureReason']
+        | 'message_not_editable'
+        | Types['invoiceEditRefusalReason'];
     } {
     const reach = targeting.reachMessage(target);
     if (!reach.reached) {
       return { found: false, reason: reach.reason };
     }
     const { message } = reach;
-    return isContentMessage(message) && canBotEditMessage(message, target.fromBotId)
+    if (!isContentMessage(message) || !canBotEditMessage(message, target.fromBotId)) {
+      return { found: false, reason: 'message_not_editable' };
+    }
+    return hasCommonContent(message)
       ? { found: true, reached: reach, message }
-      : { found: false, reason: 'message_not_editable' };
+      : { found: false, reason: targeting.refuseInvoiceEdit() };
   }
 
   /**
@@ -864,7 +889,7 @@ export class MessageEditingService {
    */
   #applyContentReplacement<Types extends BotEditTargetingTypes, FailureReason extends string>(
     targeting: BotEditTargeting<Types>,
-    message: Types['reached']['message'] & ContentMessage,
+    message: Types['reached']['message'] & CommonContentMessage,
     replacement: ContentReplacement<FailureReason>,
     inlineKeyboard: InlineKeyboard | undefined,
   ): MessageEditOutcome<
@@ -889,7 +914,7 @@ export class MessageEditingService {
    */
   #commitBotEdit<Types extends BotEditTargetingTypes>(
     targeting: BotEditTargeting<Types>,
-    message: Types['reached']['message'] & ContentMessage,
+    message: Types['reached']['message'] & CommonContentMessage,
     { content, ...edit }: {
       readonly content: NormalizedOutgoingContent;
       readonly inlineKeyboard: InlineKeyboard | undefined;
@@ -955,6 +980,7 @@ function createBotPrivateChatTargeting(
     },
     findMissingContentPermission: () => undefined,
     findButtonFailure: () => undefined,
+    refuseInvoiceEdit: () => 'invoice_editing_unsupported',
     storeEdit: (message, edit) => messages.editMessage(message.chat, message.id, edit),
   };
 }
@@ -987,6 +1013,9 @@ function createBotSupergroupTargeting(
       findMissingSendPermission(standing, { kind: 'bot', botId }, [content]),
     findButtonFailure: (_message, inlineKeyboard, content) =>
       findSupergroupButtonFailure(inlineKeyboard, content),
+    refuseInvoiceEdit: () => {
+      throw new Error('Supergroups hold no invoices');
+    },
     storeEdit: (message, edit) => messages.editMessage(message.chat, message.id, edit),
   };
 }
@@ -1010,6 +1039,9 @@ function createBotInlineMessageTargeting(
       message.kind === 'supergroup_message'
         ? findSupergroupButtonFailure(inlineKeyboard, content)
         : undefined,
+    refuseInvoiceEdit: () => {
+      throw new Error('Messages sent through inline bots are no invoices');
+    },
     storeEdit: (message, edit) => messages.editMessage(message.chat, message.id, edit),
   };
 }

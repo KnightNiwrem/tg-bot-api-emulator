@@ -8,7 +8,7 @@ import type {
   MessageContent,
   MessageForwardInfo,
   MessageOriginSender,
-  PrivateContentMessage,
+  PrivateMessage,
   SupergroupMessage,
 } from '../src/types/virtual_message.ts';
 
@@ -21,9 +21,12 @@ const noPrivateForwards = () => undefined;
 /** Only the account's forwards show its name instead of linking to it. */
 const accountHasPrivateForwards = (userId: number) => userId === ACCOUNT_ID ? 'Ada' : undefined;
 
+/** A private message of content any chat shows, which forwards repeat. */
+type CommonPrivateMessage = PrivateMessage<MessageContent>;
+
 function accountMessage(
-  overrides: Partial<PrivateContentMessage> = {},
-): PrivateContentMessage {
+  overrides: Partial<CommonPrivateMessage> = {},
+): CommonPrivateMessage {
   return {
     kind: 'private_message',
     id: 'message',
@@ -60,7 +63,7 @@ Deno.test('createMessageForward keeps the origin of a forward and only URL keybo
     originalSentAtUnixSeconds: 1_600_000_000,
   };
   const urlKeyboard = [[{ kind: 'url', text: 'Open', url: 'https://example.com/' }] as const];
-  const botForward: PrivateContentMessage = accountMessage({
+  const botForward: CommonPrivateMessage = accountMessage({
     sender: 'bot',
     forwardInfo: originalForwardInfo,
     inlineKeyboard: urlKeyboard,

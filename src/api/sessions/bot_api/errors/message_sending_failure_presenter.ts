@@ -1,6 +1,7 @@
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type {
   SendChatActionResult,
+  SendInvoiceResult,
   SendMediaGroupResult,
   SendMessageDraftResult,
 } from '../message_sends.ts';
@@ -17,10 +18,12 @@ import {
 } from './message_content_failure_presenter.ts';
 
 /**
- * Why a message or an album was not sent. An album fails for any reason a single message does,
- * and for its own.
+ * Why a message, an album, or an invoice was not sent. An album and an invoice fail for any reason
+ * a single message does, and for their own.
  */
-type MessageSendFailure = Extract<SendMediaGroupResult, { readonly sent: false }>;
+type MessageSendFailure =
+  | Extract<SendMediaGroupResult, { readonly sent: false }>
+  | Extract<SendInvoiceResult, { readonly sent: false }>;
 
 /** Why a chat action was not shown. */
 type ChatActionFailure = Extract<SendChatActionResult, { readonly sent: false }>;
@@ -60,6 +63,15 @@ const FIXED_MESSAGE_SENDING_ERRORS = {
   album_audio_mixed: BOT_API_ERRORS.albumAudioMixed,
   draft_chat_not_private: BOT_API_ERRORS.draftChatNotPrivate,
   draft_id_missing: BOT_API_ERRORS.draftIdInvalid,
+  invoice_chat_not_private: BOT_API_ERRORS.invoiceChatNotPrivate,
+  invoice_prices_empty: BOT_API_ERRORS.invoicePricesEmpty,
+  invoice_price_amount_too_big: BOT_API_ERRORS.invoicePriceAmountTooBig,
+  invoice_total_not_positive: BOT_API_ERRORS.invoiceTotalNotPositive,
+  invoice_total_too_big: BOT_API_ERRORS.invoiceTotalTooBig,
+  stars_invoice_price_count_invalid: BOT_API_ERRORS.starsInvoicePriceCountInvalid,
+  invoice_title_length_invalid: BOT_API_ERRORS.invoiceTitleLengthInvalid,
+  invoice_description_length_invalid: BOT_API_ERRORS.invoiceDescriptionLengthInvalid,
+  invoice_payload_length_invalid: BOT_API_ERRORS.invoicePayloadLengthInvalid,
 } as const satisfies Readonly<Record<string, FixedBotApiError>>;
 
 /**
@@ -90,6 +102,8 @@ export function presentMessageSendingFailure(
     case 'bot_upload_too_big':
     case 'file_type_mismatch':
       return presentDetailedMessageContentFailure(failure);
+    case 'invoice_text_invalid':
+      return presentBotApiError(BOT_API_ERRORS.invoiceTextEncodingInvalid, { text: failure.text });
     case 'media_group_member_not_sent':
       return presentBotApiError(BOT_API_ERRORS.albumMemberUploadRefused, {
         memberPosition: failure.memberPosition,

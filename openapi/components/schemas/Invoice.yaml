@@ -1,0 +1,35 @@
+type: object
+additionalProperties: false
+description: >-
+  An invoice a bot sent to its private chat for payment in Telegram Stars, in the field order of the
+  official Bot API server's `JsonInvoice`. It shows neither the bot's payload nor the invoice's
+  receipt.
+required:
+  - title
+  - description
+  - start_parameter
+  - currency
+  - total_amount
+properties:
+  title:
+    type: string
+    minLength: 1
+    maxLength: 32
+  description:
+    type: string
+    minLength: 1
+    maxLength: 255
+  start_parameter:
+    type: string
+    description: >-
+      The deep-linking start parameter the bot sent, cleaned as TDLib cleans input strings; empty
+      for an invoice sent without one. It is always present.
+  currency:
+    type: string
+    const: XTR
+    description: Telegram Stars, the only currency of the emulator's invoices.
+  total_amount:
+    type: integer
+    minimum: 1
+    maximum: 999999999999
+    description: The invoice's one price, in Telegram Stars.

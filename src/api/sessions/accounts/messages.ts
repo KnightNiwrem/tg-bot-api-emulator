@@ -458,6 +458,7 @@ function refuseForward(
     case 'send_permission_missing':
       return { status: 403, body: { reason } };
     case 'message_not_forwardable':
+    case 'invoice_forwarding_unsupported':
       return { status: 400, body: { reason } };
     case 'bot_blocked':
       return { status: 409, body: { reason } };

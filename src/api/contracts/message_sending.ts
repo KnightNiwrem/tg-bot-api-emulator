@@ -249,6 +249,7 @@ export const sendAccountMessageContract = defineControlOperation({
         'caption_too_long',
         'file_empty',
         'image_invalid',
+        'invoice_forwarding_unsupported',
         'message_not_forwardable',
         'message_text_empty',
         'message_text_too_long',

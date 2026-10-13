@@ -15,11 +15,19 @@ import {
 import type { ReplyKeyboardButtonRequest } from '../../../../types/reply_interface.ts';
 import { MAX_PHOTO_UPLOAD_BYTES, type StoredFile } from '../../../../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../../../../types/upload_profile.ts';
+import {
+  type InvoiceText,
+  MAX_INVOICE_DESCRIPTION_LENGTH,
+  MAX_INVOICE_PAYLOAD_BYTES,
+  MAX_INVOICE_TITLE_LENGTH,
+  TELEGRAM_STARS_CURRENCY,
+} from '../../../../types/invoice.ts';
 import type { BotCommandScopeError } from '../bot_command_parameters.ts';
 import type { ChatAdministratorRightsError } from '../chat_administrator_rights_parameter.ts';
 import type { FormattedTextError } from '../formatted_text_reading.ts';
 import type { InlineQueryResultError } from '../inline_query_answer_parameters.ts';
 import type { InputMediaError } from '../input_media_parameter.ts';
+import type { LabeledPriceError, UnsupportedInvoiceOption } from '../invoice_parameters.ts';
 import type { PollOptionError } from '../input_poll_option_parameter.ts';
 import type { MenuButtonError } from '../menu_button_parameter.ts';
 import type { MessageEntityError } from '../message_entities_parameter.ts';
@@ -104,6 +112,38 @@ const INPUT_FILE_MISSING_LINES = {
   voice: 'L14159-L14163',
   audio: 'L14033-L14037',
 } as const satisfies Record<SentFileKind, string>;
+
+/** TDLib's `InputInvoice::process_input_message_invoice`, which cleans an invoice's texts. */
+const INVOICE_TEXT_CHECKS = tdlibSource('td/telegram/InputInvoice.cpp#L110-L136');
+
+/** TDLib's `LabeledPricePart::get_labeled_price_parts`, which checks an invoice's prices. */
+const INVOICE_PRICE_CHECKS = tdlibSource('td/telegram/LabeledPricePart.cpp#L24-L54');
+
+/**
+ * TDLib's messages for the invoice texts that `process_input_message_invoice` cleans, and for the
+ * price labels that `get_labeled_price_parts` cleans, when they are not well-formed Unicode.
+ */
+const INVOICE_TEXT_ENCODING_ERRORS = {
+  title: 'Bad Request: invoice title must be encoded in UTF-8',
+  description: 'Bad Request: invoice description must be encoded in UTF-8',
+  start_parameter: 'Bad Request: invoice bot start parameter must be encoded in UTF-8',
+  price_label: 'Bad Request: price part label must be encoded in UTF-8',
+} as const satisfies Record<InvoiceText, string>;
+
+/** What the emulator does not support of `sendInvoice`, as its refusals describe it. */
+const UNSUPPORTED_INVOICE_OPTION_DESCRIPTIONS = {
+  currency:
+    `Bad Request: only invoices in Telegram Stars are supported; currency must be ${TELEGRAM_STARS_CURRENCY}`,
+  payment_provider:
+    'Bad Request: payment providers are not supported; invoices in Telegram Stars take an empty ' +
+    'provider_token',
+  provider_data: 'Bad Request: payment provider data is not supported',
+  product_photo: 'Bad Request: invoice product photos are not supported',
+  tips: 'Bad Request: tips are not supported for payments in Telegram Stars',
+  reply_markup:
+    'Bad Request: invoice keyboards are not supported; send the invoice without reply_markup to ' +
+    'show its Pay button',
+} as const satisfies Record<UnsupportedInvoiceOption, string>;
 
 /** The official Bot API server's `check_message`, which words a missing message by its role. */
 const CHECK_MESSAGE = botApiServerSource('telegram-bot-api/Client.cpp#L9084-L9104');
@@ -619,6 +659,131 @@ export const BOT_API_ERRORS = {
     400,
     'Bad Request: message is too long',
     observedBehavior('Telegram answers a draft longer than a message so'),
+  ),
+
+  // Invoices in Telegram Stars, as the official server reads `sendInvoice` and TDLib and the Bot
+  // API's documented limits check the invoice.
+  invoicePayloadEncodingInvalid: fixedBotApiError(
+    400,
+    'Bad Request: the payload must be encoded in UTF-8',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13100-L13102'),
+  ),
+  pricesJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse prices JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L13110-L13112'),
+  ),
+  pricesNotArray: fixedBotApiError(
+    400,
+    'Bad Request: expected an Array of LabeledPrice',
+    ARRAY_READING,
+  ),
+  /** A price that the official server's `get_labeled_price_part` cannot read. */
+  labeledPriceInvalid: messageErrorTemplate(
+    "Can't parse LabeledPrice: ",
+    describeLabeledPriceError,
+  ),
+  maxTipAmountNotNumber: fixedBotApiError(
+    400,
+    'Bad Request: can\'t parse "max_tip_amount" as Number',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13120-L13124'),
+  ),
+  /** A negative maximum tip, or one beyond TDLib's `check_currency_amount` range. */
+  maxTipAmountInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid max_tip_amount of the currency specified',
+    tdlibSource('td/telegram/InputInvoice.cpp#L178-L181'),
+  ),
+  suggestedTipAmountsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse suggested_tip_amounts JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L13129-L13133'),
+  ),
+  suggestedTipAmountsNotArray: fixedBotApiError(
+    400,
+    'Bad Request: expected an Array of suggested tip amount',
+    ARRAY_READING,
+  ),
+  /** An option of `sendInvoice` that the emulator does not support, though Telegram does. */
+  invoiceOptionUnsupported: {
+    status: () => 400,
+    description: ({ option }: { readonly option: UnsupportedInvoiceOption }) =>
+      UNSUPPORTED_INVOICE_OPTION_DESCRIPTIONS[option],
+    provenance: ({ option }: { readonly option: UnsupportedInvoiceOption }) =>
+      emulatorInference(
+        option === 'tips' || option === 'payment_provider'
+          ? 'The Bot API documents that payments in Telegram Stars take no tips and an empty ' +
+            'provider_token; what Telegram answers otherwise is not documented'
+          : 'The emulator supports only one-off invoices in Telegram Stars that a bot sends to ' +
+            'its private chat without a keyboard',
+      ),
+  },
+  /** An invoice to a chat other than a private chat with an account. */
+  invoiceChatNotPrivate: fixedBotApiError(
+    400,
+    'Bad Request: invoices outside private chats are not supported',
+    emulatorInference(
+      'The emulator supports only invoices that a bot sends to its private chat with an account',
+    ),
+  ),
+  invoiceTextEncodingInvalid: {
+    status: () => 400,
+    description: ({ text }: { readonly text: InvoiceText }) => INVOICE_TEXT_ENCODING_ERRORS[text],
+    provenance: ({ text }: { readonly text: InvoiceText }) =>
+      text === 'price_label' ? INVOICE_PRICE_CHECKS : INVOICE_TEXT_CHECKS,
+  },
+  invoicePricesEmpty: fixedBotApiError(
+    400,
+    'Bad Request: there must be at least one price part',
+    INVOICE_PRICE_CHECKS,
+  ),
+  /** A price beyond TDLib's `check_currency_amount` range, either way of zero. */
+  invoicePriceAmountTooBig: fixedBotApiError(
+    400,
+    'Bad Request: too big amount of the currency specified',
+    INVOICE_PRICE_CHECKS,
+  ),
+  invoiceTotalNotPositive: fixedBotApiError(
+    400,
+    'Bad Request: total price must be positive',
+    INVOICE_PRICE_CHECKS,
+  ),
+  invoiceTotalTooBig: fixedBotApiError(
+    400,
+    'Bad Request: total price is too big',
+    INVOICE_PRICE_CHECKS,
+  ),
+  starsInvoicePriceCountInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invoices in Telegram Stars must have exactly one price',
+    emulatorInference(DOCUMENTED_LIMIT_INFERENCE),
+  ),
+  invoiceTitleLengthInvalid: fixedBotApiError(
+    400,
+    `Bad Request: invoice title must have 1-${MAX_INVOICE_TITLE_LENGTH} characters`,
+    emulatorInference(DOCUMENTED_LIMIT_INFERENCE),
+  ),
+  invoiceDescriptionLengthInvalid: fixedBotApiError(
+    400,
+    `Bad Request: invoice description must have 1-${MAX_INVOICE_DESCRIPTION_LENGTH} characters`,
+    emulatorInference(DOCUMENTED_LIMIT_INFERENCE),
+  ),
+  invoicePayloadLengthInvalid: fixedBotApiError(
+    400,
+    `Bad Request: invoice payload must have 1-${MAX_INVOICE_PAYLOAD_BYTES} bytes`,
+    emulatorInference(DOCUMENTED_LIMIT_INFERENCE),
+  ),
+  /** Any edit of an invoice, of which Telegram lets its bot replace the inline keyboard. */
+  invoiceEditingUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: editing invoice messages is not supported',
+    emulatorInference('The emulator does not edit invoices'),
+  ),
+  /** A forward of an invoice, which Telegram forwards with a Pay button or a deep link. */
+  invoiceForwardingUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: forwarding invoice messages is not supported',
+    emulatorInference('The emulator does not forward invoices'),
   ),
 
   // Edits of sent messages.
@@ -1824,6 +1989,37 @@ function messageErrorTemplate<Problem>(
     description: (problem) => badRequestDescription(`${prefix}${describeProblem(problem).message}`),
     provenance: (problem) => describeProblem(problem).provenance,
   };
+}
+
+function describeLabeledPriceError(error: LabeledPriceError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'price_not_object':
+      return {
+        message: 'LabeledPrice must be an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10636-L10638'),
+      };
+    case 'field_missing':
+      return {
+        message: `Can't find field "${error.fieldName}"`,
+        provenance: error.fieldName === 'label'
+          ? tdlibSource('tdutils/td/utils/JsonBuilder.cpp#L725-L737')
+          : tdlibSource('tdutils/td/utils/JsonBuilder.cpp#L675-L687'),
+      };
+    case 'label_empty':
+      return {
+        message: 'LabeledPrice label must be non-empty',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10643-L10645'),
+      };
+    case 'amount_not_integer':
+      return {
+        message: 'Field "amount" must be a valid Number',
+        provenance: tdlibSource('tdutils/td/utils/JsonBuilder.cpp#L624-L631'),
+      };
+    default: {
+      const unhandledError: never = error;
+      throw new Error(`Unhandled price error: ${JSON.stringify(unhandledError)}`);
+    }
+  }
 }
 
 function describeJsonObjectFieldError(error: JsonObjectFieldError): TelegramErrorMessage {

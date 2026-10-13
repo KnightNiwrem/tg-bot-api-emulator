@@ -59,6 +59,13 @@ const FORWARD_CASES: CasesByReason<ForwardOnlyFailure, 'sent'> = {
   message_not_forwardable: [
     [{ reason: 'message_not_forwardable' }, 400, "Bad Request: the message can't be forwarded"],
   ],
+  invoice_forwarding_unsupported: [
+    [
+      { reason: 'invoice_forwarding_unsupported' },
+      400,
+      'Bad Request: forwarding invoice messages is not supported',
+    ],
+  ],
 };
 
 const COPY_CASES: CasesByReason<CopyOnlyFailure, 'sent'> = {
@@ -88,6 +95,13 @@ const SEVERAL_REPETITION_CASES: CasesByReason<SeveralRepetitionOnlyFailure, 'sen
   ],
   messages_not_repeatable: [
     [{ reason: 'messages_not_repeatable' }, 400, "Bad Request: messages can't be forwarded"],
+  ],
+  invoice_forwarding_unsupported: [
+    [
+      { reason: 'invoice_forwarding_unsupported' },
+      400,
+      'Bad Request: forwarding invoice messages is not supported',
+    ],
   ],
   message_effect_not_allowed_for_several_messages: [
     [

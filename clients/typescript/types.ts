@@ -82,6 +82,7 @@ import type {
   PrivateChat,
   PrivateMessage,
   PrivateMessageContent,
+  PrivateWrittenContent,
   RepliedPinContent,
   RepliedPrivateMessage,
   RepliedPrivateMessageContent,
@@ -95,6 +96,7 @@ import type {
   UsersSharedContent,
   WebAppDataContent,
 } from '../../src/api/contracts/chat_messages.ts';
+import type { Invoice } from '../../src/api/contracts/invoices.ts';
 import type {
   getPrivateChatBotCommandsContract,
   getPrivateChatMenuButtonContract,
@@ -159,6 +161,7 @@ export type {
   InaccessibleMessage,
   InlineKeyboardButton,
   InlineKeyboardMarkup,
+  Invoice,
   KeyboardButtonFace,
   Location,
   MembershipChangeContent,
@@ -173,6 +176,7 @@ export type {
   PrivateChat,
   PrivateMessage,
   PrivateMessageContent,
+  PrivateWrittenContent,
   RepliedPinContent,
   RepliedPrivateMessage,
   RepliedPrivateMessageContent,

@@ -35,6 +35,7 @@ const MESSAGE_NOT_FOUND_ERRORS = {
 /** Telegram's errors for the failures only forwards and copies have, by reason. */
 const FIXED_MESSAGE_REPETITION_ERRORS = {
   message_not_forwardable: BOT_API_ERRORS.messageNotForwardable,
+  invoice_forwarding_unsupported: BOT_API_ERRORS.invoiceForwardingUnsupported,
   message_not_copyable: BOT_API_ERRORS.messageNotCopyable,
   repeated_messages_not_found: BOT_API_ERRORS.noMessagesToForward,
   repeated_message_ids_not_increasing: BOT_API_ERRORS.repeatedMessageIdsNotIncreasing,
@@ -54,6 +55,7 @@ export function presentMessageRepetitionFailure(
     case 'message_not_found':
       return presentFixedBotApiError(MESSAGE_NOT_FOUND_ERRORS[operation]);
     case 'message_not_forwardable':
+    case 'invoice_forwarding_unsupported':
     case 'message_not_copyable':
     case 'repeated_messages_not_found':
     case 'repeated_message_ids_not_increasing':

@@ -41,6 +41,9 @@ export type SendRequestOptions = Parameters<BotMessageSender['send']>[2];
 /** A message a send method sent, as the bot sees it, or why it was not sent. */
 export type SendResult = ReturnType<BotMessageSender['send']>;
 
+/** An invoice `sendInvoice` sent, as the bot sees it, or why it was not sent. */
+export type SendInvoiceResult = ReturnType<BotMessageSender['sendInvoice']>;
+
 /** Where and how an album is sent, and what every message of it replies to. */
 type SendAlbumOptions = Parameters<BotMessageSender['sendAlbum']>[2];
 
