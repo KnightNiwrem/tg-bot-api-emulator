@@ -3,6 +3,7 @@ import type {
   BotApiChatJoinRequest,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
+  BotApiEditedMessage,
   BotApiInlineQuery,
   BotApiMessage,
   BotApiMessageGenerationStopped,
@@ -73,7 +74,7 @@ export class BotUpdateRepository {
     return this.#enqueueUpdate(botId, (update_id) => ({ update_id, message }));
   }
 
-  enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiMessage): BotApiUpdate {
+  enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiEditedMessage): BotApiUpdate {
     return this.#enqueueUpdate(
       botId,
       (update_id) => ({ update_id, edited_message: editedMessage }),

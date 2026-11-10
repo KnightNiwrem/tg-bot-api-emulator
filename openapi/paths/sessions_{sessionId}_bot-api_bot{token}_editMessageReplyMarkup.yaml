@@ -1,7 +1,8 @@
 description: >-
   Telegram Bot API method for replacing the inline keyboard of a message the bot sent to a
-  private chat or a supergroup. Omitting `reply_markup` removes the keyboard. The content and edit
-  date are unchanged, and the bot receives no update for its own edit. Without `chat_id` and
+  private chat or a supergroup. Omitting `reply_markup` removes the keyboard. The content is unchanged,
+  but, as on Telegram, the edit dates the message, and the bot receives no update for its own
+  edit. Without `chat_id` and
   `message_id`, the method edits a message an account sent through the bot's inline mode, which
   `inline_message_id` identifies, as `editMessageText` does.
 parameters:

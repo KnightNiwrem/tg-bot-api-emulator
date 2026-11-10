@@ -95,9 +95,8 @@ properties:
     type: integer
     minimum: 0
     description: >-
-      Unix timestamp of the last edit of the text or caption by its author, omitted if the
-      message's content was never edited. Replacing only the inline keyboard does not change
-      it.
+      Unix timestamp of the last edit of the message, omitted if the message was never edited. An edit that replaces only the inline keyboard changes it too; stopping a
+      poll does not.
   forward_origin:
     $ref: ./MessageOrigin.yaml
   forward_from:

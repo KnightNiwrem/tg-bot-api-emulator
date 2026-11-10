@@ -661,7 +661,7 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   if (
     textEdit.message.id !== botMessage.id ||
     textEdit.message.sentAtUnixSeconds !== 1_700_000_000 ||
-    textEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
+    textEdit.message.editedAtUnixSeconds !== 1_700_000_005 ||
     getContentText(textEdit.message.content).text !== 'Chosen: /yes' ||
     textEdit.message.inlineKeyboard !== undefined
   ) {
@@ -685,15 +685,16 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   }
   if (
     getContentText(keyboardEdit.message.content).text !== 'Chosen: /yes' ||
-    keyboardEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005
+    keyboardEdit.message.editedAtUnixSeconds !== 1_700_000_010
   ) {
-    throw new Error('Expected a keyboard edit to keep the text and its edit date');
+    throw new Error('Expected a keyboard edit to keep the text and date the edit');
   }
   assertEquals(
     keyboardEdit.message.inlineKeyboard,
     YES_NO_KEYBOARD,
-    'Expected a keyboard edit to keep the text and its edit date',
+    'Expected a keyboard edit to keep the text and date the edit',
   );
+  advanceClockSeconds(5);
 
   const sameTextEdit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
@@ -703,10 +704,10 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   });
   if (
     !sameTextEdit.edited ||
-    sameTextEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
+    sameTextEdit.message.editedAtUnixSeconds !== 1_700_000_015 ||
     sameTextEdit.message.inlineKeyboard !== undefined
   ) {
-    throw new Error('Expected an unchanged text to keep its edit date while the keyboard goes');
+    throw new Error('Expected removing the keyboard with an unchanged text to date the edit');
   }
   assertEquals(publishedEvents.slice(2).map(({ type }) => type), [
     'message_edited',
@@ -1311,7 +1312,7 @@ Deno.test('PrivateMessagingService treats changed entities as an edit of the tex
   const boldEdit = editText([{ type: 'bold', offset: 0, length: 8 }]);
   if (
     !boldEdit.edited ||
-    boldEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005
+    boldEdit.message.editedAtUnixSeconds !== 1_700_000_005
   ) {
     throw new Error(
       `Expected formatting alone to be a dated edit, received ${JSON.stringify(boldEdit)}`,
@@ -1727,7 +1728,7 @@ Deno.test('PrivateMessagingService stores the uploads of rich messages only once
   if (
     refusedEdit.edited || refusedEdit.reason !== 'callback_data_invalid' || !edit.edited ||
     storedUploadCount !== 1 || edit.message.content.kind !== 'rich_message' ||
-    edit.message.contentEditedAtUnixSeconds !== 1_700_000_005
+    edit.message.editedAtUnixSeconds !== 1_700_000_005
   ) {
     throw new Error('Expected only the edit that succeeded to store its upload');
   }
@@ -1795,10 +1796,10 @@ Deno.test('PrivateMessagingService edits captions and refuses edits of the other
   if (
     textEdit.edited || textEdit.reason !== 'message_has_no_text' ||
     captionOfText.edited || captionOfText.reason !== 'message_has_no_caption' ||
-    !captionEdit.edited || captionEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
+    !captionEdit.edited || captionEdit.message.editedAtUnixSeconds !== 1_700_000_005 ||
     getContentText(captionEdit.message.content).text !== 'New' ||
     repeatedEdit.edited || repeatedEdit.reason !== 'message_not_modified' ||
-    !placementEdit.edited || placementEdit.message.contentEditedAtUnixSeconds !== 1_700_000_010 ||
+    !placementEdit.edited || placementEdit.message.editedAtUnixSeconds !== 1_700_000_010 ||
     !removal.edited || getContentText(removal.message.content).text !== ''
   ) {
     throw new Error('Expected caption edits to follow Telegram checks');
@@ -1886,7 +1887,7 @@ Deno.test('PrivateMessagingService edits the text of an account message and publ
   if (
     result.message.id !== accountMessage.id ||
     result.message.sentAtUnixSeconds !== 1_700_000_000 ||
-    result.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
+    result.message.editedAtUnixSeconds !== 1_700_000_005 ||
     getContentText(result.message.content).text !== 'Hello /help'
   ) {
     throw new Error('Expected a dated edit whose text is normalized as when sending');

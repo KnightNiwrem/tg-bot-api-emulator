@@ -1,0 +1,7 @@
+description: >-
+  A message of a private chat or a supergroup as an edit left it, which always shows when it was
+  last edited.
+allOf:
+  - $ref: ./Message.yaml
+  - required:
+      - edit_date

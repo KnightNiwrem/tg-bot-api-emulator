@@ -667,10 +667,10 @@ interface MessageCore<Chat extends ChatKey, Sender, Content extends ChatMessageC
   /** Omitted for a message not sent through a bot's inline mode. Only accounts send them. */
   readonly viaBot?: ViaBot;
   /**
-   * When the text or caption was last edited; omitted for a message whose content was never
-   * edited.
+   * When an edit last changed the message's content or inline keyboard; omitted for a message
+   * never edited. Stopping a poll changes its keyboard without dating it.
    */
-  readonly contentEditedAtUnixSeconds?: number;
+  readonly editedAtUnixSeconds?: number;
   /** Whether the sender protected the message from forwarding and saving. Only bots protect. */
   readonly isContentProtected: boolean;
   /**
@@ -789,7 +789,7 @@ export function isMessageOfChatType<Type extends ChatType>(
 export interface MessageEdit {
   readonly content: MessageContent;
   readonly inlineKeyboard: InlineKeyboard | undefined;
-  readonly contentEditedAtUnixSeconds: number | undefined;
+  readonly editedAtUnixSeconds: number | undefined;
 }
 
 /**

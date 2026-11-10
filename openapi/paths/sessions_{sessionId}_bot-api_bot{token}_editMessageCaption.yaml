@@ -4,8 +4,8 @@ description: >-
   normalized as by `sendPhoto`, `show_caption_above_media` applies only to photos and videos,
   and, as on
   Telegram, the edited message keeps only the inline keyboard given in `reply_markup` and the
-  bot receives no update for its own edit. The edit date changes only when the caption, its
-  entities, or where it shows do. Without `chat_id` and `message_id`, the method edits a
+  bot receives no update for its own edit. As on Telegram, each edit dates the message, even one
+  that keeps the caption and changes only the keyboard. Without `chat_id` and `message_id`, the method edits a
   message an account sent through the bot's inline mode, which `inline_message_id` identifies,
   as `editMessageText` does.
 parameters:

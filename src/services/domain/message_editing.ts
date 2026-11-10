@@ -55,7 +55,6 @@ import {
   hasOnlyValidCallbackData,
   hasWebAppButton,
   isSameMessageContent,
-  isUnchangedContent,
   type MediaContent,
   type NewPollStore,
   type NormalizedOutgoingContent,
@@ -755,7 +754,6 @@ export class MessageEditingService {
       return this.#commitBotEdit(targeting, message, {
         content: { kind: 'existing', content: message.content },
         inlineKeyboard: input.inlineKeyboard,
-        contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
       });
     });
   }
@@ -797,7 +795,7 @@ export class MessageEditingService {
       const stoppedMessage = targeting.storeEdit(message, {
         content: message.content,
         inlineKeyboard,
-        contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
+        editedAtUnixSeconds: message.editedAtUnixSeconds,
       });
       this.#transactions.emit({ type: 'poll_closed', poll: stoppedPoll });
       return { stopped: true, message: stoppedMessage, poll: stoppedPoll };
@@ -842,7 +840,7 @@ export class MessageEditingService {
       const editedMessage = targeting.storeEdit(message, {
         content,
         inlineKeyboard: message.inlineKeyboard,
-        contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+        editedAtUnixSeconds: this.#currentUnixTimeSeconds(),
       });
       this.#transactions.emit({ type: 'message_edited', message: editedMessage });
       return { edited: true, message: editedMessage };
@@ -883,10 +881,7 @@ export class MessageEditingService {
       : { found: false, reason: targeting.refuseInvoiceEdit() };
   }
 
-  /**
-   * Applies a bot's replacement of its message's content with the given keyboard; only changed
-   * content dates the edit.
-   */
+  /** Applies a bot's replacement of its message's content with the given keyboard. */
   #applyContentReplacement<Types extends BotEditTargetingTypes, FailureReason extends string>(
     targeting: BotEditTargeting<Types>,
     message: Types['reached']['message'] & CommonContentMessage,
@@ -902,15 +897,13 @@ export class MessageEditingService {
     return this.#commitBotEdit(targeting, message, {
       content: replacement.content,
       inlineKeyboard,
-      contentEditedAtUnixSeconds: isUnchangedContent(replacement.content, message.content)
-        ? message.contentEditedAtUnixSeconds
-        : this.#currentUnixTimeSeconds(),
     });
   }
 
   /**
    * Checks, stores, and publishes a bot's edit of its message, which must change the message. The
-   * new content's upload is stored only once the edit passes its checks.
+   * new content's upload is stored only once the edit passes its checks. As Telegram does, the
+   * edit dates the message even when it changes only the inline keyboard.
    */
   #commitBotEdit<Types extends BotEditTargetingTypes>(
     targeting: BotEditTargeting<Types>,
@@ -918,7 +911,6 @@ export class MessageEditingService {
     { content, ...edit }: {
       readonly content: NormalizedOutgoingContent;
       readonly inlineKeyboard: InlineKeyboard | undefined;
-      readonly contentEditedAtUnixSeconds: number | undefined;
     },
   ): MessageEditOutcome<
     Types['reached']['message'],
@@ -936,6 +928,7 @@ export class MessageEditingService {
     const editedMessage = targeting.storeEdit(message, {
       ...edit,
       content: storeOutgoingContent(content, this.#files, this.#polls),
+      editedAtUnixSeconds: this.#currentUnixTimeSeconds(),
     });
     this.#transactions.emit({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };

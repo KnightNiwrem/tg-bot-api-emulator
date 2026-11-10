@@ -422,7 +422,7 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
   });
   if (
     !accountEdit.edited ||
-    accountEdit.message.contentEditedAtUnixSeconds !== 1_700_000_000 ||
+    accountEdit.message.editedAtUnixSeconds !== 1_700_000_000 ||
     publishedEvents.at(-1)?.type !== 'message_edited' ||
     publishedEvents.length !== publishedEventCount + 1 ||
     !deletion.deleted ||

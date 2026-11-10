@@ -2,12 +2,11 @@ import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createAccount, createBot } from './support/http_fixtures.ts';
 import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { FIXED_WALL_CLOCK, TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
 
-// A bot can change only the keyboard of a message an account sent through its inline mode, which
-// keeps the message's content-edit time, absent before any content edit. What Telegram sends the
-// chat's bot for such an edit is not established yet (#164), so these tests record the emulator's
-// current output: an `edited_message` without `edit_date`. The Bot API type conformance check
-// lists that field as unclassified for the same reason.
+// A bot can change only the keyboard of a message an account sent through its inline mode. As
+// recorded from Telegram in #241, the chat's bot then receives the message with only its keyboard
+// changed and an `edit_date` added, in a private chat and in a supergroup, before any content edit.
 
 type ReceivedMessage = Readonly<Record<string, unknown>>;
 
@@ -26,14 +25,16 @@ const SENT_KEYBOARD = { inline_keyboard: [[{ text: 'More', callback_data: 'more'
 const REPLACEMENT_KEYBOARD = { inline_keyboard: [[{ text: 'Less', callback_data: 'less' }]] };
 
 /**
- * Creates a session where Ada sends, through an inline bot that receives chosen results, an
+ * Creates a session, dated by `FIXED_WALL_CLOCK`, where Ada sends, through an inline bot that receives chosen results, an
  * article with `SENT_KEYBOARD`, in her private chat with the bot or in a supergroup she owns that
  * the bot is a member of. Returns the message the bot received and the inline message ID of the
  * chosen result; disposing of the result disposes of the session's emulator.
  */
 async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) {
   await using disposalOnFailure = new AsyncDisposableStack();
-  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
+  const { api, sessionPath } = disposalOnFailure.use(
+    await createTestSession(undefined, { wallClock: FIXED_WALL_CLOCK }),
+  );
   const ada = await createAccount(api, sessionPath, 'Ada');
   const { bot, botApiPath } = await createBot(api, sessionPath, 'cats_bot', {
     first_name: 'Cats Bot',
@@ -124,8 +125,17 @@ async function expectBotApiResult(
   assertEqualsInFieldOrder(body, { ok: true, result: true }, `Expected ${method} to succeed`);
 }
 
+/** The message with an `edit_date` after its `date`, where Telegram places it. */
+function withEditDate(message: ReceivedMessage, editDate: number): ReceivedMessage {
+  return Object.fromEntries(
+    Object.entries(message).flatMap((entry) =>
+      entry[0] === 'date' ? [entry, ['edit_date', editDate]] : [entry]
+    ),
+  );
+}
+
 for (const chatType of ['private', 'supergroup'] as const) {
-  Deno.test(`a keyboard-only edit of an account's inline message in a ${chatType} chat reaches its bot without edit_date`, async () => {
+  Deno.test(`a keyboard-only edit of an account's inline message in a ${chatType} chat reaches its bot with edit_date`, async () => {
     await using fixture = await sendInlineArticleWithKeyboard(chatType);
     const { api, botApiPath, readUpdates, sentMessage, inlineMessageId } = fixture;
 
@@ -134,11 +144,16 @@ for (const chatType of ['private', 'supergroup'] as const) {
       reply_markup: REPLACEMENT_KEYBOARD,
     });
 
-    // The serialized message differs from the one sent only in its keyboard: no `edit_date`.
+    // The serialized message differs from the one sent only in its keyboard and its edit date.
     assertEqualsInFieldOrder(
       (await readUpdates()).map(({ update_id: _updateId, ...update }) => update),
-      [{ edited_message: { ...sentMessage, reply_markup: REPLACEMENT_KEYBOARD } }],
-      'Expected the bot to receive the keyboard-only edit',
+      [{
+        edited_message: {
+          ...withEditDate(sentMessage, TEST_UNIX_TIME_SECONDS),
+          reply_markup: REPLACEMENT_KEYBOARD,
+        },
+      }],
+      'Expected the bot to receive the dated keyboard-only edit',
     );
   });
 }

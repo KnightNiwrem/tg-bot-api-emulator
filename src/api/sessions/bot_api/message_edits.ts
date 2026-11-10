@@ -1,4 +1,4 @@
-import type { BotApiMessage } from '../../../types/bot_api.ts';
+import type { BotApiEditedMessage } from '../../../types/bot_api.ts';
 import type { BotApiPoll } from '../../../types/bot_api_poll.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import { getBotApiChatAddress } from '../../../types/virtual_chat.ts';
@@ -90,7 +90,7 @@ type Failure<Result> = Extract<Result, { readonly edited: false; readonly reason
  * its chat.
  */
 type ChatMessageEditResult<DomainResult> =
-  | { readonly edited: true; readonly message: BotApiMessage }
+  | { readonly edited: true; readonly message: BotApiEditedMessage }
   | AuthenticatedBotFailure<Failure<DomainResult>>;
 
 export type ChatMessageTextEditResult =
@@ -507,11 +507,14 @@ function botChatMessageTarget(context: MessageEditContext, chatId: number, messa
 function viewChatMessageEdit<EditFailure extends { readonly edited: false }>(
   context: MessageEditContext,
   result: { readonly edited: true; readonly message: ChatMessage } | EditFailure,
-): { readonly edited: true; readonly message: BotApiMessage } | EditFailure {
+): { readonly edited: true; readonly message: BotApiEditedMessage } | EditFailure {
   return result.edited
     ? {
       edited: true,
-      message: context.session.botMessageViews.viewMessageForBot(result.message, context.bot.id),
+      message: context.session.botMessageViews.viewEditedMessageForBot(
+        result.message,
+        context.bot.id,
+      ),
     }
     : result;
 }

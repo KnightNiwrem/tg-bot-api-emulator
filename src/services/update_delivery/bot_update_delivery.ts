@@ -3,13 +3,13 @@ import type {
   BotApiChatJoinRequest,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
+  BotApiEditedMessage,
   BotApiInlineQuery,
   BotApiMessage,
   BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
   BotApiPreCheckoutQuery,
-  BotApiPrivateMessage,
   BotApiSupergroupMessage,
   BotApiUpdateType,
 } from '../../types/bot_api.ts';
@@ -46,7 +46,8 @@ import {
 } from '../../types/virtual_message.ts';
 
 interface BotMessageViews {
-  viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
+  viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage;
+  viewEditedMessageForBot(message: ChatMessage, botId: number): BotApiEditedMessage;
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
   viewCallbackQueryForBot(
     callbackQuery: CallbackQuery,
@@ -75,7 +76,7 @@ interface BotMessageViews {
 
 interface BotUpdateMailboxes {
   enqueueMessageUpdate(botId: number, message: BotApiMessage): void;
-  enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiMessage): void;
+  enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiEditedMessage): void;
   enqueueCallbackQueryUpdate(botId: number, callbackQuery: BotApiCallbackQuery): void;
   enqueuePreCheckoutQueryUpdate(botId: number, preCheckoutQuery: BotApiPreCheckoutQuery): void;
   enqueuePollUpdate(botId: number, poll: BotApiPoll): void;
@@ -260,11 +261,7 @@ export class BotUpdateDeliveryService {
       if (!this.#isSubscribed(observingBotId, updateType)) {
         continue;
       }
-      this.#enqueueMessage(
-        observingBotId,
-        updateType,
-        this.#botMessageViews.viewPrivateMessageForBot(message),
-      );
+      this.#enqueueMessage(observingBotId, updateType, message);
     }
   }
 
@@ -312,11 +309,7 @@ export class BotUpdateDeliveryService {
       if (!readsMessage || !this.#isSubscribed(bot.id, updateType)) {
         continue;
       }
-      this.#enqueueMessage(
-        bot.id,
-        updateType,
-        this.#botMessageViews.viewSupergroupMessage(message, bot.id),
-      );
+      this.#enqueueMessage(bot.id, updateType, message);
     }
   }
 
@@ -378,11 +371,18 @@ export class BotUpdateDeliveryService {
     }
   }
 
-  #enqueueMessage(botId: number, updateType: MessageUpdateType, message: BotApiMessage): void {
+  /** Enqueues the message, or its edit, as the bot sees it. */
+  #enqueueMessage(botId: number, updateType: MessageUpdateType, message: ChatMessage): void {
     if (updateType === 'message') {
-      this.#botUpdates.enqueueMessageUpdate(botId, message);
+      this.#botUpdates.enqueueMessageUpdate(
+        botId,
+        this.#botMessageViews.viewMessageForBot(message, botId),
+      );
     } else {
-      this.#botUpdates.enqueueEditedMessageUpdate(botId, message);
+      this.#botUpdates.enqueueEditedMessageUpdate(
+        botId,
+        this.#botMessageViews.viewEditedMessageForBot(message, botId),
+      );
     }
   }
 
