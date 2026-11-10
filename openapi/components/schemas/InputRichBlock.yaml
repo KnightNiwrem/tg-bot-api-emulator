@@ -26,10 +26,10 @@ description: >-
   knows by `file_id`: Telegram refuses uploads and URLs there (`Bad Request: invalid inline
   message content specified`).
 
-  Telegram's `animation` and `audio` blocks are not supported (`Bad Request: rich message
-  blocks with an animation or an audio file are not supported`), and a `thinking` block, which
-  only drafts may hold, is refused (`Bad Request: thinking blocks can be used only in rich
-  message drafts`).
+  Telegram's `animation` and `audio` blocks are read, so their media must name a file the
+  request can send, and then refused (`Bad Request: rich message blocks with an animation or an
+  audio file are not supported`). A `thinking` block, which only drafts may hold, is refused
+  as Telegram refuses it (`Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED`).
 required:
   - type
 properties:

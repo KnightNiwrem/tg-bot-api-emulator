@@ -278,10 +278,10 @@ function parseInlineQueryResult(
  * Parses what a result's `input_message_content` sends, as the official server's
  * `get_input_message_content` does: text with its parse mode or entities, or a rich message,
  * parsed as `parseRichMessageParameter` parses the `rich_message` of `sendRichMessage`, with its
- * uploads, so that TDLib's check can refuse them. What TDLib checks in a rich message waits for
- * the result's check. The server prefixes its own descriptions of a rich
- * message it cannot read with `can't parse InlineQueryResult: `, which the emulator words as for
- * `sendRichMessage`. A contact and a location need no parsing.
+ * uploads, so that TDLib's check can refuse them. TDLib's checks of a rich message run only when
+ * the result is checked. The server prefixes its own descriptions of a rich message it cannot read
+ * with `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`. A
+ * contact and a location need no parsing.
  */
 function parseInlineResultMessageContent(
   content: UnreadInputMessageContent,

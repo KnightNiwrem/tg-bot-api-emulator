@@ -34,6 +34,7 @@ strings are cleaned as message text is. A text mention must name a user of the s
 
 The server reads every block before TDLib checks any, so a fault the server finds anywhere in the
 message is reported, even when an earlier block fails TDLib's checks or the emulator's own refusals.
+Only the emulator's [strict reading of the input](#intentional-deviations) ends reading at once.
 `{"blocks":[{"type":"heading","text":"Hi","size":7},1]}` fails with
 `Bad Request: can't parse InputRichBlock: Object expected as InputRichMessageBlock`, as Telegram
 answered it in live probes. Of the faults found after reading, the first in the order of the blocks
