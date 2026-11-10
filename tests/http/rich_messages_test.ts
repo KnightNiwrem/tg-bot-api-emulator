@@ -498,7 +498,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       { blocks: [{ type: 'thinking', text: 'Thinking' }] },
-      'Bad Request: thinking blocks can be used only in rich message drafts',
+      'Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED',
     ],
     [
       { blocks: [{ type: 'paragraph', text: 'Hi', size: 1 }] },
@@ -571,7 +571,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       buttonRow(
         Array.from({ length: 9 }, (_, index) => ({ text: 'Go', callback_data: `${index}` })),
       ),
-      'Bad Request: a button row can have at most 8 buttons',
+      'Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY',
     ],
     [
       buttonRow([{ text: 'Go', style: 'glow', callback_data: 'go' }]),
@@ -744,10 +744,11 @@ Deno.test('sendRichMessage prefixes the faults the server finds while it reads t
       blocks({ type: 'table', cells: [[{ text: 'A', colspan: -1 }]] }),
       'Bad Request: invalid table cell colspan specified',
     ],
-    // Neither the emulator's own refusals nor its strict reading of the input gain a prefix.
+    // Neither the faults Telegram's servers find nor the emulator's strict reading of the input
+    // gain a prefix.
     [
       blocks({ type: 'details', summary: 'More', blocks: [{ type: 'thinking', text: 'Hm' }] }),
-      'Bad Request: thinking blocks can be used only in rich message drafts',
+      'Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED',
     ],
     [
       blocks(listOf({ blocks: [paragraph('Hi'), { type: 'divider', text: 'Hi' }] })),

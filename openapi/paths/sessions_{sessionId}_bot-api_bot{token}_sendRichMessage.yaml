@@ -63,7 +63,8 @@ post:
         in the order of the blocks, TDLib's checks fail, such as `Bad Request: invalid section
         heading size specified`, `Bad Request: list must be either ordered or unordered`, or
         `Bad Request: invalid map properties specified`, or a row has more than 8 buttons
-        (`Bad Request: a button row can have at most 8 buttons`), a button other than a
+        (`Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY`), a `thinking` block is sent
+        (`Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED`), a button other than a
         callback button has the link style (`Bad Request: only callback buttons can have the
         link style`), or a button's text holds formatting other than custom emoji and dates
         (`Bad Request: button text can have only custom emoji and dates`); a button's link
