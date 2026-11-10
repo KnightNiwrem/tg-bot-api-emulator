@@ -77,6 +77,10 @@ properties:
   edit_date:
     type: integer
     minimum: 0
+    description: >-
+      Unix timestamp of the last edit of the message by its author, omitted if the message was
+      never edited. An edit that replaces only the inline keyboard changes it too; stopping a
+      poll does not.
   forward_origin:
     $ref: ./MessageOrigin.yaml
   forward_from:

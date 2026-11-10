@@ -10,6 +10,6 @@ properties:
   result:
     description: The edited message of a chat, or `true` for an edited inline message.
     oneOf:
-      - $ref: ./Message.yaml
+      - $ref: ./EditedMessage.yaml
       - type: boolean
         const: true

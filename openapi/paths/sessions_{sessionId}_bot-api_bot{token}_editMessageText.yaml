@@ -4,8 +4,8 @@ description: >-
   As on Telegram, new text is formatted and normalized as by `sendMessage`, and a new rich
   message is read as by `sendRichMessage`; either kind of message can become the other. The
   edited message keeps only the inline keyboard given in `reply_markup`, and the bot receives
-  no update for its own edit. As on Telegram, each edit dates the message, even one that changes
-  only the keyboard. Without `chat_id`
+  no update for its own edit. Each edit dates the message, even one that keeps the content and
+  changes only the keyboard. Without `chat_id`
   and `message_id`, the method edits a message an account sent through the bot's inline mode,
   which `inline_message_id` identifies, whether or not the bot is a member of its chat, and
   answers `true` rather than the message. As an account's message, the edited inline message

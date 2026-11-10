@@ -8,6 +8,6 @@ properties:
     type: integer
     minimum: 1
   edited_message:
-    $ref: ./Message.yaml
+    $ref: ./EditedMessage.yaml
     description: >-
       An account's message as its edit left it. A bot receives no update for bots' edits.
