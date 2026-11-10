@@ -32,6 +32,19 @@ well-formed Unicode fails, such as `Bad Request: rich text must be encoded in UT
 strings are cleaned as message text is. A text mention must name a user of the session:
 `Bad Request: user not found`.
 
+The server reads every block before TDLib checks any, so a fault the server finds anywhere in the
+message is reported, even when an earlier block fails TDLib's checks or the emulator's own refusals.
+Only the emulator's [strict reading of the input](#intentional-deviations) ends reading at once.
+`{"blocks":[{"type":"heading","text":"Hi","size":7},1]}` fails with
+`Bad Request: can't parse InputRichBlock: Object expected as InputRichMessageBlock`, as Telegram
+answered it in live probes. Of the faults found after reading, the first in the order of the blocks
+is reported. `answerInlineQuery` reads the rich messages of all its results before it checks any.
+Telegram's servers check what the Bot API documents but TDLib does not: a row holds at most 8
+buttons (`Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY`), and only drafts hold `thinking` blocks
+(`Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED`), as Telegram answered in live probes. The emulator
+reports these among TDLib's faults in the order of the blocks, although Telegram's servers check
+them only after TDLib.
+
 The sent message, and the same message in account history, shows the blocks in `rich_message`, as
 the official server's [`JsonRichMessage`][rich-message-json] and [`JsonRichBlock`][rich-block-json]
 show the message TDLib gives them. The message has no `text`, and TDLib's
@@ -141,11 +154,15 @@ unless the result's `input_message_content` replaces them.
 - **Strict input.** Telegram reads a missing text as empty text, ignores unknown fields, and uses
   the first of `blocks`, `markdown` and `html` it finds. The emulator requires the fields the Bot
   API documents and exactly one source, and rejects other JSON as invalid parameters, to surface the
-  bot's mistake in tests.
-- **Documented limits without Telegram's descriptions.** Telegram's servers check what the Bot API
-  documents but TDLib does not: a row has at most 8 buttons, only a callback button has the `link`
-  style, a button's text holds only custom emoji and dates, and only drafts hold `thinking` blocks.
-  The emulator refuses such messages with descriptions of its own.
+  bot's mistake in tests. Such a refusal ends the reading where it is found, so it hides a fault
+  that Telegram would report in a later block, and a message with more than one source fails before
+  its blocks are read.
+- **Documented button rules.** The Bot API documents that only a callback button has the `link`
+  style and that a button's text holds only custom emoji and dates, but Telegram accepted a URL
+  button with the `link` style and a button with bold text in live probes. The emulator refuses such
+  buttons, to surface the documented rules, with descriptions of its own:
+  `Bad Request: only callback buttons can have the link style` and
+  `Bad Request: button text can have only custom emoji and dates`.
 - **Blocks read before the chat.** TDLib checks the blocks when it sends the message, after the
   server looks at the chat. The emulator reads the blocks and their files first, so a request that
   also names an unknown chat fails for its blocks.
@@ -155,7 +172,8 @@ unless the result's `input_message_content` replaces them.
 - **Drafts.** `sendRichMessageDraft` is missing, so tests cannot observe streamed rich messages.
   [Plain-text drafts](messages.md#message-drafts), their Stop button and its
   `stopped_message_generation` updates are supported.
-- **Other media blocks.** Animation and audio blocks fail with
+- **Other media blocks.** Animation and audio blocks are read as the server reads them, so their
+  media must name a file the request can send, and then fail with
   `Bad Request: rich message blocks with an animation or an audio file are not supported`, as
   animations are [missing](media-and-files.md#additional-media-types-and-methods), and the
   emulator's [audio files](media-and-files.md#audio-files) have no blocks yet. Tests need rich

@@ -50,6 +50,16 @@ export type RichMessageParameterReading =
   | ({ readonly read: true } & SpecifiedRichMessage)
   | { readonly read: false; readonly description: string };
 
+/**
+ * A `rich_message` parameter read in the two phases upstream reads it in. A fault that the official
+ * Bot API server finds while it parses the message fails the parsing. Otherwise `checking` holds
+ * the outcome of the checks that run once every block is parsed: TDLib's, and the emulator's
+ * refusals of what Telegram's servers or the emulator itself reject.
+ */
+export type RichMessageParameterParsing =
+  | { readonly parsed: true; readonly checking: RichMessageParameterReading }
+  | { readonly parsed: false; readonly description: string };
+
 /** The Bot API's documented limit on the buttons of a row of a rich message. */
 const MAX_BUTTON_ROW_LENGTH = 8;
 
@@ -70,8 +80,6 @@ const RICH_TEXT_STYLES: ReadonlyMap<string, RichTextStyle> = new Map([
   ['marked', 'marked'],
   ['code', 'code'],
 ]);
-
-const MEDIA_BLOCK_TYPES_UNSUPPORTED = ['animation', 'audio'] as const;
 
 const ORDERED_LIST_ITEM_LABEL_TYPES = [
   'a',
@@ -140,12 +148,18 @@ export interface RichBlockParsingError {
   readonly problem: RichBlockParsingProblem;
 }
 
-type RichMediaBlockType = 'photo' | 'document' | 'video' | 'voice_note';
+type RichMediaBlockType = 'photo' | 'document' | 'video' | 'voice_note' | 'animation' | 'audio';
 
 /**
- * A description with which reading a `rich_message` fails, which no array of the blocks prefixes:
- * a fault outside the blocks, one that TDLib or Telegram's servers find once the server has read
- * them, or one the emulator refuses on its own. Only this module throws it.
+ * Stands in for a block that failed a check after parsing, so that parsing can go on to find a
+ * fault in a later block. A message with a failed check is never returned, so it is never shown.
+ */
+const FAILED_CHECK_BLOCK_STAND_IN: SpecifiedRichBlock = { kind: 'divider' };
+
+/**
+ * A description with which parsing a `rich_message` fails at once, which no array of the blocks
+ * prefixes: a fault outside the blocks, or JSON that the emulator reads more strictly than
+ * Telegram. Only this module throws it.
  */
 class RichMessageParameterError extends Error {
   readonly description: string;
@@ -196,11 +210,33 @@ function readArrayElements<Element>(
 }
 
 /**
- * Reads a `rich_message` parameter as the official Bot API server's `get_input_rich_message`
- * reads it and TDLib's `RichMessage::get_rich_message` checks it, failing with Telegram's
- * description of the first fault. Only a message of blocks is supported. A fault that the server
- * finds while it reads the blocks is described with the arrays it was found in, as
- * `BOT_API_ERRORS.richBlockUnparsable` describes it.
+ * Reads a `rich_message` parameter as `parseRichMessageParameter` does, failing with the fault of
+ * the first phase that finds one.
+ */
+export function readRichMessageParameter(
+  richMessageParameter: string | undefined,
+  uploadedFiles: BotApiUploadedFiles,
+  invalidParametersDescription: string,
+): RichMessageParameterReading {
+  const parsing = parseRichMessageParameter(
+    richMessageParameter,
+    uploadedFiles,
+    invalidParametersDescription,
+  );
+  return parsing.parsed ? parsing.checking : { read: false, description: parsing.description };
+}
+
+/**
+ * Parses a `rich_message` parameter as the official Bot API server's `get_input_rich_message`
+ * parses it, then checks it as TDLib's `RichMessage::get_rich_message` does. Only a message of
+ * blocks is supported.
+ *
+ * The server parses every block before it passes the message to TDLib, so a fault it finds while
+ * parsing, anywhere in the message, wins over every fault that the checks find, even in an earlier
+ * block. It is described with the arrays it was found in, as `BOT_API_ERRORS.richBlockUnparsable`
+ * describes it. The checks report the first fault in the order the blocks are read; they include
+ * the documented limits that Telegram's servers check and the blocks the emulator does not
+ * support, which it refuses with descriptions of its own.
  *
  * `invalidParametersDescription` answers JSON that Telegram would read leniently, such as unknown
  * fields, missing documented fields, or values of the wrong JSON type, which are rejected instead
@@ -211,21 +247,21 @@ function readArrayElements<Element>(
  * the emulator reads them in full first, so a request that also names an unknown chat fails for
  * its blocks.
  */
-export function readRichMessageParameter(
+export function parseRichMessageParameter(
   richMessageParameter: string | undefined,
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
-): RichMessageParameterReading {
+): RichMessageParameterParsing {
   try {
     const reader = new RichMessageReader(uploadedFiles, invalidParametersDescription);
-    return { read: true, ...reader.readRichMessage(richMessageParameter ?? '') };
+    return { parsed: true, checking: reader.readRichMessage(richMessageParameter ?? '') };
   } catch (error) {
     if (error instanceof RichMessageParameterError) {
-      return { read: false, description: error.description };
+      return { parsed: false, description: error.description };
     }
     if (error instanceof RichBlockParsingFailure) {
       return {
-        read: false,
+        parsed: false,
         description: BOT_API_ERRORS.richBlockUnparsable.description(error.parsingError),
       };
     }
@@ -386,6 +422,23 @@ const voiceNoteBlockSchema = z.strictObject({
   caption: z.unknown().optional(),
 });
 
+// The emulator refuses animation and audio blocks once the message is parsed, so it reads only
+// what the server's parsing of them can refuse: the media's type and file, and the caption.
+const unsupportedBlockMediaSchema = z.looseObject({
+  type: z.string(),
+  media: z.string().default(''),
+});
+const animationBlockSchema = z.strictObject({
+  type: z.string(),
+  animation: unsupportedBlockMediaSchema,
+  caption: z.unknown().optional(),
+});
+const audioBlockSchema = z.strictObject({
+  type: z.string(),
+  audio: unsupportedBlockMediaSchema,
+  caption: z.unknown().optional(),
+});
+
 const styledTextSchema = z.strictObject({ type: z.string(), text: z.unknown() });
 // Telegram reads the Unix time as a 32-bit integer.
 const dateTimeTextSchema = z.strictObject({
@@ -471,10 +524,16 @@ const richMessageButtonSchema = buttonSchema({
   style: z.string().optional(),
 });
 
-/** Reads the parts of one `rich_message` parameter, throwing `RichMessageParameterError`. */
+/**
+ * Reads the parts of one `rich_message` parameter. A fault of the parsing phase throws
+ * `RichBlockParsingFailure` or `RichMessageParameterError` at once; a failed check is recorded by
+ * `#failCheck` and reading goes on, so that a parsing fault in a later block still wins.
+ */
 class RichMessageReader {
   readonly #uploadedFiles: BotApiUploadedFiles;
   readonly #invalidParametersDescription: string;
+  /** The description of the first check that failed, in the order the blocks are read. */
+  #firstCheckFailureDescription: string | undefined;
 
   constructor(uploadedFiles: BotApiUploadedFiles, invalidParametersDescription: string) {
     this.#uploadedFiles = uploadedFiles;
@@ -486,7 +545,7 @@ class RichMessageReader {
    * `markdown`, and `html` it finds; the emulator requires exactly one, as the Bot API documents.
    * `blocks` may be empty, as neither the Bot API nor TDLib requires a message to have blocks.
    */
-  readRichMessage(parameter: string): SpecifiedRichMessage {
+  readRichMessage(parameter: string): RichMessageParameterReading {
     if (parameter.length === 0) {
       throw new RichMessageParameterError(BOT_API_ERRORS.richMessageEmpty.description());
     }
@@ -512,10 +571,23 @@ class RichMessageReader {
     if (html !== undefined || markdown !== undefined || media !== undefined) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
     }
+    const readBlocks = this.#readBlocks(blocks);
+    if (this.#firstCheckFailureDescription !== undefined) {
+      return { read: false, description: this.#firstCheckFailureDescription };
+    }
     return {
-      richMessage: { blocks: this.#readBlocks(blocks), isRightToLeft: is_rtl },
+      read: true,
+      richMessage: { blocks: readBlocks, isRightToLeft: is_rtl },
       detectsEntities: !skip_entity_detection,
     };
+  }
+
+  /**
+   * Records a check that failed once the server would have parsed the message, unless an earlier
+   * one did.
+   */
+  #failCheck(description: string): void {
+    this.#firstCheckFailureDescription ??= description;
   }
 
   /** Reads blocks as the server's `get_input_page_blocks` reads them. */
@@ -537,7 +609,8 @@ class RichMessageReader {
         const block = this.#parse(headingBlockSchema, value);
         const text = this.#readRichText(block.text);
         if (!isRichHeadingSize(block.size)) {
-          throw new RichMessageParameterError(BOT_API_ERRORS.richHeadingSizeInvalid.description());
+          this.#failCheck(BOT_API_ERRORS.richHeadingSizeInvalid.description());
+          return FAILED_CHECK_BLOCK_STAND_IN;
         }
         return { kind: 'heading', text, size: block.size };
       }
@@ -611,15 +684,18 @@ class RichMessageReader {
       case 'voice_note':
         return this.#readVoiceNoteBlock(this.#parse(voiceNoteBlockSchema, value));
       case 'thinking':
-        throw new RichMessageParameterError(
-          BOT_API_ERRORS.richThinkingBlockNotAllowed.description(),
-        );
+        this.#readRichText(this.#parse(textBlockSchema, value).text);
+        this.#failCheck(BOT_API_ERRORS.richThinkingBlockNotAllowed.description());
+        return FAILED_CHECK_BLOCK_STAND_IN;
+      case 'animation': {
+        const block = this.#parse(animationBlockSchema, value);
+        return this.#readUnsupportedMediaBlock('animation', block.animation, block.caption);
+      }
+      case 'audio': {
+        const block = this.#parse(audioBlockSchema, value);
+        return this.#readUnsupportedMediaBlock('audio', block.audio, block.caption);
+      }
       default:
-        if (isOneOf(type, MEDIA_BLOCK_TYPES_UNSUPPORTED)) {
-          throw new RichMessageParameterError(
-            BOT_API_ERRORS.richMediaBlockUnsupported.description(),
-          );
-        }
         throw RichBlockParsingFailure.of({ reason: 'block_type_unsupported', blockType: type });
     }
   }
@@ -637,11 +713,12 @@ class RichMessageReader {
       (itemValue) => this.#readListItem(itemValue),
     );
     if (items.length === 0) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richListEmpty.description());
-    }
-    const isOrdered = items[0].number !== undefined;
-    if (items.some((item) => (item.number !== undefined) !== isOrdered)) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richListMixed.description());
+      this.#failCheck(BOT_API_ERRORS.richListEmpty.description());
+    } else {
+      const isOrdered = items[0].number !== undefined;
+      if (items.some((item) => (item.number !== undefined) !== isOrdered)) {
+        this.#failCheck(BOT_API_ERRORS.richListMixed.description());
+      }
     }
     return { kind: 'list', items };
   }
@@ -653,7 +730,7 @@ class RichMessageReader {
     const item = this.#parse(listItemSchema, value);
     const blocks = this.#readBlocks(item.blocks);
     if (item.type.length > 0 && !isOneOf(item.type, ORDERED_LIST_ITEM_LABEL_TYPES)) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richListItemTypeInvalid.description());
+      this.#failCheck(BOT_API_ERRORS.richListItemTypeInvalid.description());
     }
     return {
       blocks: blocks.length === 0 ? [{ kind: 'paragraph', text: EMPTY_RICH_TEXT }] : blocks,
@@ -707,12 +784,9 @@ class RichMessageReader {
       throw RichBlockParsingFailure.of({ reason: 'table_cell_vertical_alignment_invalid' });
     }
     if (cell.colspan < 0) {
-      throw new RichMessageParameterError(
-        BOT_API_ERRORS.richTableCellColumnSpanInvalid.description(),
-      );
-    }
-    if (cell.rowspan < 0) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richTableCellRowSpanInvalid.description());
+      this.#failCheck(BOT_API_ERRORS.richTableCellColumnSpanInvalid.description());
+    } else if (cell.rowspan < 0) {
+      this.#failCheck(BOT_API_ERRORS.richTableCellRowSpanInvalid.description());
     }
     return {
       ...(isEmptyRichText(text) ? {} : { text }),
@@ -733,7 +807,8 @@ class RichMessageReader {
     const caption = this.#readCaption(block.caption);
     const { latitude, longitude, horizontal_accuracy } = block.location;
     if (!isPointOnEarth(latitude, longitude)) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richMapLocationInvalid.description());
+      this.#failCheck(BOT_API_ERRORS.richMapLocationInvalid.description());
+      return FAILED_CHECK_BLOCK_STAND_IN;
     }
     const { zoom, width, height } = block;
     if (
@@ -741,7 +816,8 @@ class RichMessageReader {
       height > MAX_MAP_DIMENSION || width + height > MAX_MAP_DIMENSION ||
       width > height * MAX_MAP_ASPECT_RATIO || height > width * MAX_MAP_ASPECT_RATIO
     ) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richMapPropertiesInvalid.description());
+      this.#failCheck(BOT_API_ERRORS.richMapPropertiesInvalid.description());
+      return FAILED_CHECK_BLOCK_STAND_IN;
     }
     const hasDimensions = width > 0 && height > 0;
     return {
@@ -770,10 +846,9 @@ class RichMessageReader {
       throw RichBlockParsingFailure.of({ reason: 'button_row_alignment_invalid' });
     }
     if (buttons.length === 0) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonRowEmpty.description());
-    }
-    if (buttons.length > MAX_BUTTON_ROW_LENGTH) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonRowTooLong.description());
+      this.#failCheck(BOT_API_ERRORS.richButtonRowEmpty.description());
+    } else if (buttons.length > MAX_BUTTON_ROW_LENGTH) {
+      this.#failCheck(BOT_API_ERRORS.richButtonRowTooLong.description());
     }
     return {
       kind: 'buttons',
@@ -802,14 +877,9 @@ class RichMessageReader {
       throw RichBlockParsingFailure.of({ reason: 'login_bot_username_not_allowed' });
     }
     if (style === 'link' && action.kind !== 'callback') {
-      throw new RichMessageParameterError(
-        BOT_API_ERRORS.richLinkButtonStyleNotAllowed.description(),
-      );
-    }
-    if (!isButtonText(text)) {
-      throw new RichMessageParameterError(
-        BOT_API_ERRORS.richButtonTextFormattingNotAllowed.description(),
-      );
+      this.#failCheck(BOT_API_ERRORS.richLinkButtonStyleNotAllowed.description());
+    } else if (!isButtonText(text)) {
+      this.#failCheck(BOT_API_ERRORS.richButtonTextFormattingNotAllowed.description());
     }
     return { text, ...(style === undefined ? {} : { style }), action };
   }
@@ -875,6 +945,22 @@ class RichMessageReader {
       voiceNote: { voice: voiceFile, durationSeconds: voiceNote.duration },
       ...this.#readCaption(block.caption),
     };
+  }
+
+  /**
+   * Parses an animation or audio block as the Bot API server's `get_input_page_block` does, then
+   * refuses it, as the emulator has no such blocks.
+   */
+  #readUnsupportedMediaBlock(
+    blockType: 'animation' | 'audio',
+    media: z.output<typeof unsupportedBlockMediaSchema>,
+    caption: unknown,
+  ): SpecifiedRichBlock {
+    checkMediaType(media.type, blockType);
+    this.#readMediaFile(media.media);
+    this.#readCaption(caption);
+    this.#failCheck(BOT_API_ERRORS.richMediaBlockUnsupported.description());
+    return FAILED_CHECK_BLOCK_STAND_IN;
   }
 
   /**
@@ -1003,9 +1089,7 @@ class RichMessageReader {
       case 'custom_emoji': {
         const customEmoji = this.#parse(customEmojiTextSchema, value);
         if (!/^-?[1-9]\d*$/.test(customEmoji.custom_emoji_id)) {
-          throw new RichMessageParameterError(
-            BOT_API_ERRORS.richTextCustomEmojiIdInvalid.description(),
-          );
+          this.#failCheck(BOT_API_ERRORS.richTextCustomEmojiIdInvalid.description());
         }
         return {
           kind: 'custom_emoji',
@@ -1050,7 +1134,7 @@ class RichMessageReader {
       throw RichBlockParsingFailure.of({ reason: 'text_date_time_format_invalid' });
     }
     if (dateTime.unix_time <= 0) {
-      throw new RichMessageParameterError(BOT_API_ERRORS.richTextDateInvalid.description());
+      this.#failCheck(BOT_API_ERRORS.richTextDateInvalid.description());
     }
     const { format } = formatReading;
     return {

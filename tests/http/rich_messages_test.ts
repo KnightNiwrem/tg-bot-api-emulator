@@ -488,12 +488,17 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       `Bad Request: can't parse InputRichBlock: type "marquee" is unsupported`,
     ],
     [
-      { blocks: [{ type: 'audio', audio: { type: 'audio', media: 'attach://song' } }] },
+      { blocks: [{ type: 'audio', audio: { type: 'audio', media: 'song-file-id' } }] },
       'Bad Request: rich message blocks with an animation or an audio file are not supported',
+    ],
+    // The server parses animation and audio blocks as other media blocks.
+    [
+      { blocks: [{ type: 'animation', animation: { type: 'animation', media: 'attach://gif' } }] },
+      "Bad Request: can't parse InputRichBlock: media not found",
     ],
     [
       { blocks: [{ type: 'thinking', text: 'Thinking' }] },
-      'Bad Request: thinking blocks can be used only in rich message drafts',
+      'Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED',
     ],
     [
       { blocks: [{ type: 'paragraph', text: 'Hi', size: 1 }] },
@@ -566,7 +571,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       buttonRow(
         Array.from({ length: 9 }, (_, index) => ({ text: 'Go', callback_data: `${index}` })),
       ),
-      'Bad Request: a button row can have at most 8 buttons',
+      'Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY',
     ],
     [
       buttonRow([{ text: 'Go', style: 'glow', callback_data: 'go' }]),
@@ -739,10 +744,11 @@ Deno.test('sendRichMessage prefixes the faults the server finds while it reads t
       blocks({ type: 'table', cells: [[{ text: 'A', colspan: -1 }]] }),
       'Bad Request: invalid table cell colspan specified',
     ],
-    // Neither the emulator's own refusals nor its strict reading of the input gain a prefix.
+    // Neither the faults Telegram's servers find nor the emulator's strict reading of the input
+    // gain a prefix.
     [
       blocks({ type: 'details', summary: 'More', blocks: [{ type: 'thinking', text: 'Hm' }] }),
-      'Bad Request: thinking blocks can be used only in rich message drafts',
+      'Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED',
     ],
     [
       blocks(listOf({ blocks: [paragraph('Hi'), { type: 'divider', text: 'Hi' }] })),
@@ -763,6 +769,201 @@ Deno.test('sendRichMessage prefixes the faults the server finds while it reads t
       `Expected ${JSON.stringify(richMessage)} to fail as Telegram fails it`,
     );
   }
+});
+
+// The official server parses every block with `get_input_page_blocks` before TDLib's
+// `RichMessage::get_rich_message` checks any, so a parsing fault anywhere wins over every checked
+// fault, even in an earlier block:
+// https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12267-L12443
+// https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RichMessage.cpp#L89-L134
+// https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/WebPageBlock.cpp#L5535-L5786
+// Live Telegram answered these requests so on 2026-11-10 (issue #294).
+Deno.test('a parsing fault anywhere in a rich message wins over the checks', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
+  await sendText('/start');
+  const notObject = "can't parse InputRichBlock: Object expected as InputRichMessageBlock";
+  const paragraph = (text: unknown) => ({ type: 'paragraph', text });
+  const listOf = (...items: unknown[]) => ({ type: 'list', items });
+  const buttonRow = (...buttons: unknown[]) => ({ type: 'buttons', buttons });
+  const badHeading = { type: 'heading', text: 'Hi', size: 7 };
+  const map = (properties: Record<string, number>) => ({
+    type: 'map',
+    location: { latitude: 52, longitude: 13 },
+    ...properties,
+  });
+  // Faults that TDLib, Telegram's servers or the emulator's capabilities find once the server has
+  // parsed the message; each fails alone with its own description.
+  const checkedFaults: ReadonlyArray<readonly [string, unknown]> = [
+    ['heading size', badHeading],
+    ['empty list', listOf()],
+    ['mixed list', listOf({ blocks: [], type: '1', value: 1 }, { blocks: [] })],
+    ['list item type', listOf({ blocks: [], type: 'x' })],
+    ['map zoom', map({ zoom: 25 })],
+    ['map dimensions', map({ width: 10_000, height: 1 })],
+    ['map location', { type: 'map', location: { latitude: 100, longitude: 0 } }],
+    ['empty button row', buttonRow()],
+    ['table rowspan', { type: 'table', cells: [[{ text: 'A', rowspan: -1 }]] }],
+    ['date', paragraph({ type: 'date_time', text: 'Soon', unix_time: 0 })],
+    [
+      'custom emoji',
+      paragraph({ type: 'custom_emoji', custom_emoji_id: 'x', alternative_text: 'x' }),
+    ],
+    [
+      'nine buttons',
+      buttonRow(
+        ...Array.from({ length: 9 }, (_, index) => ({ text: 'Go', callback_data: `${index}` })),
+      ),
+    ],
+    ['link style', buttonRow({ text: 'Go', style: 'link', url: 'https://grammy.dev' })],
+    [
+      'button text formatting',
+      buttonRow({ text: { type: 'bold', text: 'Go' }, callback_data: 'go' }),
+    ],
+    ['callback data', buttonRow({ text: 'Go', callback_data: 'x'.repeat(65) })],
+    ['thinking block', { type: 'thinking', text: 'Hm' }],
+    ['audio block', { type: 'audio', audio: { type: 'audio', media: 'song-file-id' } }],
+  ];
+  const cases: Array<readonly [string, unknown, string]> = checkedFaults.flatMap((
+    [name, faultyBlock],
+  ) => [
+    [`${name}, then a scalar block`, { blocks: [faultyBlock, 1] }, notObject],
+    [`a scalar block, then ${name}`, { blocks: [1, faultyBlock] }, notObject],
+  ]);
+  cases.push(
+    // A parsing fault of the same block, found after a checked one.
+    [
+      'table rowspan, then a cell alignment',
+      {
+        blocks: [{
+          type: 'table',
+          cells: [[{ text: 'A', rowspan: -1 }, { text: 'B', align: 'x' }]],
+        }],
+      },
+      "can't parse InputRichBlock: Can't parse PageBlockTableCell: " +
+      'Invalid horizontal alignment specified',
+    ],
+    [
+      'nine buttons, then a row alignment',
+      {
+        blocks: [{
+          ...buttonRow(
+            ...Array.from({ length: 9 }, (_, index) => ({ text: 'Go', callback_data: `${index}` })),
+          ),
+          align: 'justify',
+        }],
+      },
+      "can't parse InputRichBlock: Invalid horizontal alignment specified",
+    ],
+    [
+      'date, then a date-time format',
+      {
+        blocks: [paragraph([
+          { type: 'date_time', text: 'Soon', unix_time: 0 },
+          { type: 'date_time', text: 'Later', unix_time: 1, date_time_format: 'x' },
+        ])],
+      },
+      "can't parse InputRichBlock: Invalid date-time format specified",
+    ],
+    [
+      'link style, then a login button naming a bot',
+      {
+        blocks: [buttonRow(
+          { text: 'Go', style: 'link', url: 'https://grammy.dev' },
+          { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: 'test_bot' } },
+        )],
+      },
+      "can't parse InputRichBlock: Can't parse RichMessageButton: " +
+      'Bot username must be empty for login_url buttons in rich messages',
+    ],
+    // Nested faults keep the prefixes of the arrays around them.
+    [
+      'both inside a list item',
+      { blocks: [listOf({ blocks: [badHeading, 1] })] },
+      "can't parse InputRichBlock: Can't parse InputRichBlockListItem: " +
+      "Can't parse InputRichBlock: Object expected as InputRichMessageBlock",
+    ],
+    [
+      'inside a blockquote, then outside',
+      { blocks: [{ type: 'blockquote', blocks: [badHeading] }, { type: 'marquee' }] },
+      `can't parse InputRichBlock: type "marquee" is unsupported`,
+    ],
+    [
+      'outside, then inside details',
+      { blocks: [listOf(), { type: 'details', summary: 'More', blocks: [paragraph(5)] }] },
+      "can't parse InputRichBlock: Can't parse InputRichBlock: Invalid rich text specified",
+    ],
+    [
+      'inside a collage, then inside a slideshow',
+      {
+        blocks: [
+          { type: 'collage', blocks: [{ type: 'thinking', text: 'Hm' }] },
+          {
+            type: 'slideshow',
+            blocks: [{ type: 'photo', photo: { type: 'video', media: 'attach://clip' } }],
+          },
+        ],
+      },
+      "can't parse InputRichBlock: Can't parse InputRichBlock: " +
+      'Unexpected media type "video" for block "photo"',
+    ],
+    // An unsupported block's own parsing fault wins too.
+    [
+      'an audio block without media, then a scalar block',
+      { blocks: [{ type: 'audio', audio: { type: 'audio', media: '' } }, 1] },
+      "can't parse InputRichBlock: media not found",
+    ],
+  );
+  for (const [name, richMessage, description] of cases) {
+    const sent = await callBotApi(api, `${botApiPath}/sendRichMessage`, {
+      chat_id: createdAccount.account.id,
+      rich_message: richMessage,
+    });
+    // An inline query result's rich message is parsed and checked alike; the ID of the query is
+    // checked only afterwards.
+    const answered = await callBotApi(api, `${botApiPath}/answerInlineQuery`, {
+      inline_query_id: '0',
+      results: [{
+        type: 'article',
+        id: 'fact',
+        title: 'Fact',
+        input_message_content: { rich_message: richMessage },
+      }],
+    });
+    assertEquals(
+      [sent.body, answered.body].map((body) =>
+        isBadRequestResponse(body) ? body.description : body
+      ),
+      [`Bad Request: ${description}`, `Bad Request: ${description}`],
+      `Expected the parsing fault to win for ${name}`,
+    );
+  }
+});
+
+// The official server's `get_inline_query_results` parses every result before TDLib's
+// `answer_inline_query` checks any, so a later result's parsing fault wins over an earlier
+// result's checked one:
+// https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10994-L11011
+Deno.test('answerInlineQuery parses every rich message before it checks any', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath } = fixture;
+  const article = (id: string, blocks: unknown[]) => ({
+    type: 'article',
+    id,
+    title: id,
+    input_message_content: { rich_message: { blocks } },
+  });
+  const { body } = await callBotApi(api, `${botApiPath}/answerInlineQuery`, {
+    inline_query_id: '0',
+    results: [
+      article('heading', [{ type: 'heading', text: 'Hi', size: 7 }]),
+      article('scalar', [1]),
+    ],
+  });
+  assertEquals(
+    isBadRequestResponse(body) ? body.description : body,
+    "Bad Request: can't parse InputRichBlock: Object expected as InputRichMessageBlock",
+  );
 });
 
 Deno.test('bots send and edit rich messages in supergroups and inline messages', async () => {

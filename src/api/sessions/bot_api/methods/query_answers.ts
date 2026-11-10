@@ -45,8 +45,10 @@ import {
   integerParameter,
   jsonParameter,
 } from '../request_parameters.ts';
-import { readRichMessageParameter } from '../rich_message_parameter.ts';
-import type { SpecifiedRichMessage } from '../specified_rich_message.ts';
+import {
+  parseRichMessageParameter,
+  type RichMessageParameterReading,
+} from '../rich_message_parameter.ts';
 import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
 
 /** Telegram's default and range for how long clients may cache an inline query's answer. */
@@ -182,7 +184,11 @@ function readInlineQueryAnswerButton(
  */
 type ParsedInlineResultMessageContent =
   | { readonly kind: 'text'; readonly text: SpecifiedFormattedText }
-  | ({ readonly kind: 'rich_message' } & SpecifiedRichMessage)
+  | {
+    readonly kind: 'rich_message';
+    /** The outcome of TDLib's checks of the parsed message, reported when the result is checked. */
+    readonly checking: RichMessageParameterReading;
+  }
   | Extract<UnreadInputMessageContent, { readonly kind: 'contact' | 'location' }>;
 
 /**
@@ -270,11 +276,12 @@ function parseInlineQueryResult(
 
 /**
  * Parses what a result's `input_message_content` sends, as the official server's
- * `get_input_message_content` does: text with its parse mode or entities, or a rich message, read
- * as `readSpecifiedRichMessage` reads the `rich_message` of `sendRichMessage`, with its uploads,
- * so that TDLib's check can refuse them. The server prefixes its own descriptions of a rich
- * message it cannot read with `can't parse InlineQueryResult: `, which the emulator words as for
- * `sendRichMessage`. A contact and a location need no parsing.
+ * `get_input_message_content` does: text with its parse mode or entities, or a rich message,
+ * parsed as `parseRichMessageParameter` parses the `rich_message` of `sendRichMessage`, with its
+ * uploads, so that TDLib's check can refuse them. TDLib's checks of a rich message run only when
+ * the result is checked. The server prefixes its own descriptions of a rich message it cannot read
+ * with `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`. A
+ * contact and a location need no parsing.
  */
 function parseInlineResultMessageContent(
   content: UnreadInputMessageContent,
@@ -295,21 +302,14 @@ function parseInlineResultMessageContent(
         : textReading;
     }
     case 'rich_message': {
-      const richMessageReading = readRichMessageParameter(
+      const richMessageParsing = parseRichMessageParameter(
         JSON.stringify(content.richMessage),
         uploadedFiles,
         invalidParametersDescription,
       );
-      return richMessageReading.read
-        ? {
-          read: true,
-          content: {
-            kind: 'rich_message',
-            richMessage: richMessageReading.richMessage,
-            detectsEntities: richMessageReading.detectsEntities,
-          },
-        }
-        : richMessageReading;
+      return richMessageParsing.parsed
+        ? { read: true, content: { kind: 'rich_message', checking: richMessageParsing.checking } }
+        : { read: false, description: richMessageParsing.description };
     }
     case 'contact':
     case 'location':
@@ -463,7 +463,8 @@ function checkInlineQueryResult(
 /**
  * Checks what a result's `input_message_content` sends, as TDLib's `get_inline_message` does: a
  * static location's coordinates must name a point on Earth, as `process_input_message_location`
- * requires, and a rich message's buttons are checked as in any inline message. A rich message must
+ * requires, and a rich message is checked as `RichMessage::get_rich_message` checks it, then its
+ * buttons as in any inline message. A rich message must
  * reuse its files by `file_id`, since `get_inline_message` refuses an inline message's uploads and
  * files named by URL. Text and a contact need no check here; the service cleans a contact as
  * `sendContact` does.
@@ -485,7 +486,11 @@ function checkInlineResultMessageContent(
         : { read: true, content: { kind: 'location', location } };
     }
     case 'rich_message': {
-      const buttonReading = readRichMessageButtons(context, content.richMessage);
+      const { checking } = content;
+      if (!checking.read) {
+        return checking;
+      }
+      const buttonReading = readRichMessageButtons(context, checking.richMessage);
       if (!buttonReading.read) {
         return {
           read: false,
@@ -500,7 +505,7 @@ function checkInlineResultMessageContent(
         }
         : {
           read: true,
-          content: { kind: 'rich_message', richMessage, detectsEntities: content.detectsEntities },
+          content: { kind: 'rich_message', richMessage, detectsEntities: checking.detectsEntities },
         };
     }
     default: {

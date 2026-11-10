@@ -57,12 +57,14 @@ post:
         it, checking in this order: `rich_message` is missing or empty, or has none of `blocks`,
         `markdown`, and `html` (`Bad Request: rich message must be non-empty`), is not JSON (`Bad Request: can't parse rich
         message JSON object`), or not an object (`Bad Request: object expected as rich
-        message`); a block, a text, or a button cannot be read, with the Bot API server's or
-        TDLib's description, such as `Bad Request: type "…" is unsupported`, `Bad Request:
-        unsupported rich text type`, `Bad Request: invalid section heading size specified`,
-        `Bad Request: list must be either ordered or unordered`, `Bad Request: invalid map
-        properties specified`, or `Bad Request: media not found`; a row has more than 8 buttons
-        (`Bad Request: a button row can have at most 8 buttons`), a button other than a
+        message`); the Bot API server cannot read a block, a text, or a button anywhere in the
+        message, with its description, such as `Bad Request: can't parse InputRichBlock: type
+        "…" is unsupported` or `Bad Request: can't parse InputRichBlock: media not found`; then,
+        in the order of the blocks, TDLib's checks fail, such as `Bad Request: invalid section
+        heading size specified`, `Bad Request: list must be either ordered or unordered`, or
+        `Bad Request: invalid map properties specified`, or a row has more than 8 buttons
+        (`Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY`), a `thinking` block is sent
+        (`Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED`), a button other than a
         callback button has the link style (`Bad Request: only callback buttons can have the
         link style`), or a button's text holds formatting other than custom emoji and dates
         (`Bad Request: button text can have only custom emoji and dates`); a button's link

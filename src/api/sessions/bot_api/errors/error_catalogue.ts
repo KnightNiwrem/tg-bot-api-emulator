@@ -216,6 +216,14 @@ const GENERIC_ARRAY_READING = botApiServerSource('telegram-bot-api/Client.cpp#L1
  * point on Earth.
  */
 const LOCATION_CHECK = tdlibSource('td/telegram/Location.cpp#L158-L168');
+/**
+ * The Bot API documents rules for a rich message's buttons that Telegram has accepted a request
+ * breaking; the emulator refuses such a button to surface the documented rule.
+ */
+const DOCUMENTED_BUTTON_RULE_UNENFORCED = emulatorInference(
+  'The Bot API documents the rule, but Telegram accepts a button that breaks it, so the ' +
+    'emulator refuses the button with a description of its own',
+);
 
 /**
  * The errors of TDLib's `KeyboardButton::get_keyboard_button`, which allows a reply keyboard
@@ -1789,13 +1797,11 @@ export const BOT_API_ERRORS = {
     'Bad Request: rich message blocks with an animation or an audio file are not supported',
     emulatorInference('The emulator lacks animations and has no blocks for audio files'),
   ),
+  /** A `thinking` block outside a draft, which the Bot API documents and Telegram's servers check. */
   richThinkingBlockNotAllowed: fixedBotApiError(
     400,
-    'Bad Request: thinking blocks can be used only in rich message drafts',
-    emulatorInference(
-      "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
-        "code does not contain, so the description is the emulator's",
-    ),
+    'Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED',
+    observedBehavior('Telegram answers a sent rich message with a thinking block so'),
   ),
   richHeadingSizeInvalid: fixedBotApiError(
     400,
@@ -1843,29 +1849,21 @@ export const BOT_API_ERRORS = {
     'Bad Request: button row must be non-empty',
     tdlibSource('td/telegram/WebPageBlock.cpp#L5780'),
   ),
+  /** A row of more than 8 buttons, which the Bot API documents and Telegram's servers check. */
   richButtonRowTooLong: fixedBotApiError(
     400,
-    'Bad Request: a button row can have at most 8 buttons',
-    emulatorInference(
-      "The Bot API documents the limit, and Telegram's servers check it by rules the open-source " +
-        "code does not contain, so the description is the emulator's",
-    ),
+    'Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY',
+    observedBehavior('Telegram answers a rich message with a row of nine buttons so'),
   ),
   richLinkButtonStyleNotAllowed: fixedBotApiError(
     400,
     'Bad Request: only callback buttons can have the link style',
-    emulatorInference(
-      "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
-        "code does not contain, so the description is the emulator's",
-    ),
+    DOCUMENTED_BUTTON_RULE_UNENFORCED,
   ),
   richButtonTextFormattingNotAllowed: fixedBotApiError(
     400,
     'Bad Request: button text can have only custom emoji and dates',
-    emulatorInference(
-      "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
-        "code does not contain, so the description is the emulator's",
-    ),
+    DOCUMENTED_BUTTON_RULE_UNENFORCED,
   ),
   /** A date and time that is not positive, as TDLib's `FormattedDate::get_formatted_date` checks. */
   richTextDateInvalid: fixedBotApiError(
