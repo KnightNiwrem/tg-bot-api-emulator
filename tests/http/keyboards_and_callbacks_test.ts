@@ -15,7 +15,12 @@ import {
   isMessageHistoryResponse,
   isSentMessageResponse,
 } from '../support/http_response_guards.ts';
-import { botApiResult, callBotApi, createUpdateReader } from '../support/bot_api_requests.ts';
+import {
+  botApiResult,
+  callBotApi,
+  callBotApiWithFiles,
+  createUpdateReader,
+} from '../support/bot_api_requests.ts';
 import {
   createAccount,
   createBot,
@@ -909,6 +914,64 @@ Deno.test("editMessageReplyMarkup dates a bot's message whose content was never 
     },
     'Expected the sent message with the new keyboard and an edit date',
   );
+});
+
+// As recorded from Telegram in #241: an editMessageCaption or editMessageMedia call that keeps the
+// content and changes only the keyboard dates the message, and an identical repeat is refused.
+Deno.test('caption and media edits that change only the keyboard date the message', async () => {
+  await using fixture = await createPrivateConversationFixture(undefined, {
+    wallClock: FIXED_WALL_CLOCK,
+  });
+  const { api, botApiPath, createdAccount, sendText } = fixture;
+  await sendText('/start');
+  const chatId = createdAccount.account.id;
+  const keyboardOf = (callbackData: string) => ({
+    inline_keyboard: [[{ text: callbackData, callback_data: callbackData }]],
+  });
+  const sent = botApiResult(
+    (await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
+      chat_id: String(chatId),
+      caption: 'Report',
+      reply_markup: JSON.stringify(keyboardOf('sent')),
+    }, { document: new File([new Uint8Array([1, 2, 3])], 'report.txt') })).body,
+  );
+  const sentDocument = sent?.document as Record<string, unknown> | undefined;
+  if (sent === undefined || sentDocument === undefined || Object.hasOwn(sent, 'edit_date')) {
+    throw new Error(`Expected an undated document to be sent, received ${JSON.stringify(sent)}`);
+  }
+  const target = { chat_id: chatId, message_id: sent.message_id };
+  const sameCaption = { ...target, caption: 'Report' };
+  const sameMedia = {
+    ...target,
+    media: { type: 'document', media: sentDocument.file_id, caption: 'Report' },
+  };
+  const edits = [
+    ['editMessageCaption', { ...sameCaption, reply_markup: keyboardOf('caption') }],
+    ['editMessageMedia', { ...sameMedia, reply_markup: keyboardOf('media') }],
+  ] as const;
+
+  for (const [method, parameters] of edits) {
+    const edit = await callBotApi(api, `${botApiPath}/${method}`, parameters);
+    const edited = botApiResult(edit.body);
+    const editedDocument = edited?.document as Record<string, unknown> | undefined;
+    assertEqualsInFieldOrder(
+      [
+        edited?.edit_date,
+        edited?.caption,
+        editedDocument?.file_unique_id,
+        edited?.reply_markup,
+        (await callBotApi(api, `${botApiPath}/${method}`, parameters)).status,
+      ],
+      [
+        TEST_UNIX_TIME_SECONDS,
+        'Report',
+        sentDocument.file_unique_id,
+        parameters.reply_markup,
+        400,
+      ],
+      `Expected ${method} to keep the document, date the new keyboard, and refuse a repeat`,
+    );
+  }
 });
 
 Deno.test('editMessageText and editMessageReplyMarkup follow Telegram checks', async () => {

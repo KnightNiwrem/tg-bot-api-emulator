@@ -153,10 +153,9 @@ Topics are a [real gap](#real-gaps): `message_thread_id` is refused as an unknow
 Bots edit text, captions, media and inline keyboards with `editMessageText`, `editMessageCaption`,
 `editMessageMedia` and `editMessageReplyMarkup`; `editMessageText` also turns text into a
 [rich message](rich-messages.md#sending-and-editing) and back. Omitting the inline keyboard in an
-edit removes it. Unchanged content and markup produce the message-not-modified error. Every edit
-sets `edit_date`. Telegram does so for an `editMessageReplyMarkup` call that changes only the inline
-keyboard; the emulator also dates a text, caption or media edit that keeps the content and changes
-only the keyboard, which has not been observed on Telegram. A [poll's](polls.md#sending-polls) media
+edit removes it. Unchanged content and markup produce the message-not-modified error. As on
+Telegram, every edit sets `edit_date`, including one that keeps the content and changes only the
+inline keyboard, whichever of the four methods makes it. A [poll's](polls.md#sending-polls) media
 cannot be edited. Accounts can edit their own text or captions through the emulation API, producing
 `edited_message` updates for eligible bots.
 
