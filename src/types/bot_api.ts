@@ -617,7 +617,7 @@ interface BotApiMessageHeader<Chat> {
   readonly from: BotApiUser;
   readonly chat: Chat;
   readonly date: number;
-  /** Omitted for a message whose content was never edited. */
+  /** Omitted for a message never edited; an edited message always shows it. */
   readonly edit_date?: number;
   /** Present only for a forward. */
   readonly forward_origin?: BotApiMessageOrigin;
@@ -682,6 +682,20 @@ export type BotApiSupergroupMessage = BotApiMessageInChat<
 >;
 
 export type BotApiMessage = BotApiPrivateMessage | BotApiSupergroupMessage;
+
+/** When a message was last edited, which an edited message shows. */
+export interface BotApiEditDate {
+  readonly edit_date: number;
+}
+
+/** A private message as an edit left it. */
+export type BotApiEditedPrivateMessage = BotApiPrivateMessage & BotApiEditDate;
+
+/** A supergroup message as an edit left it. */
+export type BotApiEditedSupergroupMessage = BotApiSupergroupMessage & BotApiEditDate;
+
+/** A message as an edit left it: the result of an edit method, or an `edited_message`. */
+export type BotApiEditedMessage = BotApiEditedPrivateMessage | BotApiEditedSupergroupMessage;
 
 export type BotApiRepliedPrivateMessage = BotApiRepliedMessageInChat<
   BotApiPrivateChat,
@@ -1041,7 +1055,7 @@ export interface BotApiMessageUpdate {
 
 export interface BotApiEditedMessageUpdate {
   readonly update_id: number;
-  readonly edited_message: BotApiMessage;
+  readonly edited_message: BotApiEditedMessage;
 }
 
 export interface BotApiCallbackQueryUpdate {

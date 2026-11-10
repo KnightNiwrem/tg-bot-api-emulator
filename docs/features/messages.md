@@ -153,7 +153,8 @@ Topics are a [real gap](#real-gaps): `message_thread_id` is refused as an unknow
 Bots edit text, captions, media and inline keyboards with `editMessageText`, `editMessageCaption`,
 `editMessageMedia` and `editMessageReplyMarkup`; `editMessageText` also turns text into a
 [rich message](rich-messages.md#sending-and-editing) and back. Omitting the inline keyboard in an
-edit removes it. Unchanged content and markup produce the message-not-modified error. A
+edit removes it. Unchanged content and markup produce the message-not-modified error. Every edit
+sets `edit_date`, including one that changes only the inline keyboard, as Telegram does. A
 [poll's](polls.md#sending-polls) media cannot be edited. Accounts can edit their own text or
 captions through the emulation API, producing `edited_message` updates for eligible bots.
 

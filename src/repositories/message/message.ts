@@ -82,7 +82,7 @@ const messageEditors: {
     {
       content: _replacedContent,
       inlineKeyboard: _replacedInlineKeyboard,
-      contentEditedAtUnixSeconds: _replacedContentEditedAtUnixSeconds,
+      editedAtUnixSeconds: _replacedEditedAtUnixSeconds,
       ...preservedFields
     },
     edit,
@@ -91,7 +91,7 @@ const messageEditors: {
     {
       content: _replacedContent,
       inlineKeyboard: _replacedInlineKeyboard,
-      contentEditedAtUnixSeconds: _replacedContentEditedAtUnixSeconds,
+      editedAtUnixSeconds: _replacedEditedAtUnixSeconds,
       ...preservedFields
     },
     edit,
@@ -387,16 +387,16 @@ function copyReply(
 function copyMessageEdit(edit: MessageEdit): {
   readonly content: MessageContent;
   readonly inlineKeyboard?: InlineKeyboard;
-  readonly contentEditedAtUnixSeconds?: number;
+  readonly editedAtUnixSeconds?: number;
 } {
   return {
     content: copyContent(edit.content),
     ...(edit.inlineKeyboard === undefined
       ? {}
       : { inlineKeyboard: copyInlineKeyboard(edit.inlineKeyboard) }),
-    ...(edit.contentEditedAtUnixSeconds === undefined
+    ...(edit.editedAtUnixSeconds === undefined
       ? {}
-      : { contentEditedAtUnixSeconds: edit.contentEditedAtUnixSeconds }),
+      : { editedAtUnixSeconds: edit.editedAtUnixSeconds }),
   };
 }
 

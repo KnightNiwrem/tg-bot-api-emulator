@@ -301,7 +301,7 @@ function createEditingFixture() {
         messages: history.found
           ? history.messages.map((message) => ({
             content: message.content,
-            editedAt: message.contentEditedAtUnixSeconds ?? null,
+            editedAt: message.editedAtUnixSeconds ?? null,
           }))
           : history.reason,
         pendingUpdates: harness.countPendingUpdates([alpha, beta]),

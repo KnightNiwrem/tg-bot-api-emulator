@@ -71,6 +71,8 @@ import type {
   BotApiDocument,
   BotApiDownloadableFile,
   BotApiEditedMessageUpdate,
+  BotApiEditedPrivateMessage,
+  BotApiEditedSupergroupMessage,
   BotApiInaccessibleMessage,
   BotApiInlineQueryUpdate,
   BotApiInvoice,
@@ -131,26 +133,6 @@ import type {
  *   `JsonMessageGenerationStopped` changes.
  */
 type DraftIdIsDecimalText = ReferenceDeviation<MessageGenerationStopped, { draft_id: string }>;
-
-/**
- * Unclassified pending Telegram evidence: an `edited_message` may lack `edit_date`, which grammY
- * requires. A bot's keyboard-only edit of a message an account sent through its inline mode keeps
- * the message's content-edit time, absent before any content edit, and the projection omits an
- * absent time. Telegram's output for that edit is not established, so the local type is not
- * narrowed and no timestamp is invented.
- *
- * - Scope: `edit_date` of the edited messages of `edited_message` updates.
- * - Evidence: https://github.com/KnightNiwrem/tg-bot-api-emulator/issues/164 (Finding 3);
- *   `tests/inline_message_keyboard_edit_test.ts` records the emulator's output in a private chat
- *   and a supergroup. The server writes `edit_date` only when it is positive
- *   (https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L4762-L4764).
- * - Re-review when a recording from Telegram shows what a bot receives for such an edit; then
- *   either fix the emulator or narrow this deviation to that edit.
- */
-type EditDateOfEditedMessageUnclassified = ReferenceDeviation<
-  Update.Edited,
-  { edit_date?: number }
->;
 
 /**
  * Unclassified pending Telegram evidence: a rich message's map shows the zoom its sender chose,
@@ -294,7 +276,6 @@ type DefaultAdministratorRightsPresenceUnchecked = ReferenceDeviation<
 
 type ReferenceDeviations =
   | DraftIdIsDecimalText
-  | EditDateOfEditedMessageUnclassified
   | MapZoomUnclassified
   | BankCardNumberEntities
   | LegacyForwardFields
@@ -445,10 +426,10 @@ interface BotApiWireTypeConformance {
     >
   >;
   editedPrivateMessage: ExpectTrue<
-    ConformsToGrammy<BotApiPrivateMessage, GrammyEditedPrivateMessage>
+    ConformsToGrammy<BotApiEditedPrivateMessage, GrammyEditedPrivateMessage>
   >;
   editedSupergroupMessage: ExpectTrue<
-    ConformsToGrammy<BotApiSupergroupMessage, GrammyEditedSupergroupMessage>
+    ConformsToGrammy<BotApiEditedSupergroupMessage, GrammyEditedSupergroupMessage>
   >;
   editedPrivateMessageUpdate: ExpectTrue<
     ConformsToGrammy<
@@ -605,16 +586,6 @@ interface DeviationsInUse {
         DraftIdIsDecimalText
       >,
       'draft_id'
-    >
-  >;
-  editDateOfEditedMessageUnclassified: ExpectTrue<
-    FailsAt<
-      ConformsWithout<
-        BotApiPrivateMessage,
-        GrammyEditedPrivateMessage,
-        EditDateOfEditedMessageUnclassified
-      >,
-      'edit_date'
     >
   >;
   mapZoomUnclassified: ExpectTrue<

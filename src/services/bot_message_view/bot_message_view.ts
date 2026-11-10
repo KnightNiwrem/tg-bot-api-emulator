@@ -32,6 +32,7 @@ import {
   projectRepliedSupergroupMessage,
   projectSupergroupChat,
   projectSupergroupMessage,
+  requireEditedMessageView,
 } from '../../projections/bot_api_message.ts';
 import { projectMessageReactionChange } from '../../projections/bot_api_message_reaction.ts';
 import type {
@@ -43,6 +44,7 @@ import type {
   BotApiChatMember,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
+  BotApiEditedMessage,
   BotApiInlineQuery,
   BotApiMessage,
   BotApiMessageGenerationStopped,
@@ -223,6 +225,14 @@ export class BotMessageViewService {
         throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
       }
     }
+  }
+
+  /**
+   * Returns a committed message of any chat as an edit left it, as `viewMessageForBot` shows it
+   * to a bot of that chat, with the edit's date.
+   */
+  viewEditedMessageForBot(message: ChatMessage, botId: number): BotApiEditedMessage {
+    return requireEditedMessageView(this.viewMessageForBot(message, botId));
   }
 
   /**

@@ -7,6 +7,7 @@ import {
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
+import { FIXED_WALL_CLOCK, TEST_UNIX_TIME_SECONDS } from '../support/fixed_wall_clock.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import {
   isBadRequestResponse,
@@ -864,6 +865,52 @@ Deno.test('a callback query created expired reaches the bot but refuses its answ
   }
 });
 
+// As recorded from Telegram in #241: a bot's keyboard-only edit of its message dates the message
+// even before any content edit.
+Deno.test("editMessageReplyMarkup dates a bot's message whose content was never edited", async () => {
+  await using fixture = await createPrivateConversationFixture(undefined, {
+    wallClock: FIXED_WALL_CLOCK,
+  });
+  const { api, botApiPath, createdAccount, sendText } = fixture;
+  await sendText('/start');
+  const chatId = createdAccount.account.id;
+  const sent = botApiResult(
+    (await callBotApi(api, `${botApiPath}/sendMessage`, {
+      chat_id: chatId,
+      text: 'Continue?',
+      reply_markup: { inline_keyboard: [[{ text: 'Before', callback_data: 'before' }]] },
+    })).body,
+  );
+  if (sent === undefined || Object.hasOwn(sent, 'edit_date')) {
+    throw new Error(`Expected an undated message to be sent, received ${JSON.stringify(sent)}`);
+  }
+  const replacementKeyboard = { inline_keyboard: [[{ text: 'After', callback_data: 'after' }]] };
+
+  const { body } = await callBotApi(api, `${botApiPath}/editMessageReplyMarkup`, {
+    chat_id: chatId,
+    message_id: sent.message_id,
+    reply_markup: replacementKeyboard,
+  });
+
+  const { message_id, from, chat, date, ...afterDate } = sent;
+  assertEqualsInFieldOrder(
+    body,
+    {
+      ok: true,
+      result: {
+        message_id,
+        from,
+        chat,
+        date,
+        edit_date: TEST_UNIX_TIME_SECONDS,
+        ...afterDate,
+        reply_markup: replacementKeyboard,
+      },
+    },
+    'Expected the sent message with the new keyboard and an edit date',
+  );
+});
+
 Deno.test('editMessageText and editMessageReplyMarkup follow Telegram checks', async () => {
   await using fixture = await createPrivateConversationFixture();
   const { api, botApiPath, createdAccount, sendText } = fixture;
@@ -945,9 +992,11 @@ Deno.test('editMessageText and editMessageReplyMarkup follow Telegram checks', a
   if (
     keyboardEdit.status !== 200 || keyboardEditResult === undefined ||
     keyboardEditResult.message_id !== messageId || 'reply_markup' in keyboardEditResult ||
-    'edit_date' in keyboardEditResult
+    typeof keyboardEditResult.edit_date !== 'number'
   ) {
-    throw new Error('Expected editMessageReplyMarkup without markup to remove the keyboard');
+    throw new Error(
+      'Expected editMessageReplyMarkup without markup to remove the keyboard with an edit date',
+    );
   }
   const textEdit = await callBotApi(api, `${botApiPath}/editMessageText`, {
     chat_id: accountId,

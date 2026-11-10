@@ -229,7 +229,7 @@ Deno.test('BotUpdateDeliveryService delivers an account edit, but not its own, t
   const edit = {
     entities: [],
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
   };
 
   botUpdateDelivery.project({
@@ -370,7 +370,7 @@ Deno.test('BotUpdateDeliveryService delivers supergroup additions and edits to t
   messageBoxes.assignMessageId(supergroup.id, message.id);
   const editedMessage = messages.editMessage(message.chat, message.id, {
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_002,
+    editedAtUnixSeconds: 1_700_000_002,
     content: { kind: 'text', text: 'Hello again', entities: [] },
   });
   botUpdateDelivery.project({ type: 'message_edited', message: editedMessage });

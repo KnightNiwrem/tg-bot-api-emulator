@@ -77,7 +77,7 @@ Deno.test('MessageRepository edits a message in place without changing its ident
 
   const editedMessage = messages.editMessage(firstMessage.chat, firstMessage.id, {
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
     content: {
       kind: 'text',
       text: 'Continued /start',
@@ -91,7 +91,7 @@ Deno.test('MessageRepository edits a message in place without changing its ident
     editedMessage.content.kind !== 'text' ||
     editedMessage.content.text !== 'Continued /start' ||
     editedMessage.content.entities.length !== 1 ||
-    editedMessage.contentEditedAtUnixSeconds !== 1_700_000_005 ||
+    editedMessage.editedAtUnixSeconds !== 1_700_000_005 ||
     'inlineKeyboard' in editedMessage
   ) {
     throw new Error('Expected the edit to replace only the editable content');
@@ -150,7 +150,7 @@ Deno.test('MessageRepository keeps what an edit cannot change', () => {
 
   const editedAnswer = messages.editMessage(answer.chat, answer.id, {
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
     content: { kind: 'text', text: 'Pick a color', entities: [] },
   });
   if (
@@ -189,7 +189,7 @@ Deno.test('MessageRepository keeps fields that only some messages carry through 
   const edit = {
     content: { kind: 'text' as const, text: 'Edited', entities: [] },
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
   };
 
   const editedPrivateMessage = messages.editMessage(privateMessage.chat, privateMessage.id, edit);
@@ -243,9 +243,9 @@ Deno.test('MessageRepository drops the inline keyboard and edit time that an edi
   const editedMessage = messages.editMessage(message.chat, message.id, {
     content: { kind: 'text', text: 'Continue now?', entities: [] },
     inlineKeyboard,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
   });
-  if (editedMessage.contentEditedAtUnixSeconds !== 1_700_000_005) {
+  if (editedMessage.editedAtUnixSeconds !== 1_700_000_005) {
     throw new Error('Expected the edit to write the inline keyboard and edit time it carries');
   }
   assertEquals(
@@ -257,9 +257,9 @@ Deno.test('MessageRepository drops the inline keyboard and edit time that an edi
   const reeditedMessage = messages.editMessage(message.chat, message.id, {
     content: { kind: 'text', text: 'Done', entities: [] },
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: undefined,
+    editedAtUnixSeconds: undefined,
   });
-  if ('inlineKeyboard' in reeditedMessage || 'contentEditedAtUnixSeconds' in reeditedMessage) {
+  if ('inlineKeyboard' in reeditedMessage || 'editedAtUnixSeconds' in reeditedMessage) {
     throw new Error('Expected the edit to drop the inline keyboard and edit time it omits');
   }
 });
@@ -294,7 +294,7 @@ Deno.test('MessageRepository issues distinct album identifiers that messages kee
   });
   const edit = {
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
     content: {
       ...photo,
       caption: { text: 'Edited', entities: [] },
@@ -363,7 +363,7 @@ Deno.test('MessageRepository stores, edits, and deletes supergroup messages by c
 
   const edited = messages.editMessage(first.chat, first.id, {
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_001,
+    editedAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'edited', entities: [] },
   });
   messages.deleteMessage(second.id);
@@ -371,7 +371,7 @@ Deno.test('MessageRepository stores, edits, and deletes supergroup messages by c
   const history = messages.getChatMessages({ type: 'supergroup', chatId: -1_000_000_000_001 });
   if (
     history.length !== 1 || history[0] !== edited || edited.id !== first.id ||
-    edited.contentEditedAtUnixSeconds !== 1_700_000_001 || !first.sender ||
+    edited.editedAtUnixSeconds !== 1_700_000_001 || !first.sender ||
     messages.findChatMessage(second.chat, second.id) !== undefined ||
     messages.findChatMessage({ type: 'supergroup', chatId: -1_000_000_000_002 }, first.id) !==
       undefined ||
@@ -421,7 +421,7 @@ Deno.test('MessageRepository finds messages sent through inline bots until they 
   const editedMessage = messages.editMessage(privateMessage.chat, privateMessage.id, {
     content: { kind: 'text', text: 'More cats', entities: [] },
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_001,
+    editedAtUnixSeconds: 1_700_000_001,
   });
   if (
     editedMessage.viaBot?.inlineMessageId !== privateViaBot.inlineMessageId ||
@@ -546,7 +546,7 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
   const edit = {
     content: { kind: 'text', text: 'edited', entities: [] },
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
   } as const;
   const refusals = [
     () => messages.editMessage(SECOND_PRIVATE_CHAT, privateMessage.id, edit),
@@ -608,7 +608,7 @@ Deno.test('MessageRepository keeps the fields only some chat types carry through
     supergroupMessage.id,
     reactions,
   );
-  const edit = { content, inlineKeyboard: undefined, contentEditedAtUnixSeconds: 1_700_000_005 };
+  const edit = { content, inlineKeyboard: undefined, editedAtUnixSeconds: 1_700_000_005 };
   const editedPrivateMessage = messages.editMessage(FIRST_PRIVATE_CHAT, privateMessage.id, edit);
   const editedSupergroupMessage = messages.editMessage(
     FIRST_SUPERGROUP,

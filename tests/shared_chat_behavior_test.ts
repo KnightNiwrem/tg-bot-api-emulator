@@ -329,7 +329,7 @@ const SHARED_BEHAVIORS: readonly SharedBehavior[] = [
         [
           edit.id,
           edit.sentAtUnixSeconds,
-          edit.contentEditedAtUnixSeconds,
+          edit.editedAtUnixSeconds,
           textOf(edit),
           edit.inlineKeyboard,
         ],
@@ -359,7 +359,7 @@ const SHARED_BEHAVIORS: readonly SharedBehavior[] = [
       const boldEdit = expectEdited(edit([{ type: 'bold', offset: 0, length: 9 }]));
       assertEquals(
         [
-          boldEdit.contentEditedAtUnixSeconds,
+          boldEdit.editedAtUnixSeconds,
           getContentText(boldEdit.content).entities,
           describeEdit(edit([
             { type: 'bold', offset: 0, length: 4 },
@@ -376,7 +376,7 @@ const SHARED_BEHAVIORS: readonly SharedBehavior[] = [
     },
   },
   {
-    behavior: "a bot's keyboard edit keeps the text and the date of its last content edit",
+    behavior: "a bot's edit that changes only the keyboard keeps the content and dates the edit",
     chatTypes: CHAT_TYPES,
     check: (subject) => {
       const message = expectSent(subject.sendBotMessage({
@@ -384,14 +384,22 @@ const SHARED_BEHAVIORS: readonly SharedBehavior[] = [
       }));
       const messageId = subject.messageIdOf(message);
       subject.advanceClockSeconds(5);
-      expectEdited(subject.editBotText(messageId, { content: { kind: 'text', text: 'Choose' } }));
+      const keyboardEdit = expectEdited(subject.editBotKeyboard(messageId, YES_NO_KEYBOARD));
       subject.advanceClockSeconds(5);
-      const edit = expectEdited(subject.editBotKeyboard(messageId, YES_NO_KEYBOARD));
-      // The status quo pending #241 (does Telegram date a keyboard-only edit?), which may change it.
+      const sameTextEdit = expectEdited(subject.editBotText(messageId, {
+        content: { kind: 'text', text: 'Continue?' },
+      }));
       assertEquals(
-        [getContentText(edit.content).text, edit.contentEditedAtUnixSeconds, edit.inlineKeyboard],
-        ['Choose', TEST_UNIX_TIME_SECONDS + 5, YES_NO_KEYBOARD],
-        'Expected only the keyboard to change, keeping the date of the text edit',
+        [keyboardEdit, sameTextEdit].map((edit) => [
+          getContentText(edit.content).text,
+          edit.editedAtUnixSeconds,
+          edit.inlineKeyboard,
+        ]),
+        [
+          ['Continue?', TEST_UNIX_TIME_SECONDS + 5, YES_NO_KEYBOARD],
+          ['Continue?', TEST_UNIX_TIME_SECONDS + 10, undefined],
+        ],
+        'Expected each keyboard change to keep the text and be dated, before any text edit',
       );
     },
   },
@@ -465,7 +473,7 @@ const SHARED_BEHAVIORS: readonly SharedBehavior[] = [
       );
       assertEquals(
         [
-          edit.contentEditedAtUnixSeconds,
+          edit.editedAtUnixSeconds,
           textOf(edit),
           describeEdit(subject.editAccountText(subject.messageIdOf(own), ' Hello /help ')),
           describeEdit(subject.editAccountText(subject.messageIdOf(botMessage), 'Edited')),

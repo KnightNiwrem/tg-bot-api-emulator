@@ -1,3 +1,4 @@
+import { assertThrows } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account/account.ts';
 import { BotRepository } from '../src/repositories/bot/bot.ts';
 import { FileRepository } from '../src/repositories/file/file.ts';
@@ -79,7 +80,7 @@ Deno.test('BotMessageViewService shows a bot message, then its edit date and key
       { kind: 'callback', text: 'Yes', callbackData: 'yes' },
       { kind: 'url', text: 'Docs', url: 'https://grammy.dev' },
     ]],
-    contentEditedAtUnixSeconds: 1_700_000_005,
+    editedAtUnixSeconds: 1_700_000_005,
     content: {
       kind: 'text',
       text: 'Try /help',
@@ -105,6 +106,17 @@ Deno.test('BotMessageViewService shows a bot message, then its edit date and key
     },
   };
   assertEqualsInFieldOrder(view, expectedView, 'Expected the edited message with its keyboard');
+  assertEqualsInFieldOrder(
+    botMessageViews.viewEditedMessageForBot(message, bot.profile.id),
+    expectedView,
+    'Expected the edited view to show the edit date',
+  );
+  assertThrows(
+    () => botMessageViews.viewEditedMessageForBot(sentMessage, bot.profile.id),
+    Error,
+    'shows no edit date',
+    'Expected an undated message to be refused as an edited view',
+  );
 });
 
 Deno.test('BotMessageViewService shows the current replied message until it is deleted', () => {
@@ -138,7 +150,7 @@ Deno.test('BotMessageViewService shows the current replied message until it is d
   messageBoxes.assignMessageId(bot.profile.id, confirmation.id);
   messages.editMessage(question.chat, question.id, {
     inlineKeyboard: undefined,
-    contentEditedAtUnixSeconds: 1_700_000_003,
+    editedAtUnixSeconds: 1_700_000_003,
     content: { kind: 'text', text: 'Your first name?', entities: [] },
   });
   const botSender = {

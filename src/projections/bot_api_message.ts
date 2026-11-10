@@ -8,6 +8,7 @@ import {
   type BotApiChatMemberUpdated,
   type BotApiChatSharedServiceContent,
   type BotApiChosenInlineResult,
+  type BotApiEditDate,
   type BotApiExternalReplyInfo,
   type BotApiExternalReplyMedia,
   type BotApiGroupChat,
@@ -219,6 +220,20 @@ export function projectPrivateMessageForBot(
 }
 
 /**
+ * Returns the view of a message as an edit left it, which shows when it was edited. Every edit
+ * that reaches a bot dates its message, so a view without an edit date is a defect.
+ */
+export function requireEditedMessageView<View extends BotApiMessage>(
+  view: View,
+): View & BotApiEditDate {
+  const { edit_date } = view;
+  if (edit_date === undefined) {
+    throw new Error(`Edited message ${view.message_id} shows no edit date`);
+  }
+  return { ...view, edit_date };
+}
+
+/**
  * Projects a private message as the message another one replies to shows it, without its own
  * reply, as `projectPrivateMessageForBot` projects a message otherwise.
  */
@@ -413,9 +428,9 @@ function projectMessageBody<
 ) {
   const { viaBot, forwardSender, externalReply } = context;
   return {
-    ...(message.contentEditedAtUnixSeconds === undefined
+    ...(message.editedAtUnixSeconds === undefined
       ? {}
-      : { edit_date: message.contentEditedAtUnixSeconds }),
+      : { edit_date: message.editedAtUnixSeconds }),
     ...projectForward(message, forwardSender),
     ...(repliedMessage === undefined ? {} : { reply_to_message: repliedMessage }),
     ...(message.externalReply === undefined
