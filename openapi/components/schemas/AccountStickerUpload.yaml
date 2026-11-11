@@ -3,8 +3,8 @@ additionalProperties: false
 description: >-
   A regular static sticker a test defines as a fixture: a WebP image without animation and the
   emoji it is associated with. The emulator reads the RIFF container and the image bitstream's
-  header, not the compressed pixels. Any positive dimensions and size are accepted: Telegram's
-  sticker-set preparation rules, such as a 512-pixel side or a 512 KB limit, are not applied,
+  header, not the compressed pixels. Any dimensions and size the WebP format allows are accepted:
+  Telegram's sticker-set preparation rules, such as a 512-pixel side or a 512 KB limit, are not applied,
   since Telegram documents none for sending a sticker.
 required:
   - content_base64

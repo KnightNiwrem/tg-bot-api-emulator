@@ -524,8 +524,8 @@ export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTar
 export interface AccountSendStickerInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /**
-   * A WebP image without animation, whose dimensions the emulator reads from it. Any positive
-   * dimensions and size are accepted: Telegram's sticker-set rules, such as a 512-pixel side, do
+   * A WebP image without animation, whose dimensions the emulator reads from it. Any dimensions
+   * and size the WebP format allows are accepted: Telegram's sticker-set rules, such as a 512-pixel side, do
    * not apply.
    */
   readonly sticker: Uint8Array;

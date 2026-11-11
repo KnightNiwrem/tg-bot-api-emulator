@@ -227,10 +227,10 @@ payload is 10 bytes with a canvas of at most 2^32 - 1 pixels, and a `VP8L` heade
 Data after the RIFF size and unknown chunks are ignored, as the specification allows and requires;
 without the animation flag, so are `ANIM`, which the specification requires, and `ANMF`, which it
 says should not be present. Other content fails with `sticker_invalid`, and content with the
-animation flag with `sticker_animation_unsupported`. Compressed pixels are not decoded. No dimension
-or size limit applies: the [`sendSticker`][send-sticker-reference] contract states none, and the
-512-pixel side and 512 KB of Telegram's [sticker import rules][import-stickers] govern sticker sets,
-not sending.
+animation flag with `sticker_animation_unsupported`. Compressed pixels are not decoded. Beyond what
+the WebP format allows, no dimension or size limit applies: the
+[`sendSticker`][send-sticker-reference] contract states none, and the 512-pixel side and 512 KB of
+Telegram's [sticker import rules][import-stickers] govern sticker sets, not sending.
 
 `sendSticker` reads its `sticker` as the official server's
 [`process_send_sticker_query`][send-sticker] does, failing without one with
