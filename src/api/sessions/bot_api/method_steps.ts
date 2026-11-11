@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import {
   describeInvalidMethodParameters,
@@ -14,7 +14,11 @@ import {
   type BotApiMethodOutcome,
   SESSION_ENDED,
 } from './method_call.ts';
-import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
+import type {
+  BotApiRequestParameters,
+  BotApiUploadedFiles,
+  DeferredParameter,
+} from './request_parameters.ts';
 
 /**
  * What one step of a call produced: the value that the steps after it read, or the answer that ends
@@ -54,6 +58,25 @@ export interface BotApiSteps<Value> {
   readonly result: BotApiStepResult<Value>;
 }
 
+/**
+ * Reads a parameter that `deferredParameter` held for the steps: its value, or the answer the
+ * method's schema would have given its first problem, as `invalidMethodParametersAnswer` describes,
+ * with the problem's path starting from `parameterName`.
+ */
+export function readDeferredParameter<Value>(
+  { methodName }: Pick<BotApiStepCall<unknown>, 'methodName'>,
+  parameterName: string,
+  parameter: DeferredParameter<Value>,
+): BotApiStepResult<Value> {
+  if (parameter.fits) {
+    return proceedWith(parameter.value);
+  }
+  const error = new z.ZodError(
+    parameter.issues.map((issue) => ({ ...issue, path: [parameterName, ...issue.path] })),
+  );
+  return answerWith(invalidMethodParametersAnswer(methodName, error));
+}
+
 /** Steps that start from `value`, such as a call's parameters as its method's schema read them. */
 export function startSteps<Value>(value: Value): BotApiSteps<Value> {
   return stepsFrom(proceedWith(value));
@@ -69,6 +92,7 @@ function stepsFrom<Value>(result: BotApiStepResult<Value>): BotApiSteps<Value> {
 
 /** A call of a method, as its steps read it once its parameters fit the method's schema. */
 export interface BotApiStepCall<Parameters> {
+  readonly methodName: string;
   readonly context: BotApiMethodContext;
   readonly parameters: Parameters;
   readonly uploadedFiles: BotApiUploadedFiles;
@@ -211,6 +235,7 @@ function runSteps<Schema extends z.ZodType, Prepared>(
     return answerWith(invalidMethodParametersAnswer(name, parsedParameters.error));
   }
   return steps({
+    methodName: name,
     context,
     parameters: parsedParameters.data,
     uploadedFiles,

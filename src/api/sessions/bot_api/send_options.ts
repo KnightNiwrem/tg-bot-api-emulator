@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../session/emulation_session.ts';
+import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
 import { resolveChatIdentifier } from './chat_access.ts';
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';
@@ -11,15 +12,21 @@ import {
   type BotApiStepCall,
   type BotApiStepResult,
   proceedWith,
+  readDeferredParameter,
 } from './method_steps.ts';
 import { messageReplyMarkupParameter } from './reply_markup_parameter.ts';
-import { readMessageReplyMarkupParameter } from './reply_markup_reading.ts';
+import {
+  checkMessageReplyMarkupParameter,
+  parseInlineKeyboardParameter,
+  resolveLoginButtonBots,
+} from './reply_markup_reading.ts';
 import {
   replyParametersParameter,
   selectSpecifiedReplyTarget,
 } from './reply_parameters_parameter.ts';
 import {
   booleanParameter,
+  deferredParameter,
   integerParameter,
   optionalInt64Identifier,
 } from './request_parameters.ts';
@@ -37,9 +44,12 @@ export const sendOptionsParametersShape = {
   allow_sending_without_reply: booleanParameter().default(false),
 };
 
-/** The reply markup that every send method but `sendMediaGroup` attaches to its message. */
+/**
+ * The reply markup that every send method but `sendMediaGroup` attaches to its message, which
+ * `readSendOptions` reads where the official Bot API server's `do_send_message` does.
+ */
 export const replyMarkupParametersShape = {
-  reply_markup: messageReplyMarkupParameter().default({}),
+  reply_markup: deferredParameter(messageReplyMarkupParameter().default({})),
 };
 
 /** Where and how a send method sends its message, which every send method takes alike. */
@@ -54,13 +64,15 @@ export type SendOptionsParameters =
 
 /**
  * The step that reads where and how a send method sends its message, with its reply markup, if
- * the method reads one: the formatting of a quote, then `chat_id`, then the reply markup, then the
- * reply's chat. As the official Bot API server's `get_reply_parameters` does, the formatting of a
- * quote is read before the chat; as its `check_reply_parameters` does, a reply naming the chat the
- * message is sent to replies in that chat.
+ * the method reads one, in the order of the official Bot API server's `do_send_message`: the
+ * formatting of a quote, as `get_reply_parameters` reads it; the reply markup and its buttons, as
+ * `get_reply_markup` parses them; their login buttons' bots, as `resolve_reply_markup_bot_usernames`
+ * resolves them; `chat_id`, as `check_chat` reads it; the reply's chat, as `check_reply_parameters`
+ * reads it; and last the buttons as TDLib checks them. A reply naming the chat the message is sent
+ * to replies in that chat.
  */
 export function readSendOptions<Send extends { readonly parameters: SendOptionsParameters }>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  call: BotApiStepCall<unknown>,
   send: Send,
 ): BotApiStepResult<Send & { readonly options: SendRequestOptions }> {
   const { parameters } = send;
@@ -69,8 +81,9 @@ export function readSendOptions<Send extends { readonly parameters: SendOptionsP
     disable_notification: isSilent,
     protect_content: isContentProtected,
     message_effect_id: messageEffectId,
-    reply_markup: replyMarkup,
+    reply_markup: replyMarkupParameter,
   } = parameters;
+  const { context, invalidParametersDescription } = call;
   const replyTarget = selectSpecifiedReplyTarget(parameters);
   const quote = replyTarget?.quote;
   const quoteReading = quote === undefined ? undefined : readFormattedTextParameters({
@@ -81,12 +94,23 @@ export function readSendOptions<Send extends { readonly parameters: SendOptionsP
   if (quoteReading?.read === false) {
     return answerWithBadRequest(quoteReading.description);
   }
+  const markupReading: BotApiStepResult<BotMessageReplyMarkup> = replyMarkupParameter === undefined
+    ? proceedWith({})
+    : readDeferredParameter(call, 'reply_markup', replyMarkupParameter);
+  if (!markupReading.proceeds) {
+    return markupReading;
+  }
+  const replyMarkup = markupReading.value;
+  const markupParsing = parseInlineKeyboardParameter(replyMarkup.inlineKeyboard);
+  if (!markupParsing.parsed) {
+    return answerWith(markupParsing.errorAnswer);
+  }
+  const markupResolution = resolveLoginButtonBots(context, [replyMarkup.inlineKeyboard]);
+  if (!markupResolution.resolved) {
+    return answerWith(markupResolution.errorAnswer);
+  }
   if (chatId === undefined) {
     return answerWith(presentFixedBotApiError(BOT_API_ERRORS.chatIdEmpty));
-  }
-  const markupReading = readMessageReplyMarkupParameter(context, replyMarkup ?? {}, chatId);
-  if (!markupReading.read) {
-    return answerWith(markupReading.errorAnswer);
   }
   const replyChatId = replyTarget?.chatId === undefined
     ? undefined
@@ -94,10 +118,14 @@ export function readSendOptions<Send extends { readonly parameters: SendOptionsP
   if (replyTarget?.chatId !== undefined && replyChatId === undefined) {
     return answerWith(presentFixedBotApiError(BOT_API_ERRORS.chatNotFound));
   }
+  const markupChecking = checkMessageReplyMarkupParameter(replyMarkup, chatId);
+  if (!markupChecking.read) {
+    return answerWith(markupChecking.errorAnswer);
+  }
   return proceedWith({
     ...send,
     options: {
-      ...markupReading.replyMarkup,
+      ...markupChecking.replyMarkup,
       chatId,
       replyTo: replyTarget === undefined ? undefined : {
         messageId: replyTarget.messageId,

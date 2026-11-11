@@ -10,7 +10,11 @@ import {
   describeInlineQueryResultTextError,
   type InlineQueryResultParameter,
   inlineQueryResultsButtonParameter,
+  readInlineQueryResultCaption,
+  readInlineQueryResultKeyboard,
+  readInlineQueryResultMessageContent,
   readInlineQueryResultParameter,
+  readInlineQueryResultType,
   readUnreadLocation,
   type UnreadInputMessageContent,
 } from '../inline_query_answer_parameters.ts';
@@ -38,7 +42,12 @@ import {
   proceedWith,
   startSteps,
 } from '../method_steps.ts';
-import { readInlineKeyboardParameter, readRichMessageButtons } from '../reply_markup_reading.ts';
+import {
+  checkInlineKeyboardParameter,
+  checkRichMessageButtons,
+  findInlineKeyboardParsingError,
+  resolveLoginButtonBots,
+} from '../reply_markup_reading.ts';
 import {
   booleanParameter,
   type BotApiUploadedFiles,
@@ -122,7 +131,9 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
     },
   }),
   // As the official server's `process_answer_inline_query_query` reads them, the button comes
-  // before the results, which it parses in full before TDLib checks any of them.
+  // before the results, which it parses in full, then resolves the bots their login buttons name,
+  // before TDLib's `answer_inline_query` checks the button, the number of results, and then each
+  // result.
   commandMethodOfSteps({
     name: 'answerInlineQuery',
     recordsActivity: true,
@@ -131,7 +142,9 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
       startSteps(call.parameters)
         .andThen(readInlineQueryAnswerButton)
         .andThen((answer) => parseInlineQueryAnswerResults(call, answer))
-        .andThen((answer) => checkInlineQueryAnswerResults(call.context, answer)),
+        .andThen((answer) => resolveInlineQueryAnswerLoginBots(call.context, answer))
+        .andThen((answer) => checkInlineQueryAnswerOptions(call.context, answer))
+        .andThen(checkInlineQueryAnswerResults),
     execute: (context: QueryAnswerContext, request) => {
       const resolution = resolveInlineQueryResults(context, request.results);
       if (!resolution.resolved) {
@@ -195,7 +208,8 @@ type ParsedInlineResultMessageContent =
 /**
  * An inline query result as the official server's `get_inline_query_result` parses it: its
  * fields, what its `input_message_content` sends, and a media result's caption, read with its
- * formatting. TDLib checks it only once every result is parsed.
+ * formatting. The bots its login buttons name are resolved once every result is parsed, and TDLib
+ * checks it after that.
  */
 interface ParsedInlineQueryResult {
   readonly fields: InlineQueryResultParameter;
@@ -233,46 +247,107 @@ function parseInlineQueryAnswerResults(
 }
 
 /**
- * Parses one result as `get_inline_query_result` does: its fields, then the text or rich message
- * of its `input_message_content`, then a media result's caption. The server reports a problem with
- * any of them as an inline query result it cannot parse.
+ * Parses one result as `get_inline_query_result` does, in its order: its type and identifier, then
+ * the text or rich message of its `input_message_content`, then its caption, then its inline
+ * keyboard's buttons, then the fields of its type, as `InlineQueryResultFieldsReading` lists
+ * them. The server reports a problem with any of them as an inline query result it cannot parse.
  */
 function parseInlineQueryResult(
   { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   resultValue: unknown,
 ): BotApiStepResult<ParsedInlineQueryResult> {
-  const fieldsReading = readInlineQueryResultParameter(resultValue, invalidParametersDescription);
-  if (!fieldsReading.read) {
-    return answerWithBadRequest(fieldsReading.description);
+  const typeReading = readInlineQueryResultType(resultValue, invalidParametersDescription);
+  if (!typeReading.read) {
+    return answerWithBadRequest(typeReading.description);
   }
-  const fields = fieldsReading.result;
-  const messageContentParsing = fields.messageContent === undefined
+  const contentReading = readInlineQueryResultMessageContent(
+    resultValue,
+    typeReading.type,
+    invalidParametersDescription,
+  );
+  if (!contentReading.read) {
+    return answerWithBadRequest(contentReading.description);
+  }
+  const messageContentParsing = contentReading.messageContent === undefined
     ? undefined
     : parseInlineResultMessageContent(
-      fields.messageContent,
+      contentReading.messageContent,
       uploadedFiles,
       invalidParametersDescription,
     );
   if (messageContentParsing?.read === false) {
     return answerWithBadRequest(messageContentParsing.description);
   }
-  const parsedResult: ParsedInlineQueryResult = {
+  const captionReading = readInlineQueryResultCaption(resultValue, invalidParametersDescription);
+  if (!captionReading.read) {
+    return answerWithBadRequest(captionReading.description);
+  }
+  const captionParsing = readEmbeddedFormattedText(
+    captionReading.caption,
+    invalidParametersDescription,
+    describeInlineQueryResultTextError,
+  );
+  if (!captionParsing.read) {
+    return answerWithBadRequest(captionParsing.description);
+  }
+  const keyboardReading = readInlineQueryResultKeyboard(resultValue, invalidParametersDescription);
+  if (!keyboardReading.read) {
+    return answerWithBadRequest(keyboardReading.description);
+  }
+  const keyboardParsingError = findInlineKeyboardParsingError(keyboardReading.inlineKeyboard);
+  if (keyboardParsingError !== undefined) {
+    return answerWithBadRequest(BOT_API_ERRORS.inlineQueryResultInvalid.description({
+      reason: 'keyboard_button_unparsable',
+      buttonError: keyboardParsingError,
+    }));
+  }
+  const fieldsReading = readInlineQueryResultParameter(resultValue, invalidParametersDescription);
+  if (!fieldsReading.read) {
+    return answerWithBadRequest(fieldsReading.description);
+  }
+  const fields = fieldsReading.result;
+  return proceedWith({
     fields,
     ...(messageContentParsing === undefined
       ? {}
       : { messageContent: messageContentParsing.content }),
-  };
-  if (!('caption' in fields)) {
-    return proceedWith(parsedResult);
-  }
-  const captionReading = readEmbeddedFormattedText(
-    fields.caption,
-    invalidParametersDescription,
-    describeInlineQueryResultTextError,
+    // Only media results take a caption; the others refuse one as a field they do not take.
+    ...('caption' in fields ? { caption: captionParsing.formattedText } : {}),
+  });
+}
+
+/**
+ * The step that resolves the bots that the login buttons of every parsed result's inline keyboard
+ * name, as the official server's `resolve_inline_query_results_bot_usernames` does before it
+ * passes the results to TDLib.
+ */
+function resolveInlineQueryAnswerLoginBots(
+  context: BotApiMethodContext,
+  answer: InlineQueryAnswerWithParsedResults,
+): BotApiStepResult<InlineQueryAnswerWithParsedResults> {
+  const resolution = resolveLoginButtonBots(
+    context,
+    answer.parsedResults.map(({ fields }) => fields.inlineKeyboard),
   );
-  return captionReading.read
-    ? proceedWith({ ...parsedResult, caption: captionReading.formattedText })
-    : answerWithBadRequest(captionReading.description);
+  return resolution.resolved ? proceedWith(answer) : answerWith(resolution.errorAnswer);
+}
+
+/**
+ * The step that checks an answer's button and its number of results, as TDLib's
+ * `answer_inline_query` does before it checks any result.
+ */
+function checkInlineQueryAnswerOptions(
+  context: QueryAnswerContext,
+  answer: InlineQueryAnswerWithParsedResults,
+): BotApiStepResult<InlineQueryAnswerWithParsedResults> {
+  const { button } = answer.answer;
+  const optionsFailure = context.session.inlineQueries.findAnswerOptionsFailure({
+    ...(button === undefined ? {} : { button }),
+    resultCount: answer.parsedResults.length,
+  });
+  return optionsFailure === undefined
+    ? proceedWith(answer)
+    : answerWith(presentQueryAnswerFailure({ answered: false, reason: optionsFailure }));
 }
 
 /**
@@ -348,12 +423,11 @@ function parseInlineResultMessageContent(
  * `answer_inline_query` checks each with `get_input_bot_inline_result`.
  */
 function checkInlineQueryAnswerResults(
-  context: BotApiMethodContext,
   { answer, parsedResults }: InlineQueryAnswerWithParsedResults,
 ): BotApiStepResult<InlineQueryAnswerRequest> {
   const results: InlineQueryResultRequest[] = [];
   for (const parsedResult of parsedResults) {
-    const checking = checkInlineQueryResult(context, parsedResult);
+    const checking = checkInlineQueryResult(parsedResult);
     if (!checking.proceeds) {
       return checking;
     }
@@ -368,7 +442,6 @@ function checkInlineQueryAnswerResults(
  * such as a location's coordinates or a rich message's buttons and files.
  */
 function checkInlineQueryResult(
-  context: BotApiMethodContext,
   { fields, messageContent: parsedMessageContent, caption }: ParsedInlineQueryResult,
 ): BotApiStepResult<InlineQueryResultRequest> {
   const fileTypeChecking = checkInlineQueryResultFileType(fields);
@@ -376,13 +449,13 @@ function checkInlineQueryResult(
     return answerWithBadRequest(fileTypeChecking.description);
   }
   const result = fileTypeChecking.result;
-  const keyboardReading = readInlineKeyboardParameter(context, result.inlineKeyboard);
+  const keyboardReading = checkInlineKeyboardParameter(result.inlineKeyboard);
   if (!keyboardReading.read) {
     return answerWith(keyboardReading.errorAnswer);
   }
   const messageContentChecking = parsedMessageContent === undefined
     ? undefined
-    : checkInlineResultMessageContent(context, parsedMessageContent);
+    : checkInlineResultMessageContent(parsedMessageContent);
   if (messageContentChecking?.read === false) {
     return answerWithBadRequest(messageContentChecking.description);
   }
@@ -492,7 +565,6 @@ function checkInlineQueryResult(
  * `sendContact` does.
  */
 function checkInlineResultMessageContent(
-  context: BotApiMethodContext,
   content: ParsedInlineResultMessageContent,
 ):
   | { readonly read: true; readonly content: InlineResultMessageContentRequest }
@@ -512,7 +584,7 @@ function checkInlineResultMessageContent(
       if (!checking.read) {
         return checking;
       }
-      const buttonReading = readRichMessageButtons(context, checking.richMessage);
+      const buttonReading = checkRichMessageButtons(checking.richMessage);
       if (!buttonReading.read) {
         return {
           read: false,

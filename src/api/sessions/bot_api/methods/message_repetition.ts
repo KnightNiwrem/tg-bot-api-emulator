@@ -80,7 +80,7 @@ type CopyMessageParameters = z.output<typeof copyMessageParametersSchema>;
 const repeatMessagesParametersShape = {
   chat_id: integerParameter(z.int()).optional(),
   from_chat_id: integerParameter(z.int()).optional(),
-  message_ids: messageIdentifiersParameter().optional(),
+  message_ids: messageIdentifiersParameter(),
   disable_notification: booleanParameter().default(false),
   protect_content: booleanParameter().default(false),
   message_effect_id: optionalInt64Identifier().optional(),
@@ -146,7 +146,7 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
     name: 'copyMessages',
     recordsActivity: true,
     parameters: copyMessagesParametersSchema,
-    steps: ({ parameters }) => readRepeatMessagesRequest(parameters),
+    steps: (call) => readRepeatMessagesRequest(call),
     execute: (context: MessageRepetitionContext, { request, parameters }) =>
       repeatMessagesAnswer(
         'message_copy',
@@ -189,7 +189,7 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
     name: 'forwardMessages',
     recordsActivity: true,
     parameters: forwardMessagesParametersSchema,
-    steps: ({ parameters }) => readRepeatMessagesRequest(parameters),
+    steps: (call) => readRepeatMessagesRequest(call),
     execute: (context: MessageRepetitionContext, { request }) =>
       repeatMessagesAnswer(
         'message_forward',
@@ -249,11 +249,12 @@ function readCopyCaption(
  * must name at least one message, then `chat_id`.
  */
 function readRepeatMessagesRequest<Parameters extends RepeatMessagesParameters>(
-  parameters: Parameters,
+  call: BotApiStepCall<Parameters>,
 ): BotApiSteps<{ readonly request: RepeatMessagesRequest; readonly parameters: Parameters }> {
+  const { parameters } = call;
   return startSteps(parameters)
     .andThen(requireFromChatId)
-    .andThen(requireMessageIdentifiers)
+    .andThen((repetition) => requireMessageIdentifiers(call, repetition))
     .andThen((repetition) =>
       repetition.message_ids.length === 0
         ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.repeatedMessageIdentifiersEmpty))

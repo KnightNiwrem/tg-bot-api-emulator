@@ -417,15 +417,15 @@ Deno.test('login and Web App buttons follow Telegram rules', async () => {
     ],
     [
       { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: 'test-bot' } },
-      'Bad Request: loginUrl bot username is invalid',
+      "Bad Request: can't parse InlineKeyboardButton: LoginUrl bot username is invalid",
     ],
     [
       { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: '@@test_bot' } },
-      'Bad Request: loginUrl bot username is invalid',
+      "Bad Request: can't parse InlineKeyboardButton: LoginUrl bot username is invalid",
     ],
     [
       { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: '@' } },
-      'Bad Request: loginUrl bot username is invalid',
+      "Bad Request: can't parse InlineKeyboardButton: LoginUrl bot username is invalid",
     ],
     [
       { text: 'Open', web_app: { url: 'grammy.dev' } },

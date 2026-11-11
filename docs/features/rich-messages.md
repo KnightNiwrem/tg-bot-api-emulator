@@ -39,9 +39,12 @@ Only the emulator's [strict reading of the input](#intentional-deviations) ends 
 `{"blocks":[{"type":"heading","text":"Hi","size":7},1]}` fails with
 `Bad Request: can't parse InputRichBlock: Object expected as InputRichMessageBlock`, as Telegram
 answered it in live probes. Of the faults found after reading, the first in the order of the blocks
-is reported. `answerInlineQuery` reads the rich messages of all its results before it checks any.
-Telegram's servers check what the Bot API documents but TDLib does not: a row holds at most 8
-buttons (`Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY`), and only drafts hold `thinking` blocks
+is reported. TDLib checks the blocks only after the rest of the request is read and the
+[keyboard](keyboards-and-callbacks.md#login-and-web-app-buttons) is checked, so a missing `chat_id`,
+a `reply_markup` that is not JSON, or an invalid keyboard button is reported first.
+`answerInlineQuery` reads the rich messages of all its results before it checks any. Telegram's
+servers check what the Bot API documents but TDLib does not: a row holds at most 8 buttons
+(`Bad Request: RICH_MESSAGE_BUTTONS_TOO_MANY`), and only drafts hold `thinking` blocks
 (`Bad Request: RICH_MESSAGE_BLOCK_UNSUPPORTED`), as Telegram answered in live probes. The emulator
 reports these among TDLib's faults in the order of the blocks, although Telegram's servers check
 them only after TDLib.
@@ -164,9 +167,10 @@ unless the result's `input_message_content` replaces them.
   buttons, to surface the documented rules, with descriptions of its own:
   `Bad Request: only callback buttons can have the link style` and
   `Bad Request: button text can have only custom emoji and dates`.
-- **Blocks read before the chat.** TDLib checks the blocks when it sends the message, after the
-  server looks at the chat. The emulator reads the blocks and their files first, so a request that
-  also names an unknown chat fails for its blocks.
+- **Blocks checked before the chat is found.** TDLib checks the blocks when it sends or edits the
+  message, after it finds the chat and the message. The emulator finds them only when the call
+  executes, after the blocks and their files, so a request that also names an unknown chat or
+  message fails for its blocks.
 
 ## Real gaps
 

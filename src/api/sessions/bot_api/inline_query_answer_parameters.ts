@@ -19,6 +19,7 @@ import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import type { FormattedTextError } from './formatted_text_reading.ts';
 import { linkPreviewOptionsSchema } from './link_preview_options_parameter.ts';
 import { inlineKeyboardMarkupSchema } from './reply_markup_parameter.ts';
+import type { InlineKeyboardButtonParsingError } from './reply_markup_reading.ts';
 import { jsonParameter } from './request_parameters.ts';
 import type { RichMessageParsingError } from './rich_message_parameter.ts';
 
@@ -26,7 +27,8 @@ import type { RichMessageParsingError } from './rich_message_parameter.ts';
  * Why the official Bot API server's `get_inline_query_result` cannot read a result: it has a type
  * the server does not know, it sends nothing although its type sends only its
  * `input_message_content`, Telegram cannot read its text with its formatting, its `rich_message`
- * is not an object, or the server cannot parse that rich message.
+ * is not an object, the server cannot parse that rich message, or it cannot parse a button of the
+ * result's inline keyboard.
  */
 export type InlineQueryResultError =
   | { readonly reason: 'result_type_unsupported'; readonly resultType: string }
@@ -37,7 +39,11 @@ export type InlineQueryResultError =
     readonly fieldName: 'rich_message';
     readonly expectedType: 'Object';
   }
-  | { readonly reason: 'rich_message_unparsable'; readonly parsingError: RichMessageParsingError };
+  | { readonly reason: 'rich_message_unparsable'; readonly parsingError: RichMessageParsingError }
+  | {
+    readonly reason: 'keyboard_button_unparsable';
+    readonly buttonError: InlineKeyboardButtonParsingError;
+  };
 
 /**
  * Describes text of a result that Telegram cannot read with its formatting, as the official Bot
@@ -502,17 +508,123 @@ const locationResultSchema = z.strictObject({
 });
 
 /**
- * Reads the fields of one element of an `answerInlineQuery` `results` parameter as the official
- * Bot API server's `get_inline_query_result` does, failing with Telegram's description for a
- * result it cannot read. Article, contact, static location, photo, document, video, voice, and
- * audio results are supported, the media among them with files given by `file_id` or by URL; other
- * result types fail as unsupported. A result's `input_message_content` may send text, a rich
- * message, a contact, or a static location; a venue or an invoice fails as unsupported. The caller
- * reads the text it sends and shows next. What TDLib checks once every result is parsed, such as
- * its files' MIME types, its inline keyboard's buttons and its locations, is checked later.
+ * What reading one group of a result's fields found, or Telegram's description of why it cannot
+ * read them. The official Bot API server's `get_inline_query_result` reads the groups in this
+ * order, which decides which of several faults of one result it reports:
+ * 1. `type` and `id`, as `readInlineQueryResultType` reads them;
+ * 2. `input_message_content`, as `readInlineQueryResultMessageContent` reads it, then the text or
+ *    rich message it sends;
+ * 3. the caption, as `readInlineQueryResultCaption` reads it, then its text, whatever the type;
+ * 4. `reply_markup`, as `readInlineQueryResultKeyboard` reads it, then its buttons;
+ * 5. the fields of the result's type, as `readInlineQueryResultParameter` reads them, after which
+ *    a type it does not know is refused.
  *
- * `invalidParametersDescription` answers results that Telegram would read leniently, such as
- * numbers written as strings, which are rejected instead to surface the bot's mistake in tests.
+ * Each reader answers `invalidParametersDescription` for fields that Telegram would read
+ * leniently, such as numbers written as strings, which are rejected instead to surface the bot's
+ * mistake in tests.
+ */
+export type InlineQueryResultFieldsReading<Fields> =
+  | ({ readonly read: true } & Fields)
+  | { readonly read: false; readonly description: string };
+
+const resultTypeSchema = z.looseObject({ type: z.string(), id: z.string() });
+
+/** Reads a result's `type`, matched case-insensitively as Telegram does, and its `id`. */
+export function readInlineQueryResultType(
+  resultValue: unknown,
+  invalidParametersDescription: string,
+): InlineQueryResultFieldsReading<{ readonly type: string }> {
+  const parsing = resultTypeSchema.safeParse(resultValue);
+  return parsing.success
+    ? { read: true, type: parsing.data.type.toLowerCase() }
+    : { read: false, description: invalidParametersDescription };
+}
+
+const resultMessageContentSchema = z.looseObject({
+  input_message_content: inputMessageContentSchema.optional(),
+});
+
+/**
+ * Reads what a result's `input_message_content` sends, before its text is read. An article sends
+ * only its `input_message_content`, which it requires. Content that sends a venue or an invoice
+ * fails as unsupported.
+ */
+export function readInlineQueryResultMessageContent(
+  resultValue: unknown,
+  resultType: string,
+  invalidParametersDescription: string,
+): InlineQueryResultFieldsReading<{ readonly messageContent?: UnreadInputMessageContent }> {
+  const venueOrInvoiceContent = z.looseObject({ input_message_content: z.looseObject({}) })
+    .safeParse(resultValue);
+  if (
+    venueOrInvoiceContent.success &&
+    sendsVenueOrInvoice(venueOrInvoiceContent.data.input_message_content)
+  ) {
+    return {
+      read: false,
+      description: BOT_API_ERRORS.inlineQueryVenueOrInvoiceContentUnsupported.description(),
+    };
+  }
+  const parsing = resultMessageContentSchema.safeParse(resultValue);
+  if (!parsing.success) {
+    return { read: false, description: invalidParametersDescription };
+  }
+  const messageContent = parsing.data.input_message_content;
+  if (messageContent === undefined && resultType === 'article') {
+    return {
+      read: false,
+      description: BOT_API_ERRORS.inlineQueryResultInvalid.description({
+        reason: 'input_message_content_missing',
+      }),
+    };
+  }
+  return { read: true, ...(messageContent === undefined ? {} : { messageContent }) };
+}
+
+const resultCaptionSchema = z.looseObject(captionShape);
+
+/**
+ * Reads a result's caption, before its text is read. The official server reads a caption for a
+ * result of any type, so its text can fail to be read even where the type takes no caption, which
+ * the emulator then refuses as a field the type does not take.
+ */
+export function readInlineQueryResultCaption(
+  resultValue: unknown,
+  invalidParametersDescription: string,
+): InlineQueryResultFieldsReading<{ readonly caption: UnreadFormattedText }> {
+  const parsing = resultCaptionSchema.safeParse(resultValue);
+  return parsing.success
+    ? { read: true, caption: readCaption(parsing.data) }
+    : { read: false, description: invalidParametersDescription };
+}
+
+const resultKeyboardSchema = z.looseObject({ reply_markup: inlineKeyboardMarkupSchema.optional() });
+
+/**
+ * Reads a result's inline keyboard, before the official server parses its buttons' bots; a result
+ * without one, or with no rows, has none.
+ */
+export function readInlineQueryResultKeyboard(
+  resultValue: unknown,
+  invalidParametersDescription: string,
+): InlineQueryResultFieldsReading<{ readonly inlineKeyboard?: InlineKeyboard }> {
+  const parsing = resultKeyboardSchema.safeParse(resultValue);
+  if (!parsing.success) {
+    return { read: false, description: invalidParametersDescription };
+  }
+  const inlineKeyboard = parsing.data.reply_markup;
+  return { read: true, ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }) };
+}
+
+/**
+ * Reads the fields of one element of an `answerInlineQuery` `results` parameter as the official
+ * Bot API server's `get_inline_query_result` does, last of the fields it reads, failing with
+ * Telegram's description for a result it cannot read. Article, contact, static location, photo,
+ * document, video, voice, and audio results are supported, the media among them with files given
+ * by `file_id` or by URL; other result types fail as unsupported. A result's
+ * `input_message_content` may send text, a rich message, a contact, or a static location. What
+ * TDLib checks once every result is parsed, such as its files' MIME types, its inline keyboard's
+ * buttons and its locations, is checked later.
  */
 export function readInlineQueryResultParameter(
   resultValue: unknown,
@@ -540,9 +652,12 @@ type InlineQueryResultReading =
   | { readonly kind: 'failure'; readonly description: string }
   | { readonly kind: 'malformed' };
 
-/** Reads one `InlineQueryResult` object, matching its type case-insensitively as Telegram does. */
+/**
+ * Reads the fields of one `InlineQueryResult` object's type, matching its type case-insensitively
+ * as Telegram does.
+ */
 function readInlineQueryResult(value: unknown): InlineQueryResultReading {
-  const typeReading = z.looseObject({ type: z.string() }).safeParse(value);
+  const typeReading = resultTypeSchema.safeParse(value);
   if (!typeReading.success) {
     return { kind: 'malformed' };
   }
@@ -564,18 +679,6 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
       }),
     };
   }
-  const inputMessageContent = z.looseObject({ input_message_content: z.looseObject({}) })
-    .safeParse(value);
-  if (
-    inputMessageContent.success &&
-    sendsVenueOrInvoice(inputMessageContent.data.input_message_content)
-  ) {
-    return {
-      kind: 'failure',
-      description: BOT_API_ERRORS.inlineQueryVenueOrInvoiceContentUnsupported.description(),
-    };
-  }
-
   switch (type) {
     case 'article':
       return readArticleResult(value);

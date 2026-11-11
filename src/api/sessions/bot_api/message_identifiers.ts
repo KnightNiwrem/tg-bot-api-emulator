@@ -2,8 +2,14 @@ import { z } from 'zod';
 
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';
-import { answerWith, type BotApiStepResult, proceedWith } from './method_steps.ts';
-import { jsonParameter } from './request_parameters.ts';
+import {
+  answerWith,
+  type BotApiStepCall,
+  type BotApiStepResult,
+  proceedWith,
+  readDeferredParameter,
+} from './method_steps.ts';
+import { type DeferredParameter, deferredParameter, jsonParameter } from './request_parameters.ts';
 
 /** Telegram's descriptions for a list of message identifiers it rejects. */
 export const MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION = BOT_API_ERRORS
@@ -26,30 +32,43 @@ export function messageIdOrNone(messageId: number | undefined): number {
 
 /**
  * A `message_ids` parameter: a JSON array of message identifiers, read as the official Bot API
- * server's `get_message_ids` reads it. Empty text names no messages, and text it cannot read as
- * JSON is refused with its description. Telegram also reads identifiers written as strings;
- * rejecting them instead surfaces the bot's mistake in tests.
+ * server's `get_message_ids` reads it, which `requireMessageIdentifiers` reads where the server
+ * does. Missing or empty text names no messages, and text it cannot read as JSON is refused with
+ * its description. Telegram also reads identifiers written as strings; rejecting them instead
+ * surfaces the bot's mistake in tests.
  */
 export function messageIdentifiersParameter() {
-  return jsonParameter(z.array(z.int()).optional(), {
-    unparsableJsonDescription: BOT_API_ERRORS.messageIdentifiersJsonInvalid.description(),
-    emptyText: { readAs: undefined },
-  });
+  return deferredParameter(
+    jsonParameter(z.array(z.int()).optional(), {
+      unparsableJsonDescription: BOT_API_ERRORS.messageIdentifiersJsonInvalid.description(),
+      emptyText: { readAs: undefined },
+    }).optional(),
+  );
+}
+
+/** The parameters of a call that names messages by `message_ids`. */
+interface MessageIdentifiersParameters {
+  readonly message_ids: DeferredParameter<readonly number[] | undefined>;
 }
 
 /** A call's parameters once a step has read the messages they name by `message_ids`. */
-export type WithMessageIdentifiers<
-  Parameters extends { readonly message_ids?: readonly number[] },
-> = Omit<Parameters, 'message_ids'> & { readonly message_ids: readonly number[] };
+export type WithMessageIdentifiers<Parameters extends MessageIdentifiersParameters> =
+  & Omit<Parameters, 'message_ids'>
+  & { readonly message_ids: readonly number[] };
 
 /**
- * The step that reads the messages a call names by `message_ids`, as `get_message_ids` checks
- * them: they must be given, at most 100, and each identifier positive.
+ * The step that reads the messages a call names by `message_ids`, as `get_message_ids` reads and
+ * checks them: JSON it can read, naming messages, at most 100, and each identifier positive.
  */
-export function requireMessageIdentifiers<
-  Parameters extends { readonly message_ids?: readonly number[] },
->(parameters: Parameters): BotApiStepResult<WithMessageIdentifiers<Parameters>> {
-  const { message_ids: messageIds } = parameters;
+export function requireMessageIdentifiers<Parameters extends MessageIdentifiersParameters>(
+  call: Pick<BotApiStepCall<unknown>, 'methodName'>,
+  parameters: Parameters,
+): BotApiStepResult<WithMessageIdentifiers<Parameters>> {
+  const reading = readDeferredParameter(call, 'message_ids', parameters.message_ids);
+  if (!reading.proceeds) {
+    return reading;
+  }
+  const messageIds = reading.value;
   if (messageIds === undefined) {
     return answerWith(presentFixedBotApiError(BOT_API_ERRORS.messageIdentifiersNotSpecified));
   }

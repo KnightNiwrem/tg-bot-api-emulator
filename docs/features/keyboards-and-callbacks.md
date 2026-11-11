@@ -57,8 +57,18 @@ HTTPS and no profile links: for example,
 `Bad Request: inline keyboard button Web App URL 'grammy.dev' is invalid: Only HTTPS links are allowed`
 or `Bad Request: link to a user can't be used in login URL buttons`. The keyboard keeps the
 normalized link. A login button's `bot_username` may start with `@`, must consist of letters, digits
-and underscores (`Bad Request: loginUrl bot username is invalid`), and must name a bot of the
-session, as the server resolves it: `Bad Request: bot "name" not found`.
+and underscores (`Bad Request: can't parse InlineKeyboardButton: LoginUrl bot username is invalid`),
+and must name a bot of the session, as the server resolves it: `Bad Request: bot "name" not found`.
+
+As the official server does, every method that takes an inline keyboard checks its buttons in three
+phases. While [`get_reply_markup`][reply-markup] parses the keyboard, it checks each login button's
+username; it then [resolves][login-bot-resolution] the bots those usernames name; and only then does
+TDLib check every button's link. The method's other parameters are read between the phases where the
+server reads them: a send method's content before the keyboard is parsed and its `chat_id` after the
+bots are resolved; `editMessageCaption` and `editMessageMedia` parse the keyboard before their new
+caption or media, and `editMessageText` after its text; an edit's `inline_message_id` is read before
+the bots are resolved and its `chat_id` after. So a login button that names no bot is reported ahead
+of an earlier button's invalid link, and ahead of a missing `chat_id`.
 
 As the official server's [`json_store_inline_keyboard_button_type`][button-type-json] does, bots and
 accounts see a login button as a `url` button with its link. The button's `forward_text`,
@@ -344,6 +354,7 @@ server behavior.
 [button-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L4247-L4263
 [td-button-equality]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineKeyboardButton.cpp#L84-L87
 [login-web-app-parsing]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10442-L10488
+[login-bot-resolution]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9275-L9340
 [reply-button-type]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10248-L10345
 [shared-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L3839-L3922
 [shared-message-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5188-L5200
