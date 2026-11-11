@@ -103,10 +103,7 @@ function promote(
 
 /** The ID by which an owner of a message box, a bot or a supergroup, numbers a message. */
 function messageIdIn(session: EmulationSession, ownerId: number, message: ChatMessage): number {
-  const shown = message.kind === 'private_message'
-    ? session.botMessageViews.viewPrivateMessageForBot(message)
-    : session.botMessageViews.viewSupergroupMessage(message, ownerId);
-  return shown.message_id;
+  return session.botMessageViews.viewMessageForBot(message, ownerId).message_id;
 }
 
 function pinnedTexts(session: EmulationSession, accountId: number, chat: PinningChat): string[] {

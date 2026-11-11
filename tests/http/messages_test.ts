@@ -92,10 +92,16 @@ Deno.test('sendMessage replies only in private chats the account has started', a
   await expectBadRequest({ text: 'Hello' }, 'Bad Request: chat_id is empty');
   await expectBadRequest({ chat_id: accountId }, 'Bad Request: message text is empty');
   await expectBadRequest({ chat_id: 999, text: 'Hello' }, 'Bad Request: chat not found');
-  await expectBadRequest(
-    { chat_id: createdBot.bot.id, text: 'Hello' },
-    'Bad Request: chat not found',
-  );
+  // A bot's own ID names the bot itself, which, as on Telegram, it cannot message.
+  const selfSend = await sendMessage({ chat_id: createdBot.bot.id, text: 'Hello' });
+  assertEqualsInFieldOrder(selfSend, {
+    status: 403,
+    body: {
+      ok: false,
+      error_code: 403,
+      description: "Forbidden: the bot can't send messages to the bot",
+    },
+  }, 'Expected a bot to be refused a message to itself');
   await expectBadRequest({ chat_id: -1, text: 'Hello' }, 'Bad Request: chat not found');
   await expectBadRequest(
     { chat_id: accountId, text: 'x'.repeat(4_097) },

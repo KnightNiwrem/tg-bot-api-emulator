@@ -29,12 +29,17 @@ import type {
   PollAnswerChangedEvent,
 } from '../../types/chat_domain_event.ts';
 import type { ChatMembership } from '../../types/chat_membership.ts';
-import { privateChatMessagePolicy, supergroupMessagePolicy } from '../../types/chat_policy.ts';
+import {
+  botToBotPrivateChatMessagePolicy,
+  privateChatMessagePolicy,
+  supergroupMessagePolicy,
+} from '../../types/chat_policy.ts';
 import type { InlineQuery } from '../../types/inline_query.ts';
 import type { Poll } from '../../types/poll.ts';
 import type { VirtualBot, VirtualBotProfile } from '../../types/virtual_bot.ts';
 import type { SupergroupChatKey } from '../../types/virtual_chat.ts';
 import {
+  type BotToBotPrivateMessage,
   type CanonicalMessageId,
   type ChatMessage,
   getContentText,
@@ -241,6 +246,9 @@ export class BotUpdateDeliveryService {
       case 'private_message':
         this.#deliverPrivateMessage(message, updateType);
         return;
+      case 'bot_to_bot_private_message':
+        this.#deliverBotToBotPrivateMessage(message, updateType);
+        return;
       case 'supergroup_message':
         this.#deliverSupergroupMessage(message, updateType);
         return;
@@ -262,6 +270,23 @@ export class BotUpdateDeliveryService {
         continue;
       }
       this.#enqueueMessage(observingBotId, updateType, message);
+    }
+  }
+
+  /**
+   * A bot-to-bot private message is observed by the recipients that
+   * `botToBotPrivateChatMessagePolicy` selects: the conversation's bot that did not write it.
+   */
+  #deliverBotToBotPrivateMessage(
+    message: BotToBotPrivateMessage,
+    updateType: MessageUpdateType,
+  ): void {
+    for (
+      const observingBotId of botToBotPrivateChatMessagePolicy.selectMessageRecipientBotIds(message)
+    ) {
+      if (this.#isSubscribed(observingBotId, updateType)) {
+        this.#enqueueMessage(observingBotId, updateType, message);
+      }
     }
   }
 

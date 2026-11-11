@@ -28,39 +28,44 @@ export function requireSpecifiedChatId<Parameters extends { readonly chat_id?: n
 }
 
 /**
- * Why a bot cannot address a chat: a supergroup it cannot reach as a member, or, in a private
- * chat, an account that does not exist or never started the bot.
+ * Why a bot cannot address a chat: a supergroup it cannot reach as a member, in a private chat an
+ * account that does not exist or never started the bot, or another bot it does not know.
  */
 export type BotChatAccessFailureReason =
   | SupergroupBotAccessFailureReason
   | 'account_not_found'
-  | 'conversation_not_started';
+  | 'conversation_not_started'
+  | 'peer_bot_unknown';
 
 /**
  * Telegram's errors for a chat the bot cannot address, whichever method addresses it. A bot can
- * reach a user only after the user has written to it, so the official server's `check_chat`
- * reports any other user, like an unknown chat, as not found.
+ * reach a user only after the user has written to it, and another bot by ID only once it knows
+ * that bot, so the official server's `check_chat` reports any other user, like an unknown chat, as
+ * not found.
  */
 export const BOT_CHAT_ACCESS_ERRORS = {
   chat_not_found: BOT_API_ERRORS.chatNotFound,
   account_not_found: BOT_API_ERRORS.chatNotFound,
   conversation_not_started: BOT_API_ERRORS.chatNotFound,
+  peer_bot_unknown: BOT_API_ERRORS.chatNotFound,
   bot_not_a_member: BOT_API_ERRORS.botNotSupergroupMember,
   bot_kicked: BOT_API_ERRORS.botKickedFromSupergroup,
 } as const satisfies Readonly<Record<BotChatAccessFailureReason, FixedBotApiError>>;
 
 /**
  * Finds the ID of the chat a JSON field names by its ID or by a public username after `@`, as
- * `check_chat` does: a public supergroup, or the private chat with a bot. `undefined` for any other
+ * `check_chat` does: a public supergroup, or the private chat with a bot, which the calling bot
+ * gets to know, as `BotPeerDirectory.resolvePublicChatId` resolves it. `undefined` for any other
  * username, which Telegram answers as a chat it cannot find.
  */
 export function resolveChatIdentifier(
-  context: BotApiFamilyContext<'sharedChatAdministration'>,
+  context: BotApiFamilyContext<'botPeers'>,
   chatIdentifier: ChatIdentifier,
 ): number | undefined {
   return typeof chatIdentifier === 'number'
     ? chatIdentifier
-    : context.session.sharedChatAdministration.findPublicChatId(
+    : context.session.botPeers.resolvePublicChatId(
+      context.bot.id,
       chatIdentifier.slice(CHAT_USERNAME_PREFIX.length),
     );
 }

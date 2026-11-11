@@ -75,6 +75,7 @@ import type { VirtualAccountProfile } from '../types/virtual_account.ts';
 import type { VirtualBotProfile } from '../types/virtual_bot.ts';
 import type { BasicGroup, Supergroup } from '../types/virtual_chat.ts';
 import {
+  type BotToBotPrivateMessage,
   type ChatMessage,
   type ChatSharedMessageContent,
   type ExternalReply,
@@ -285,6 +286,79 @@ function projectPrivateMessageHeader(
   };
 }
 
+/**
+ * A bot-to-bot private message as one of the conversation's bots observes it, with what a
+ * projection needs.
+ */
+export interface ObservedBotToBotPrivateMessage {
+  readonly message: BotToBotPrivateMessage;
+  /** The bot that wrote the message. */
+  readonly sender: VirtualBotProfile;
+  /** The other bot of the conversation, as the observing bot sees it: its private-chat peer. */
+  readonly peer: VirtualBotProfile;
+  /** The message's ID in the observing bot's message box. */
+  readonly observerMessageId: number;
+  readonly context: MessageProjectionContext;
+}
+
+export interface BotToBotPrivateMessageProjectionInput extends ObservedBotToBotPrivateMessage {
+  /** The replied message as the observing bot sees it; omitted when there is none to show. */
+  readonly repliedMessage?: BotApiRepliedPrivateMessage;
+}
+
+/**
+ * Projects a bot-to-bot private message as one of the conversation's bots sees it, as the Bot API
+ * shows any private message: the chat is the observing bot's peer, whoever wrote the message, and
+ * `from` is the message's sender.
+ */
+export function projectBotToBotPrivateMessage(
+  { repliedMessage, ...observed }: BotToBotPrivateMessageProjectionInput,
+): BotApiPrivateMessage {
+  const { message, context } = observed;
+  return {
+    ...projectBotToBotPrivateMessageHeader(observed),
+    ...projectMessageBody(
+      message,
+      projectMessageContent(message.content, context),
+      context,
+      repliedMessage,
+      false,
+    ),
+  };
+}
+
+/**
+ * Projects a bot-to-bot private message as the message another one replies to shows it, without
+ * its own reply, as `projectBotToBotPrivateMessage` projects a message otherwise.
+ */
+export function projectRepliedBotToBotPrivateMessage(
+  observed: ObservedBotToBotPrivateMessage,
+): BotApiRepliedPrivateMessage {
+  const { message, context } = observed;
+  return {
+    ...projectBotToBotPrivateMessageHeader(observed),
+    ...projectMessageBody(
+      message,
+      projectMessageContent(message.content, context),
+      context,
+      undefined,
+      false,
+    ),
+  };
+}
+
+/** The fields before a bot-to-bot private message's body: the chat is the observer's peer. */
+function projectBotToBotPrivateMessageHeader(
+  { message, sender, peer, observerMessageId }: ObservedBotToBotPrivateMessage,
+) {
+  return {
+    message_id: observerMessageId,
+    from: projectBotAsUser(sender),
+    chat: projectBotPrivateChat(peer),
+    date: message.sentAtUnixSeconds,
+  };
+}
+
 /** A supergroup message as a member observes it, with what a projection needs. */
 export interface ObservedSupergroupMessage<Message extends SupergroupMessage> {
   readonly message: Message;
@@ -446,7 +520,7 @@ function projectMessageBody<
     ...(hasProtectedContent(message, chatProtectsContent)
       ? { has_protected_content: true as const }
       : {}),
-    ...(message.kind === 'private_message' && message.messageEffectId !== undefined
+    ...(message.kind !== 'supergroup_message' && message.messageEffectId !== undefined
       ? { effect_id: message.messageEffectId }
       : {}),
   };
@@ -1218,6 +1292,19 @@ export function projectPrivateChat(
     first_name,
     ...(last_name === undefined ? {} : { last_name }),
     ...(username === undefined ? {} : { username }),
+  };
+}
+
+/** Shows the private chat with another bot, as a bot at its other end sees it. */
+export function projectBotPrivateChat(
+  { id, first_name, last_name, username }: VirtualBotProfile,
+): BotApiPrivateChat {
+  return {
+    id,
+    type: 'private',
+    first_name,
+    ...(last_name === undefined ? {} : { last_name }),
+    username,
   };
 }
 

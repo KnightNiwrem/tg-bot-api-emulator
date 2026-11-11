@@ -1,13 +1,12 @@
 type: object
 additionalProperties: false
 description: >-
-  A private chat with an account, as getChat shows it. The account has no bio, photo,
-  birthdate or business profile, so those fields are omitted.
+  A private chat with an account, or with another bot the calling bot knows, as getChat shows
+  it. Neither has a bio, photo, birthdate or business profile, so those fields are omitted.
 required:
   - id
   - first_name
   - type
-  - can_send_gift
   - accepted_gift_types
   - max_reaction_count
   - accent_color_id
@@ -26,9 +25,10 @@ properties:
   can_send_gift:
     type: boolean
     const: true
+    description: Present for an account; a bot can receive no gift.
   active_usernames:
     type: array
-    description: The account's username, if it has one.
+    description: The account's username, if it has one, or the bot's.
     items:
       type: string
   has_private_forwards:
@@ -37,10 +37,12 @@ properties:
     description: Present when the account keeps forwards of its messages from linking to it.
   accepted_gift_types:
     $ref: ./AcceptedGiftTypes.yaml
+    description: Every kind of gift for an account; none for a bot.
   pinned_message:
     $ref: ./PinnedPrivateMessage.yaml
     description: >-
-      The chat's newest pinned message by sending date. Omitted when the chat pins no message.
+      The chat's newest pinned message by sending date. Omitted when the chat pins no message,
+      as a chat with another bot never does.
   max_reaction_count:
     type: integer
     description: How many different reactions a message may carry, 11 in every emulated chat.

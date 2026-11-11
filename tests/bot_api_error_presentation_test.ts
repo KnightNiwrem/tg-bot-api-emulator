@@ -71,6 +71,7 @@ const CHAT_ACCESS_CASES = {
   chat_not_found: [[{ reason: 'chat_not_found' }, ...CHAT_NOT_FOUND]],
   account_not_found: [[{ reason: 'account_not_found' }, ...CHAT_NOT_FOUND]],
   conversation_not_started: [[{ reason: 'conversation_not_started' }, ...CHAT_NOT_FOUND]],
+  peer_bot_unknown: [[{ reason: 'peer_bot_unknown' }, ...CHAT_NOT_FOUND]],
   bot_not_a_member: [[{ reason: 'bot_not_a_member' }, ...BOT_NOT_A_MEMBER]],
   bot_kicked: [[{ reason: 'bot_kicked' }, ...BOT_KICKED]],
 } as const;
@@ -217,6 +218,12 @@ const MESSAGE_SEND_CASES: CasesByReason<SendFailure> = {
   ...CHAT_ACCESS_CASES,
   ...MESSAGE_CONTENT_CASES,
   bot_blocked: [[{ reason: 'bot_blocked' }, ...BOT_BLOCKED]],
+  bot_addresses_itself: [
+    [{ reason: 'bot_addresses_itself' }, 403, "Forbidden: the bot can't send messages to the bot"],
+  ],
+  bot_to_bot_communication_disabled: [
+    [{ reason: 'bot_to_bot_communication_disabled' }, 400, 'Bad Request: USER_BOT_TO_BOT_DISABLED'],
+  ],
   reply_message_not_found: [
     [{ reason: 'reply_message_not_found' }, 400, 'Bad Request: message to be replied not found'],
   ],

@@ -1,17 +1,24 @@
-import { assertEquals } from '@std/assert';
+import { assertEquals, assertThrows } from '@std/assert';
 import type { MessageBoxRepository } from '../src/repositories/message_box/message_box.ts';
 import type { SharedChatRepository } from '../src/repositories/shared_chat/shared_chat.ts';
 import type { MessageSendingService } from '../src/services/domain/message_sending.ts';
 import type { PrivateChatPolicy } from '../src/services/domain/private_chat_policy.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
-import { privateChatMessagePolicy, supergroupMessagePolicy } from '../src/types/chat_policy.ts';
-import type {
-  PrivateChatKey,
-  PrivateConversationRole,
-  Supergroup,
-  SupergroupChatKey,
+import {
+  botToBotPrivateChatMessagePolicy,
+  privateChatMessagePolicy,
+  supergroupMessagePolicy,
+} from '../src/types/chat_policy.ts';
+import {
+  type BotToBotPrivateChatKey,
+  getBotToBotConversationKey,
+  type PrivateChatKey,
+  type PrivateConversationRole,
+  type Supergroup,
+  type SupergroupChatKey,
 } from '../src/types/virtual_chat.ts';
 import {
+  type BotToBotPrivateMessage,
   type ChatMessage,
   isMessageOfChatType,
   type PrivateMessage,
@@ -172,6 +179,49 @@ Deno.test('private chat updates reach the bot except for its own content message
       privateChatMessagePolicy.selectMessageRecipientBotIds(message)
     ),
     [[bot], [], [bot], [bot]],
+  );
+});
+
+Deno.test('a bot-to-bot private chat is keyed by its bots in either order, and never by one bot alone', () => {
+  assertEquals(
+    [getBotToBotConversationKey(7, 3), getBotToBotConversationKey(3, 7)],
+    [{ lowerBotId: 3, higherBotId: 7 }, { lowerBotId: 3, higherBotId: 7 }],
+  );
+  assertThrows(() => getBotToBotConversationKey(3, 3), Error, 'no private conversation');
+});
+
+Deno.test("a bot-to-bot private chat numbers messages in both bots' boxes and updates only the other bot", () => {
+  const chat: BotToBotPrivateChatKey = {
+    type: 'bot_to_bot_private',
+    conversation: getBotToBotConversationKey(7, 3),
+  };
+  const messageFrom = (botId: number): BotToBotPrivateMessage => ({
+    kind: 'bot_to_bot_private_message',
+    id: `message from ${botId}`,
+    chat,
+    sender: { botId },
+    sentAtUnixSeconds: 1_700_000_000,
+    content: { kind: 'text', text: 'ping', entities: [] },
+    isContentProtected: false,
+    isSilent: false,
+    isPinned: false,
+  });
+
+  assertEquals(botToBotPrivateChatMessagePolicy.getNumberingBoxOwnerIds(chat), [3, 7]);
+  assertEquals(
+    [3, 7].map((botId) => botToBotPrivateChatMessagePolicy.getObserverBoxOwnerId(chat, botId)),
+    [3, 7],
+  );
+  assertThrows(
+    () => botToBotPrivateChatMessagePolicy.getObserverBoxOwnerId(chat, 5),
+    Error,
+    'no participant',
+  );
+  assertEquals(
+    [3, 7].map((botId) =>
+      botToBotPrivateChatMessagePolicy.selectMessageRecipientBotIds(messageFrom(botId))
+    ),
+    [[7], [3]],
   );
 });
 

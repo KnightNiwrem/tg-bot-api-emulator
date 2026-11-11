@@ -2,7 +2,11 @@ import type { BotApiMessage } from '../../types/bot_api.ts';
 import type { FormerSupergroupMemberFailureReason } from '../../types/chat_membership.ts';
 import { isForwardable, type PrivateForwardNameLookup } from '../../types/message_forward.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../../types/message_reply.ts';
-import { type ChatKey, getBotApiChatAddress, getBotChatKey } from '../../types/virtual_chat.ts';
+import {
+  type ChatActionChatKey,
+  type ChatKey,
+  getBotApiChatAddress,
+} from '../../types/virtual_chat.ts';
 import type {
   ChatMessage,
   FormattedText,
@@ -82,9 +86,13 @@ export type SendRequestOptions = SendDestinationOptions & {
 
 /**
  * Why a bot cannot address a private chat: the account does not exist, or it never started the
- * bot. Telegram reports both as an unknown chat; the domain keeps them apart.
+ * bot, or the chat's other bot is one the bot does not know. Telegram reports each as an unknown
+ * chat; the domain keeps them apart.
  */
-export type BotPrivateChatAccessFailureReason = 'account_not_found' | 'conversation_not_started';
+export type BotPrivateChatAccessFailureReason =
+  | 'account_not_found'
+  | 'conversation_not_started'
+  | 'peer_bot_unknown';
 
 export type SendFailureReason =
   | 'message_text_empty'
@@ -102,6 +110,8 @@ export type SendFailureReason =
   | 'poll_open_period_invalid'
   | 'poll_close_date_invalid'
   | 'bot_blocked'
+  | 'bot_addresses_itself'
+  | 'bot_to_bot_communication_disabled'
   | 'file_empty'
   | 'image_invalid'
   | 'photo_dimensions_invalid'
@@ -191,7 +201,7 @@ interface BotMessageViews {
 }
 
 interface ChatActionEnding {
-  endBotChatAction(input: { readonly botId: number; readonly chat: ChatKey }): void;
+  endBotChatAction(input: { readonly botId: number; readonly chat: ChatActionChatKey }): void;
 }
 
 interface BotMessageSenderDependencies {
@@ -350,8 +360,7 @@ export class BotMessageSender {
         : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
     }
     const message = this.#botMessageViews.viewMessageForBot(result.message, botId);
-    // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
-    this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
+    this.#endChatAction(botId, result.message.chat);
     return { sent: true, message };
   }
 
@@ -388,7 +397,7 @@ export class BotMessageSender {
       this.#botMessageViews.viewMessageForBot(message, botId)
     );
     // As for a single message, the album ends the bot's chat action.
-    this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
+    this.#endChatAction(botId, result.messages[0].chat);
     return { sent: true, messages };
   }
 
@@ -426,7 +435,7 @@ export class BotMessageSender {
     }
     const message = this.#botMessageViews.viewMessageForBot(result.message, botId);
     // As for any message, the invoice ends the bot's chat action.
-    this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
+    this.#endChatAction(botId, result.message.chat);
     return { sent: true, message };
   }
 
@@ -459,6 +468,16 @@ export class BotMessageSender {
       chat: getBotApiChatAddress(chatId),
       content,
     });
+  }
+
+  /**
+   * Ends the bot's chat action in the chat its message went to, as TDLib's `DialogActionManager`
+   * does. A bot-to-bot conversation shows no chat actions.
+   */
+  #endChatAction(botId: number, chat: ChatKey): void {
+    if (chat.type !== 'bot_to_bot_private') {
+      this.#chatActions.endBotChatAction({ botId, chat });
+    }
   }
 
   /**

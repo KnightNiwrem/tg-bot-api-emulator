@@ -83,7 +83,8 @@ const createBotRequestSchema = z.strictObject({
   /**
    * Turns on Bot-to-Bot Communication Mode. A bot's supergroup message then reaches another bot
    * it addresses, through a leading command naming that bot or a direct reply to one of that
-   * bot's messages, when either of the two bots turned the mode on. Defaults to `false`.
+   * bot's messages, when either of the two bots turned the mode on. A private message between two
+   * bots needs both to turn it on. Defaults to `false`.
    */
   enables_bot_to_bot_communication: z.boolean().default(false),
 });

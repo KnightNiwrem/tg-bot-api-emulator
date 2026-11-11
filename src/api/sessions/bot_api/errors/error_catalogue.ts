@@ -385,6 +385,26 @@ export const BOT_API_ERRORS = {
     'Forbidden: bot was blocked by the user',
     botApiServerSource('telegram-bot-api/Client.cpp#L127-L129'),
   ),
+  /**
+   * A message of a bot to itself, which Telegram's servers refuse with `USER_IS_BOT`; TDLib words
+   * it for a bot's private chat, and the official server prefixes it. Telegram answered a bot's
+   * text to itself, by ID and by username, so on 2026-11-11.
+   */
+  botCannotMessageItself: fixedBotApiError(
+    403,
+    "Forbidden: the bot can't send messages to the bot",
+    tdlibSource('td/telegram/MessagesManager.cpp#L28111-L28115'),
+  ),
+  /**
+   * A private message between bots of which either has not turned on Bot-to-Bot Communication
+   * Mode, as Telegram documents the error; TDLib passes it on unchanged, and the official server
+   * prefixes it. Telegram's answer has not been observed.
+   */
+  botToBotCommunicationDisabled: fixedBotApiError(
+    400,
+    'Bad Request: USER_BOT_TO_BOT_DISABLED',
+    telegramApiDocumentation('messages.sendMessage'),
+  ),
 
   /** A file a send method sends that its call names neither by parameter nor by upload. */
   inputFileMissing: {

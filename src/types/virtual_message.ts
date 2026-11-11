@@ -8,6 +8,7 @@ import type { ReplyInterfaceMarkup } from './reply_interface.ts';
 import { type RichMessage, richMessageMentionsUser } from './rich_message.ts';
 import type { StoredFileId } from './stored_file.ts';
 import type {
+  BotToBotPrivateChatKey,
   ChatKey,
   ChatType,
   PrivateChatKey,
@@ -725,6 +726,32 @@ export interface NewPrivateMessage
   readonly messageEffectId?: string;
 }
 
+/** The bot of a bot-to-bot conversation that a message shows as its sender. */
+export interface BotToBotMessageSender {
+  readonly botId: number;
+}
+
+/**
+ * A canonical message of a private conversation between two bots, which either bot wrote. As
+ * Telegram numbers private messages, each bot numbers it in its own message box.
+ */
+export interface BotToBotPrivateMessage
+  extends MessageCore<BotToBotPrivateChatKey, BotToBotMessageSender, MessageContent> {
+  readonly kind: 'bot_to_bot_private_message';
+  /**
+   * The decimal text of the 64-bit identifier of the message effect clients play with the
+   * message; omitted for none, as for `PrivateMessage`.
+   */
+  readonly messageEffectId?: string;
+}
+
+/** A bot-to-bot private message to store, as `BotToBotPrivateMessage` describes its fields. */
+export interface NewBotToBotPrivateMessage
+  extends NewMessageCore<BotToBotPrivateChatKey, BotToBotMessageSender, MessageContent> {
+  /** Omitted for a message without a message effect. */
+  readonly messageEffectId?: string;
+}
+
 /**
  * The member of a supergroup that a message shows as its sender, or as the maker of the change a
  * service message records: an account or a bot.
@@ -759,12 +786,14 @@ export type NewSupergroupMessage = NewMessageCore<
 /** Each chat type's messages, by the type of their chat. */
 interface ChatMessageByChatType {
   readonly private: PrivateMessage;
+  readonly bot_to_bot_private: BotToBotPrivateMessage;
   readonly supergroup: SupergroupMessage;
 }
 
 /** Each chat type's messages to store, by the type of their chat. */
 interface NewChatMessageByChatType {
   readonly private: NewPrivateMessage;
+  readonly bot_to_bot_private: NewBotToBotPrivateMessage;
   readonly supergroup: NewSupergroupMessage;
 }
 
@@ -804,6 +833,8 @@ export function getInlineKeyboardOwnerId(message: ChatMessage): number | undefin
   switch (message.kind) {
     case 'private_message':
       return message.sender === 'bot' ? message.chat.conversation.botId : undefined;
+    case 'bot_to_bot_private_message':
+      return message.sender.botId;
     case 'supergroup_message':
       return message.sender.kind === 'bot' ? message.sender.botId : undefined;
     default: {
@@ -830,6 +861,8 @@ export function canBotEditMessage(message: ChatMessage, botId: number): boolean 
   switch (message.kind) {
     case 'private_message':
       return message.sender === 'bot' && message.chat.conversation.botId === botId;
+    case 'bot_to_bot_private_message':
+      return message.sender.botId === botId;
     case 'supergroup_message':
       return message.sender.kind === 'bot' && message.sender.botId === botId;
     default: {
@@ -854,6 +887,8 @@ export function canAccountEditMessage(message: ChatMessage, accountId: number): 
   switch (message.kind) {
     case 'private_message':
       return message.sender === 'account' && message.chat.conversation.accountId === accountId;
+    case 'bot_to_bot_private_message':
+      return false;
     case 'supergroup_message':
       return message.sender.kind === 'account' && message.sender.accountId === accountId;
     default: {
@@ -870,6 +905,8 @@ export function getMessageSenderId(message: ChatMessage): number {
       return message.sender === 'account'
         ? message.chat.conversation.accountId
         : message.chat.conversation.botId;
+    case 'bot_to_bot_private_message':
+      return message.sender.botId;
     case 'supergroup_message':
       return message.sender.kind === 'account' ? message.sender.accountId : message.sender.botId;
     default: {
@@ -918,14 +955,23 @@ export function isPrivateContentMessage(
   return !isServiceContent(message.content);
 }
 
-/** A message of any chat that shows content its sender wrote, rather than a service message. */
-export type ContentMessage = PrivateContentMessage | SupergroupContentMessage;
+/**
+ * A message of any chat that shows content its sender wrote, rather than a service message. Every
+ * bot-to-bot private message does.
+ */
+export type ContentMessage =
+  | PrivateContentMessage
+  | BotToBotPrivateMessage
+  | SupergroupContentMessage;
 
 /**
  * A message of any chat that shows content messages of every chat type can show, which is all
  * content its sender wrote but a private chat's invoice.
  */
-export type CommonContentMessage = PrivateMessage<MessageContent> | SupergroupContentMessage;
+export type CommonContentMessage =
+  | PrivateMessage<MessageContent>
+  | BotToBotPrivateMessage
+  | SupergroupContentMessage;
 
 /** Whether a content message shows content messages of every chat type can show: no invoice. */
 export function hasCommonContent(message: ContentMessage): message is CommonContentMessage {
@@ -934,9 +980,18 @@ export function hasCommonContent(message: ContentMessage): message is CommonCont
 
 /** Whether a message of any chat shows content its sender wrote. */
 export function isContentMessage(message: ChatMessage): message is ContentMessage {
-  return message.kind === 'private_message'
-    ? isPrivateContentMessage(message)
-    : isSupergroupContentMessage(message);
+  switch (message.kind) {
+    case 'private_message':
+      return isPrivateContentMessage(message);
+    case 'bot_to_bot_private_message':
+      return true;
+    case 'supergroup_message':
+      return isSupergroupContentMessage(message);
+    default: {
+      const unhandledMessage: never = message;
+      throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
+    }
+  }
 }
 
 /**

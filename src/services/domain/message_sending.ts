@@ -37,19 +37,21 @@ import type { ExternalReplyTarget } from '../../types/message_reply.ts';
 import type { BotMessageReplyMarkup } from '../../types/reply_interface.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
-import type {
-  ChatActor,
-  ChatAddress,
-  ChatKey,
-  PrivateChatAddress,
-  PrivateChatKey,
-  PrivateConversation,
-  PrivateConversationKey,
-  Supergroup,
-  SupergroupChatAddress,
-  SupergroupChatKey,
+import {
+  type BotToBotPrivateChatKey,
+  type ChatActor,
+  type ChatAddress,
+  getBotToBotConversationPeerId,
+  type PrivateChatAddress,
+  type PrivateChatKey,
+  type PrivateConversation,
+  type PrivateConversationKey,
+  type Supergroup,
+  type SupergroupChatAddress,
+  type SupergroupChatKey,
 } from '../../types/virtual_chat.ts';
 import type {
+  BotToBotPrivateMessage,
   ChatMessage,
   MediaGroupId,
   MessageContent,
@@ -88,6 +90,7 @@ import type {
   SharedUsersFailureReason,
   SharedUsersResolution,
 } from './requested_peer_sharing.ts';
+import type { BotToBotPrivateChatPolicy } from './bot_to_bot_private_chat_policy.ts';
 import type { MessageCommitter } from './message_commit.ts';
 import { createSessionUserMentionContext } from './session_user_mention.ts';
 
@@ -264,7 +267,7 @@ export interface AccountPrivateChatServiceMessage {
 interface SendingTargetingTypes {
   readonly address: ChatAddress;
   /** The chat reached, with what deciding about the message needs to know. */
-  readonly reached: { readonly key: ChatKey };
+  readonly reached: object;
   readonly message: ChatMessage;
   /** Why the sender does not reach the chat. */
   readonly accessFailureReason: string;
@@ -434,6 +437,43 @@ export interface BotPrivateChatSendingTypes {
 }
 
 /**
+ * A bot reaches its private chat with another bot it knows, as `BotToBotPrivateChatPolicy`
+ * identifies it, and finds the chat's messages by the IDs of its own message box. As in any
+ * private chat, the chat stores message effects. As Telegram documents for private chats, its
+ * servers refuse a message unless both bots turned on Bot-to-Bot Communication Mode, which they
+ * check once the Bot API server checked everything it can.
+ */
+export interface BotToBotPrivateChatSendingTypes {
+  readonly address: PrivateChatAddress;
+  readonly reached: { readonly key: BotToBotPrivateChatKey; readonly senderBotId: number };
+  readonly message: BotToBotPrivateMessage;
+  readonly accessFailureReason: 'peer_bot_unknown';
+  readonly contentRefusal: never;
+  readonly effectFields: { readonly messageEffectId?: string };
+  readonly effectRefusalReason: never;
+  readonly keyboardRefusalReason: never;
+  readonly lateRefusalReason: 'bot_to_bot_communication_disabled';
+}
+
+/**
+ * A bot that addresses itself, by its own ID or username, reaches a chat that holds no messages.
+ * As observed on Telegram, its servers refuse every message there with `USER_IS_BOT`, which TDLib
+ * reports as "The bot can't send messages to the bot", once the Bot API server checked everything
+ * it can, so nothing is ever stored there.
+ */
+export interface BotSelfChatSendingTypes {
+  readonly address: PrivateChatAddress;
+  readonly reached: Record<never, never>;
+  readonly message: never;
+  readonly accessFailureReason: never;
+  readonly contentRefusal: never;
+  readonly effectFields: Record<never, never>;
+  readonly effectRefusalReason: never;
+  readonly keyboardRefusalReason: never;
+  readonly lateRefusalReason: 'bot_addresses_itself';
+}
+
+/**
  * A bot reaches a supergroup as a member. As TDLib's `MessageSendOptions` does outside private
  * chats, the supergroup refuses message effects; the bot may send only the content its
  * permissions allow, and no Web App button.
@@ -451,10 +491,15 @@ export interface BotSupergroupSendingTypes {
 }
 
 /**
- * The types of a bot's send to one of its chats, whichever chat type its address selects: the
- * private chat's or the supergroup's failures and messages.
+ * The types of a bot's send to one of its chats, whichever chat its address selects: the failures
+ * and messages of its private chat with an account or with another bot, of itself, or of the
+ * supergroup.
  */
-export type BotChatSendingTypes = BotPrivateChatSendingTypes | BotSupergroupSendingTypes;
+export type BotChatSendingTypes =
+  | BotPrivateChatSendingTypes
+  | BotToBotPrivateChatSendingTypes
+  | BotSelfChatSendingTypes
+  | BotSupergroupSendingTypes;
 
 export type BotMessageSendResult<Types extends BotSendingTargetingTypes> =
   | { readonly sent: true; readonly message: Types['message'] }
@@ -602,8 +647,19 @@ interface MediaGroupIssuing {
 /** Commits the messages that pass their checks, each in its chat type's order. */
 type ChatMessageCommitting = Pick<
   MessageCommitter,
-  'commitPrivateMessage' | 'commitSupergroupMessage'
+  'commitPrivateMessage' | 'commitBotToBotPrivateMessage' | 'commitSupergroupMessage'
 >;
+
+/** The bot-to-bot private chat policy's rules that sending asks for. */
+type BotToBotPrivateChatSendingPolicy = Pick<
+  BotToBotPrivateChatPolicy,
+  'identifyChatForBot' | 'isCommunicationEnabled' | 'findMessageByObserverMessageId'
+>;
+
+/** Records the other bots each bot knows, as `KnownBotPeerRepository` describes knowing. */
+interface KnownBotPeerRecording {
+  addKnownPeer(botId: number, peerBotId: number): void;
+}
 
 /**
  * Lets a bot write to an account that has not started a private conversation with it, while a
@@ -640,8 +696,10 @@ interface MessageSendingServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly privateChats: PrivateChatSendingPolicy;
+  readonly botToBotPrivateChats: BotToBotPrivateChatSendingPolicy;
   readonly supergroups: SupergroupSendingPolicy;
   readonly privateConversations: PrivateConversationStore;
+  readonly knownBotPeers: KnownBotPeerRecording;
   readonly joinRequesterContacts: JoinRequesterContactClaims;
   readonly mediaGroups: MediaGroupIssuing;
   readonly files: FileUploadStore;
@@ -680,6 +738,8 @@ export class MessageSendingService {
   readonly #accountPrivateChatTargeting: AccountSendingTargeting<AccountPrivateChatSendingTypes>;
   readonly #accountSupergroupTargeting: AccountSendingTargeting<AccountSupergroupSendingTypes>;
   readonly #botPrivateChatTargeting: BotSendingTargeting<BotPrivateChatSendingTypes>;
+  readonly #botToBotPrivateChatTargeting: BotSendingTargeting<BotToBotPrivateChatSendingTypes>;
+  readonly #botSelfChatTargeting: BotSendingTargeting<BotSelfChatSendingTypes>;
   readonly #botSupergroupTargeting: BotSendingTargeting<BotSupergroupSendingTypes>;
 
   constructor(
@@ -687,8 +747,10 @@ export class MessageSendingService {
       accounts,
       bots,
       privateChats,
+      botToBotPrivateChats,
       supergroups,
       privateConversations,
+      knownBotPeers,
       joinRequesterContacts,
       mediaGroups,
       files,
@@ -827,6 +889,54 @@ export class MessageSendingService {
           sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
         }),
     };
+    this.#botToBotPrivateChatTargeting = {
+      reachChat: (botId, chat) => {
+        const identification = botToBotPrivateChats.identifyChatForBot(botId, chat);
+        return identification.identified
+          ? { reached: true, key: identification.key, senderBotId: botId }
+          : { reached: false, reason: identification.reason };
+      },
+      findMessage: ({ key, senderBotId }, messageId) =>
+        botToBotPrivateChats.findMessageByObserverMessageId(key, senderBotId, messageId),
+      resolveMessageEffect: (messageEffectId) => ({
+        resolved: true,
+        fields: messageEffectId === undefined ? {} : { messageEffectId },
+      }),
+      findContentRefusal: () => undefined,
+      findKeyboardRefusal: () => undefined,
+      findLateRefusal: ({ key }) =>
+        botToBotPrivateChats.isCommunicationEnabled(key)
+          ? undefined
+          : 'bot_to_bot_communication_disabled',
+      // The recipient learns of the sender from its message, and knows it from then on.
+      admitMessage: ({ key, senderBotId }) => {
+        knownBotPeers.addKnownPeer(
+          getBotToBotConversationPeerId(key.conversation, senderBotId),
+          senderBotId,
+        );
+      },
+      commitMessage: ({ key }, botId, message) =>
+        this.#commits.commitBotToBotPrivateMessage({
+          ...message,
+          chat: key,
+          sender: { botId },
+          sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
+        }),
+    };
+    this.#botSelfChatTargeting = {
+      reachChat: () => ({ reached: true }),
+      findMessage: () => undefined,
+      resolveMessageEffect: () => ({ resolved: true, fields: {} }),
+      findContentRefusal: () => undefined,
+      findKeyboardRefusal: () => undefined,
+      findLateRefusal: () => 'bot_addresses_itself',
+      admitMessage: () => {
+        throw new Error('A bot admitted a message to itself, which its late refusal refuses');
+      },
+      commitMessage: () => {
+        throw new Error('A bot committed a message to itself, which its late refusal refuses');
+      },
+    };
     this.#botSupergroupTargeting = {
       // A supergroup the bot is not a member of is unknown to it, as on Telegram.
       reachChat: (botId, chat) => {
@@ -863,15 +973,28 @@ export class MessageSendingService {
 
   /**
    * Sends text, captioned media or other content from a bot to one of its chats, its private
-   * chat with an account or a supergroup it is a member of, or the content of an existing message
-   * as a forward or copy of it, as `#sendBotMessage` checks it.
+   * chat with an account or with another bot, or a supergroup it is a member of, or the content of
+   * an existing message as a forward or copy of it, as `#sendBotMessage` checks it.
    */
   sendChatMessage({ chat, ...input }: BotMessage<ChatAddress>): BotMessageSendResult<
     BotChatSendingTypes
   > {
-    return chat.type === 'private'
-      ? this.#sendBotMessage(this.#botPrivateChatTargeting, { ...input, chat })
-      : this.#sendBotMessage(this.#botSupergroupTargeting, { ...input, chat });
+    if (chat.type === 'supergroup') {
+      return this.#sendBotMessage(this.#botSupergroupTargeting, { ...input, chat });
+    }
+    const peerKind = this.#findPrivatePeerKind(input.fromBotId, chat);
+    switch (peerKind) {
+      case 'account':
+        return this.#sendBotMessage(this.#botPrivateChatTargeting, { ...input, chat });
+      case 'other_bot':
+        return this.#sendBotMessage(this.#botToBotPrivateChatTargeting, { ...input, chat });
+      case 'sending_bot':
+        return this.#sendBotMessage(this.#botSelfChatTargeting, { ...input, chat });
+      default: {
+        const unhandledPeerKind: never = peerKind;
+        throw new Error(`Unhandled private peer kind: ${unhandledPeerKind}`);
+      }
+    }
   }
 
   /**
@@ -938,9 +1061,36 @@ export class MessageSendingService {
   sendChatAlbum({ chat, ...input }: BotAlbum<ChatAddress>): BotAlbumSendResult<
     BotChatSendingTypes
   > {
-    return chat.type === 'private'
-      ? this.#sendBotAlbum(this.#botPrivateChatTargeting, { ...input, chat })
-      : this.#sendBotAlbum(this.#botSupergroupTargeting, { ...input, chat });
+    if (chat.type === 'supergroup') {
+      return this.#sendBotAlbum(this.#botSupergroupTargeting, { ...input, chat });
+    }
+    const peerKind = this.#findPrivatePeerKind(input.fromBotId, chat);
+    switch (peerKind) {
+      case 'account':
+        return this.#sendBotAlbum(this.#botPrivateChatTargeting, { ...input, chat });
+      case 'other_bot':
+        return this.#sendBotAlbum(this.#botToBotPrivateChatTargeting, { ...input, chat });
+      case 'sending_bot':
+        return this.#sendBotAlbum(this.#botSelfChatTargeting, { ...input, chat });
+      default: {
+        const unhandledPeerKind: never = peerKind;
+        throw new Error(`Unhandled private peer kind: ${unhandledPeerKind}`);
+      }
+    }
+  }
+
+  /**
+   * Who a bot's private address names, which selects the chat's sending rules: the sending bot
+   * itself, another bot, or otherwise an account, which the account's private chat finds or not.
+   */
+  #findPrivatePeerKind(
+    botId: number,
+    { peerId }: PrivateChatAddress,
+  ): 'account' | 'other_bot' | 'sending_bot' {
+    if (peerId === botId) {
+      return 'sending_bot';
+    }
+    return this.#bots.getById(peerId) === undefined ? 'account' : 'other_bot';
   }
 
   /**

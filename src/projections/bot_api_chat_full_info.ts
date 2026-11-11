@@ -6,6 +6,7 @@ import type {
   BotApiSupergroupChatFullInfo,
 } from '../types/bot_api.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
+import type { VirtualBotProfile } from '../types/virtual_bot.ts';
 import type { Supergroup } from '../types/virtual_chat.ts';
 import { projectChatPermissions } from './bot_api_chat_permissions.ts';
 
@@ -44,6 +45,30 @@ export function projectPrivateChatFullInfo(
     ...(hasPrivateForwards ? { has_private_forwards: true } : {}),
     accepted_gift_types: acceptedGiftTypes(true),
     ...(pinnedMessage === undefined ? {} : { pinned_message: pinnedMessage }),
+    max_reaction_count: MAX_REACTION_COUNT,
+    // TDLib's `AccentColorId(UserId)`, for a user that chose no accent color.
+    accent_color_id: id % BUILT_IN_ACCENT_COLOR_COUNT,
+  };
+}
+
+/**
+ * A private chat with another bot, as the official Bot API server's `JsonChat` shows its full
+ * information, and in its field order, as Telegram showed a bot's chat with another bot on
+ * 2026-11-11. As `JsonChat` does for a bot, it offers no gift, and the bot accepts none. The bot
+ * has no bio or photo, and the emulator pins no message of a bot-to-bot chat, so those fields are
+ * omitted.
+ */
+export function projectBotPrivateChatFullInfo(
+  { id, first_name, last_name, username }: VirtualBotProfile,
+): BotApiPrivateChatFullInfo {
+  return {
+    id,
+    first_name,
+    ...(last_name === undefined ? {} : { last_name }),
+    username,
+    type: 'private',
+    active_usernames: [username],
+    accepted_gift_types: acceptedGiftTypes(false),
     max_reaction_count: MAX_REACTION_COUNT,
     // TDLib's `AccentColorId(UserId)`, for a user that chose no accent color.
     accent_color_id: id % BUILT_IN_ACCENT_COLOR_COUNT,

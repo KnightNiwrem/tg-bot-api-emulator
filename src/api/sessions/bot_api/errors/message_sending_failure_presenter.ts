@@ -42,6 +42,8 @@ const FIXED_MESSAGE_SENDING_ERRORS = {
   ...FIXED_MESSAGE_CONTENT_ERRORS,
   ...BOT_CHAT_ACCESS_ERRORS,
   bot_blocked: BOT_API_ERRORS.botBlocked,
+  bot_addresses_itself: BOT_API_ERRORS.botCannotMessageItself,
+  bot_to_bot_communication_disabled: BOT_API_ERRORS.botToBotCommunicationDisabled,
   reply_message_not_found: BOT_API_ERRORS.replyMessageNotFound,
   quote_invalid: BOT_API_ERRORS.quoteTextInvalid,
   message_effect_not_allowed_in_chat: BOT_API_ERRORS.messageEffectNotAllowedInChat,

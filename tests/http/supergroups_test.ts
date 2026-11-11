@@ -1583,7 +1583,6 @@ Deno.test('bots address public supergroups by their usernames', async () => {
     await callBot('sendMessage', { chat_id: '@nobody', text: 'Hi' }),
     await callBot('sendMessage', { chat_id: '@', text: 'Hi' }),
     await callBot('sendMessage', { chat_id: '@not a username', text: 'Hi' }),
-    await callBot('sendMessage', { chat_id: '@team_bot', text: 'Hi' }),
     await callBot('copyMessage', { chat_id: owner.id, from_chat_id: '@nobody', message_id: 1 }),
     await callBot('sendMessage', {
       chat_id: owner.id,
@@ -1601,6 +1600,16 @@ Deno.test('bots address public supergroups by their usernames', async () => {
       `Expected unknown usernames to name no chat, received ${JSON.stringify(failures)}`,
     );
   }
+  // The bot's own username names the bot itself, which, as on Telegram, it cannot message.
+  assertEqualsInFieldOrder(
+    await callBot('sendMessage', { chat_id: '@team_bot', text: 'Hi' }),
+    {
+      ok: false,
+      error_code: 403,
+      description: "Forbidden: the bot can't send messages to the bot",
+    },
+    "Expected the bot's own username to name the bot itself",
+  );
 });
 
 Deno.test('administrator bots that request chat_member updates observe members joining', async () => {

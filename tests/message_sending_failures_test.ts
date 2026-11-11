@@ -2,8 +2,10 @@
  * Compile-time checks that the shared sending service reports exactly the failures each sender and
  * chat type can produce: only a supergroup refuses message effects, Web App buttons and content a
  * member may not send, only a private chat meets the account's block, and only an inline query
- * result needs the right to use inline bots. Each chat type's bot results pin its own set; a bot's
- * entry point, whose address selects the chat type, reports the two chat types' sets together.
+ * result needs the right to use inline bots. A bot's private chat with another bot refuses it
+ * only for a bot it does not know and, last, for Bot-to-Bot Communication Mode, and its chat with
+ * itself refuses every message last. Each chat's bot results pin their own set; a bot's entry
+ * point, whose address selects the chat, reports the sets of all of them together.
  * The expected sets are written out here, independently of the service's types; the shared content
  * rules keep their own failure types.
  */
@@ -15,11 +17,17 @@ import type {
   BotAlbumSendResult,
   BotMessageSendResult,
   BotPrivateChatSendingTypes,
+  BotSelfChatSendingTypes,
   BotSupergroupSendingTypes,
+  BotToBotPrivateChatSendingTypes,
   MessageSendingService,
 } from '../src/services/domain/message_sending.ts';
 import type { AlbumCompositionFailureReason } from '../src/types/media_album.ts';
-import type { PrivateMessage, SupergroupMessage } from '../src/types/virtual_message.ts';
+import type {
+  BotToBotPrivateMessage,
+  PrivateMessage,
+  SupergroupMessage,
+} from '../src/types/virtual_message.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 
 type Result<Method extends keyof MessageSendingService> = MessageSendingService[Method] extends
@@ -56,6 +64,23 @@ type BotPrivateChatMessageReason =
   | 'callback_data_invalid'
   | 'quote_invalid'
   | 'bot_blocked';
+type BotToBotPrivateChatMessageReason =
+  | 'bot_not_found'
+  | 'message_text_empty'
+  | 'peer_bot_unknown'
+  | 'reply_message_not_found'
+  | ContentFailureReason
+  | 'callback_data_invalid'
+  | 'quote_invalid'
+  | 'bot_to_bot_communication_disabled';
+type BotSelfChatMessageReason =
+  | 'bot_not_found'
+  | 'message_text_empty'
+  | 'reply_message_not_found'
+  | ContentFailureReason
+  | 'callback_data_invalid'
+  | 'quote_invalid'
+  | 'bot_addresses_itself';
 type BotSupergroupMessageReason =
   | 'bot_not_found'
   | 'message_text_empty'
@@ -75,6 +100,21 @@ type BotPrivateChatAlbumReason =
   | TextFailureReason
   | 'quote_invalid'
   | 'bot_blocked';
+type BotToBotPrivateChatAlbumReason =
+  | 'bot_not_found'
+  | 'peer_bot_unknown'
+  | 'reply_message_not_found'
+  | AlbumCompositionFailureReason
+  | TextFailureReason
+  | 'quote_invalid'
+  | 'bot_to_bot_communication_disabled';
+type BotSelfChatAlbumReason =
+  | 'bot_not_found'
+  | 'reply_message_not_found'
+  | AlbumCompositionFailureReason
+  | TextFailureReason
+  | 'quote_invalid'
+  | 'bot_addresses_itself';
 type BotSupergroupAlbumReason =
   | 'bot_not_found'
   | BotSupergroupAccessReason
@@ -94,6 +134,18 @@ type _BotMessages = [
   >,
   ExpectTrue<
     IsExactly<
+      ResultFailureReason<BotMessageSendResult<BotToBotPrivateChatSendingTypes>>,
+      BotToBotPrivateChatMessageReason
+    >
+  >,
+  ExpectTrue<
+    IsExactly<
+      ResultFailureReason<BotMessageSendResult<BotSelfChatSendingTypes>>,
+      BotSelfChatMessageReason
+    >
+  >,
+  ExpectTrue<
+    IsExactly<
       ResultFailureReason<BotMessageSendResult<BotSupergroupSendingTypes>>,
       BotSupergroupMessageReason
     >
@@ -106,20 +158,41 @@ type _BotMessages = [
   >,
   ExpectTrue<
     IsExactly<
+      ResultFailureReason<BotAlbumSendResult<BotToBotPrivateChatSendingTypes>>,
+      BotToBotPrivateChatAlbumReason
+    >
+  >,
+  ExpectTrue<
+    IsExactly<
+      ResultFailureReason<BotAlbumSendResult<BotSelfChatSendingTypes>>,
+      BotSelfChatAlbumReason
+    >
+  >,
+  ExpectTrue<
+    IsExactly<
       ResultFailureReason<BotAlbumSendResult<BotSupergroupSendingTypes>>,
       BotSupergroupAlbumReason
     >
   >,
-  // A bot addresses its chat by the chat's address, so its entry points report what either chat
-  // type reports, and nothing else.
+  // A bot addresses its chat by the chat's address, so its entry points report what any of its
+  // chats reports, and nothing else.
   ExpectTrue<
     IsExactly<
       FailureReason<'sendChatMessage'>,
-      BotPrivateChatMessageReason | BotSupergroupMessageReason
+      | BotPrivateChatMessageReason
+      | BotToBotPrivateChatMessageReason
+      | BotSelfChatMessageReason
+      | BotSupergroupMessageReason
     >
   >,
   ExpectTrue<
-    IsExactly<FailureReason<'sendChatAlbum'>, BotPrivateChatAlbumReason | BotSupergroupAlbumReason>
+    IsExactly<
+      FailureReason<'sendChatAlbum'>,
+      | BotPrivateChatAlbumReason
+      | BotToBotPrivateChatAlbumReason
+      | BotSelfChatAlbumReason
+      | BotSupergroupAlbumReason
+    >
   >,
 ];
 
@@ -215,7 +288,12 @@ type _SentMessages = [
       SupergroupMessage
     >
   >,
-  ExpectTrue<IsExactly<SentMessage<'sendChatMessage'>, PrivateMessage | SupergroupMessage>>,
+  ExpectTrue<
+    IsExactly<
+      SentMessage<'sendChatMessage'>,
+      PrivateMessage | BotToBotPrivateMessage | SupergroupMessage
+    >
+  >,
   ExpectTrue<IsExactly<SentMessage<'sendAccountPrivateChatForward'>, PrivateMessage>>,
   ExpectTrue<IsExactly<SentMessage<'sendAccountSupergroupInlineResult'>, SupergroupMessage>>,
 ];

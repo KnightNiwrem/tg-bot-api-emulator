@@ -13,7 +13,11 @@
  * @module
  */
 import type { ChatDomainEvent } from '../../types/chat_domain_event.ts';
-import { privateChatMessagePolicy, supergroupMessagePolicy } from '../../types/chat_policy.ts';
+import {
+  botToBotPrivateChatMessagePolicy,
+  privateChatMessagePolicy,
+  supergroupMessagePolicy,
+} from '../../types/chat_policy.ts';
 import { appliesReplyInterfaceTo } from '../../types/reply_interface.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
@@ -23,10 +27,12 @@ import type {
   SupergroupChatKey,
 } from '../../types/virtual_chat.ts';
 import {
+  type BotToBotPrivateMessage,
   type CanonicalMessageId,
   getMessageSenderId,
   mentionsUser,
   type MessagePinnedContent,
+  type NewBotToBotPrivateMessage,
   type NewPrivateMessage,
   type NewSupergroupMessage,
   type PrivateMessage,
@@ -78,6 +84,7 @@ interface BotLookup {
 
 interface ChatMessageStore {
   addMessage(message: NewPrivateMessage): PrivateMessage;
+  addMessage(message: NewBotToBotPrivateMessage): BotToBotPrivateMessage;
   addMessage(message: NewSupergroupMessage): SupergroupMessage;
   findChatMessage(
     chat: SupergroupChatKey,
@@ -199,6 +206,26 @@ export class MessageCommitter {
       // draft: a sent, forwarded or copied message, an album's, or a service message of its pin.
       if (storedMessage.sender === 'bot') {
         this.#messageDrafts.clearBotDraft(chat.conversation);
+      }
+      this.#transactions.emit({ type: 'message_created', message: storedMessage });
+      return storedMessage;
+    });
+  }
+
+  /**
+   * Commits a message of a private conversation between two bots: stores it, numbers it in both
+   * bots' message boxes, and then emits it, all in one transaction. Bots' clients show no reply
+   * interface and no draft, so a bot-to-bot message changes neither.
+   */
+  commitBotToBotPrivateMessage(message: NewBotToBotPrivateMessage): BotToBotPrivateMessage {
+    return this.#transactions.withinTransaction(() => {
+      const storedMessage = this.#messages.addMessage(message);
+      for (
+        const boxOwnerId of botToBotPrivateChatMessagePolicy.getNumberingBoxOwnerIds(
+          storedMessage.chat,
+        )
+      ) {
+        this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
       }
       this.#transactions.emit({ type: 'message_created', message: storedMessage });
       return storedMessage;

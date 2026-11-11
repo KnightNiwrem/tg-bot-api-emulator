@@ -192,7 +192,9 @@ the supergroup when it starts with a command naming that bot, such as `/translat
 or replies directly to one of that bot's messages, provided either bot turned the mode on. The
 message reaches only that bot, whatever its privacy mode, and no other.
 [Bot-to-bot communication](../../features/supergroups.md#bot-to-bot-communication) lists the
-messages that address no bot.
+messages that address no bot. Bots can also write to each other in a private chat, by the other
+bot's `@username`, when both turned the mode on, as
+[Private messages between bots](../../features/messages.md#private-messages-between-bots) describes.
 
 A second bot in the session plays the helper the bot under test talks to. It runs its own grammY
 handlers with its own token:

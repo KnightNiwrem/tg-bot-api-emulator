@@ -53,6 +53,7 @@ const getChatParametersSchema = z.strictObject({
 type ChatInfoContext = BotApiFamilyContext<
   | 'sharedChatAdministration'
   | 'privateMessaging'
+  | 'botPeers'
   | 'messagePinning'
   | 'chatAdmission'
   | 'botMessageViews'
@@ -190,10 +191,12 @@ export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
 
 /**
  * Finds everything a bot may learn about a chat: the private chat with an account that started
- * it, or a supergroup the bot may read, which a public one is to bots that are not members. It
- * shows the chat's newest pinned message, as the official Bot API server's `getChat` asks TDLib's
- * `getChatPinnedMessage` for it, and a supergroup shows the bot's own primary invite link, as
- * `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it.
+ * it or with another bot it knows, or a supergroup the bot may read, which a public one is to bots
+ * that are not members. The private chat with an account, and a supergroup, show the chat's newest
+ * pinned message, as the official Bot API server's `getChat` asks TDLib's `getChatPinnedMessage`
+ * for it, and a supergroup shows the bot's own primary invite link, as
+ * `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it. The chat with another bot is shown
+ * whether or not either bot turned on Bot-to-Bot Communication Mode.
  */
 function findChatFullInfo(
   context: ChatInfoContext,
@@ -202,7 +205,9 @@ function findChatFullInfo(
   const { session, bot } = context;
   const chat = getBotApiChatAddress(chatId);
   let fullInfo: BotApiChatFullInfo | undefined;
-  if (chat.type === 'private') {
+  if (chat.type === 'private' && session.botPeers.knowsPeer(bot.id, chat.peerId)) {
+    fullInfo = session.botMessageViews.viewBotPrivateChatFullInfo(chat.peerId);
+  } else if (chat.type === 'private') {
     if (!isPrivateChatKnown(context, chat)) {
       return { found: false, reason: 'chat_not_found' };
     }

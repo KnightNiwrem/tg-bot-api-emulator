@@ -79,6 +79,43 @@ all members. Private conversation history in the emulation API uses the **bot's*
 test can pass them to Bot API calls. History contains the currently stored messages, without
 pagination or deleted entries; it is a test inspection API, not a Telegram history endpoint.
 
+## Private messages between bots
+
+Bots created with
+[`enables_bot_to_bot_communication: true`](supergroups.md#bot-to-bot-communication) stand in for
+bots that turned on Telegram's [Bot-to-Bot Communication Mode][bot-to-bot-private], which also lets
+bots write to each other in private chats. As Telegram's [bot features][bot-to-bot-features]
+describe, a bot sends another bot a private message by passing its `@username`, matched ignoring
+letter case, as `chat_id`; neither bot needs to start the chat first. As Telegram documents for
+private chats, the message is sent only when both bots turned the mode on. Otherwise the send fails
+with `Bad Request: USER_BOT_TO_BOT_DISABLED`, the error
+[`messages.sendMessage`][user-bot-to-bot-disabled] lists, and stores nothing. Telegram's servers
+make that check once everything else about the request passed, as they check an account's block.
+
+Each bot sees the chat from its own side, as Telegram showed it on 2026-11-11: `chat` is the other
+bot, as a private chat, and `from` is the sending bot. The recipient receives a `message` update,
+and the sender none for its own message. As in every private chat, each bot numbers the message in
+the one message box that numbers all its private chats, with accounts and with bots alike, so the
+two bots' IDs of it may differ, and an ID of another chat's message names no message of this one.
+The recipient replies by the numeric `chat.id` of the update, with `reply_parameters` naming its own
+ID of the message, and the sender sees the reply and the replied message by its own IDs.
+
+A bot addresses another bot by numeric ID only once it knows that bot: once it resolved the bot's
+username in a `chat_id`, of `sendMessage`, `getChat` or any other method, or received a message from
+it. Before that, the ID names no chat, `Bad Request: chat not found`, as Telegram answered each bot
+of a pair before it had resolved the other's username or received its message. Knowing is one-way,
+per bot and per session, and the emulator learns it from nothing else, an
+[intentional deviation](#intentional-deviations). `getChat` shows a known bot's private chat with
+its active username and, as Telegram showed it, no gift a bot could receive.
+
+A bot that addresses itself, by ID or by username, fails with
+`Forbidden: the bot can't send messages to the bot`, as Telegram answered and as TDLib words the
+servers' [`USER_IS_BOT` refusal][user-is-bot], after every other check of the request.
+
+Every method that sends a message to a private chat sends one to another bot, except `sendInvoice`,
+whose chat must be an account's. What else bots can do in their private chat is a
+[real gap](#real-gaps).
+
 ## Notifications
 
 Tests read the notifications an account's client shows through `account.getNotifications` for a
@@ -282,9 +319,16 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 
 ## Intentional deviations
 
-- **Account-to-bot private chats only.** Private chat tests only need conversations between an
-  account and a bot. Private conversations between two accounts are intentionally unsupported,
-  including [inline-result use](inline-mode.md#intentional-deviations) in those chats.
+- **No private chats between accounts.** Private chat tests only need conversations of a bot, with
+  an account or with [another bot](#private-messages-between-bots). Private conversations between
+  two accounts are intentionally unsupported, including
+  [inline-result use](inline-mode.md#intentional-deviations) in those chats.
+- **Bots know other bots from usernames and messages only.** Telegram refused a bot's first message
+  to another bot by ID and accepted it once the bot had resolved the other's username or received
+  its message, which is what the emulator does. When and from what else a bot gets to know another
+  bot, such as a shared supergroup or a mention, and for how long, could not be observed, so the
+  emulator learns from nothing else and forgets nothing until the session ends. A test that needs a
+  bot to reach another bot by ID resolves its username first.
 - **Account edits regardless of age.** Tests should be able to edit account messages regardless of
   their age, so the emulator does not apply TDLib's configurable account edit time limit. Upstream
   already exempts bots editing their own outgoing messages; a blanket "all edits expire after 48
@@ -329,6 +373,12 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
   the missing channels and anonymous administrators.
 - **Additional content.** The other message kinds listed in the
   [feature inventory](README.md#unimplemented-areas) are not implemented.
+- **Other uses of private chats between bots.** Bots only send messages to each other, reply within
+  their chat and read it with `getChat`. Editing, deleting and pinning those messages, chat actions,
+  drafts, invoices, and replying to or forwarding and copying a message of that chat from elsewhere
+  fail as for a chat the bot does not know. The other send methods follow `sendMessage`'s rules
+  there, as Telegram's [API page][bot-to-bot-private] allows them, but only `sendMessage` has been
+  observed in such a chat.
 
 ## Local evidence
 
@@ -345,6 +395,8 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [chat actions](../../src/services/domain/chat_action.ts),
 [message drafts](../../src/services/domain/message_draft.ts),
 [private messaging tests](../../tests/private_messaging_service_test.ts),
+[bot-to-bot private chat tests](../../tests/bot_to_bot_private_chat_api_test.ts),
+[grammY bot-to-bot private exchange](../../tests/grammy_bot_to_bot_private_chat_test.ts),
 [sending tests per chat type](../../tests/http/message_sending_test.ts),
 [sending failure sets](../../tests/message_sending_failures_test.ts),
 [editing tests per chat type](../../tests/http/message_editing_test.ts),
@@ -359,6 +411,10 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [message draft tests](../../tests/message_draft_service_test.ts) and
 [message draft API tests](../../tests/message_draft_api_test.ts).
 
+[bot-to-bot-private]: https://core.telegram.org/api/bots/bot-to-bot#communication-in-private-chats
+[bot-to-bot-features]: https://core.telegram.org/bots/features#bot-to-bot-communication
+[user-bot-to-bot-disabled]: https://core.telegram.org/method/messages.sendMessage
+[user-is-bot]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L28111-L28115
 [check-reply]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9144-L9207
 [forward-video-start]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14365-L14455
 [video-start-replacement]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L13180-L13189
