@@ -35,10 +35,15 @@ function keyboardOf(...buttons: readonly unknown[]) {
   return { inline_keyboard: [buttons] };
 }
 
-/** Creates a private chat in which the bot has sent a text message and a poll. */
+/**
+ * Creates a private chat in which the bot has sent a text message and a poll. The emulator is
+ * disposed of if setting the chat up fails, and otherwise when the caller disposes of the result.
+ */
 async function createChatWithMessages() {
-  const fixture = await createPrivateConversationFixture();
-  const { api, botApiPath, createdAccount, sendText } = fixture;
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, botApiPath, createdAccount, sendText } = disposalOnFailure.use(
+    await createPrivateConversationFixture(),
+  );
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const sendAndReadId = async (method: string, parameters: Record<string, unknown>) => {
@@ -59,13 +64,19 @@ async function createChatWithMessages() {
     const { status, body } = await callBotApi(api, `${botApiPath}/${method}`, parameters);
     return [status, (body as { readonly description?: string }).description];
   };
-  return { fixture, chatId, textMessageId, pollMessageId, describeFailure };
+  const fixtureDisposal = disposalOnFailure.move();
+  return {
+    chatId,
+    textMessageId,
+    pollMessageId,
+    describeFailure,
+    [Symbol.asyncDispose]: () => fixtureDisposal.disposeAsync(),
+  };
 }
 
 Deno.test('Every method with a keyboard parses and resolves login buttons before checking links', async () => {
-  const { fixture, chatId, textMessageId, pollMessageId, describeFailure } =
-    await createChatWithMessages();
-  await using _fixture = fixture;
+  await using chat = await createChatWithMessages();
+  const { chatId, textMessageId, pollMessageId, describeFailure } = chat;
   const methods: Readonly<Record<string, Record<string, unknown>>> = {
     sendMessage: { chat_id: chatId, text: 'Hi' },
     sendLocation: { chat_id: chatId, latitude: 1, longitude: 2 },
@@ -115,8 +126,8 @@ Deno.test('Every method with a keyboard parses and resolves login buttons before
 });
 
 Deno.test('Login buttons are parsed and resolved where each method reads its keyboard', async () => {
-  const { fixture, chatId, textMessageId, describeFailure } = await createChatWithMessages();
-  await using _fixture = fixture;
+  await using chat = await createChatWithMessages();
+  const { chatId, textMessageId, describeFailure } = chat;
   const unclosedHtml = { parse_mode: 'HTML' };
 
   const answers = {
@@ -182,5 +193,63 @@ Deno.test('Login buttons are parsed and resolved where each method reads its key
     editInlineMessageIdBeforeLookup: [400, 'Bad Request: message identifier is not specified'],
     editLookupBeforeChat: [400, UNKNOWN_LOGIN_DESCRIPTION],
     stopPollLookupBeforeChat: [400, UNKNOWN_LOGIN_DESCRIPTION],
+  });
+});
+
+// TDLib checks a rich message's blocks in `send_message` and `edit_message_text`, after the
+// official server has parsed `reply_markup`, resolved its bots and read the chat, and after TDLib
+// has checked the reply markup (MessagesManager.cpp#L21760-L21763, #L23525-L23529 in td bc9c263).
+Deno.test("A rich message's blocks are checked after the request's keyboard", async () => {
+  await using chat = await createChatWithMessages();
+  const { chatId, textMessageId, describeFailure } = chat;
+  const headingTooLarge = JSON.stringify({ blocks: [{ type: 'heading', text: 'x', size: 7 }] });
+  const unparsableMarkup = '{';
+
+  const answers = {
+    sendHeadingAlone: await describeFailure('sendRichMessage', {
+      chat_id: chatId,
+      rich_message: headingTooLarge,
+    }),
+    sendMarkupJsonBeforeHeading: await describeFailure('sendRichMessage', {
+      chat_id: chatId,
+      rich_message: headingTooLarge,
+      reply_markup: unparsableMarkup,
+    }),
+    sendLoginLookupBeforeHeading: await describeFailure('sendRichMessage', {
+      chat_id: chatId,
+      rich_message: headingTooLarge,
+      reply_markup: keyboardOf(UNKNOWN_LOGIN_BUTTON),
+    }),
+    sendChatIdBeforeHeading: await describeFailure('sendRichMessage', {
+      rich_message: headingTooLarge,
+    }),
+    sendKeyboardLinkBeforeHeading: await describeFailure('sendRichMessage', {
+      chat_id: chatId,
+      rich_message: headingTooLarge,
+      reply_markup: keyboardOf(INVALID_URL_BUTTON),
+    }),
+    editMarkupJsonBeforeHeading: await describeFailure('editMessageText', {
+      chat_id: chatId,
+      message_id: textMessageId,
+      rich_message: headingTooLarge,
+      reply_markup: unparsableMarkup,
+    }),
+    editKeyboardLinkBeforeHeading: await describeFailure('editMessageText', {
+      chat_id: chatId,
+      message_id: textMessageId,
+      rich_message: headingTooLarge,
+      reply_markup: keyboardOf(INVALID_URL_BUTTON),
+    }),
+  };
+
+  const unparsableMarkupDescription = "Bad Request: can't parse reply keyboard markup JSON object";
+  assertEquals(answers, {
+    sendHeadingAlone: [400, 'Bad Request: invalid section heading size specified'],
+    sendMarkupJsonBeforeHeading: [400, unparsableMarkupDescription],
+    sendLoginLookupBeforeHeading: [400, UNKNOWN_LOGIN_DESCRIPTION],
+    sendChatIdBeforeHeading: [400, 'Bad Request: chat_id is empty'],
+    sendKeyboardLinkBeforeHeading: [400, INVALID_URL_DESCRIPTION],
+    editMarkupJsonBeforeHeading: [400, unparsableMarkupDescription],
+    editKeyboardLinkBeforeHeading: [400, INVALID_URL_DESCRIPTION],
   });
 });

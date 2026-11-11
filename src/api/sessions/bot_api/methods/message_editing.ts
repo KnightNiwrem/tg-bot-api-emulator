@@ -73,8 +73,10 @@ import {
   deferredParameter,
   integerParameter,
 } from '../request_parameters.ts';
+import type { RichMessageParameterReading } from '../rich_message_parameter.ts';
 import {
-  readSpecifiedRichMessage,
+  checkSpecifiedRichMessage,
+  parseSpecifiedRichMessage,
   resolveSpecifiedRichMessage,
   type SpecifiedRichMessage,
 } from '../specified_rich_message.ts';
@@ -179,6 +181,14 @@ type TextMessageReplacementRequest =
   | ({ readonly kind: 'rich_message' } & SpecifiedRichMessage);
 
 /**
+ * New content of a text or rich message once the official Bot API server has parsed it: text, or
+ * a rich message whose checks wait in `checking` for TDLib.
+ */
+type ParsedTextMessageReplacement =
+  | Extract<TextMessageReplacementRequest, { readonly kind: 'text' }>
+  | { readonly kind: 'rich_message'; readonly checking: RichMessageParameterReading };
+
+/**
  * The methods that edit a sent message, and `stopPoll`, which stops a sent message's poll, each
  * executed as a command in its call's transaction. Each edit's steps parse its new content and its
  * new keyboard, in the order of the official Bot API server's method, then read where it finds the
@@ -254,9 +264,10 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
     parameters: editMessageTextParametersSchema,
     steps: (call) =>
       startSteps(call.parameters)
-        .andThen((parameters) => readTextMessageReplacement(call, parameters))
+        .andThen((parameters) => parseTextMessageReplacement(call, parameters))
         .andThen((edit) => parseEditKeyboard(call, edit))
-        .andThen((edit) => readEditTargetAndKeyboard(call.context, edit)),
+        .andThen((edit) => readEditTargetAndKeyboard(call.context, edit))
+        .andThen(checkTextMessageReplacement),
     waitFor: async (context, { content, target, inlineKeyboard }) => {
       const contentResolution = await resolveTextMessageReplacement(context, content);
       if (!context.session.lifetime.admitsCommits) {
@@ -301,11 +312,12 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
 ];
 
 /**
- * The step that reads the new content of `editMessageText`, as the official Bot API server's
- * `process_edit_message_text_query` does: a `rich_message`, when the request has one, and
- * otherwise the text with its `parse_mode` or `entities`.
+ * The step that parses the new content of `editMessageText`, as the official Bot API server's
+ * `process_edit_message_text_query` does: a `rich_message`, when the request has one, as
+ * `parseSpecifiedRichMessage` parses it, and otherwise the text with its `parse_mode` or
+ * `entities`.
  */
-function readTextMessageReplacement<Parameters extends EditParameters>(
+function parseTextMessageReplacement<Parameters extends EditParameters>(
   { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters & {
     readonly text: string;
@@ -314,21 +326,21 @@ function readTextMessageReplacement<Parameters extends EditParameters>(
     readonly rich_message?: string;
   },
 ): BotApiStepResult<
-  { readonly parameters: Parameters; readonly content: TextMessageReplacementRequest }
+  { readonly parameters: Parameters; readonly parsedContent: ParsedTextMessageReplacement }
 > {
   const { text, parse_mode: parseMode, entities, rich_message: richMessageParameter } = parameters;
   if (richMessageParameter !== undefined) {
-    const richMessageReading = readSpecifiedRichMessage(
+    const richMessageParsing = parseSpecifiedRichMessage(
       richMessageParameter,
       uploadedFiles,
       invalidParametersDescription,
     );
-    return richMessageReading.read
+    return richMessageParsing.parsed
       ? proceedWith({
         parameters,
-        content: { kind: 'rich_message', ...richMessageReading.richMessage },
+        parsedContent: { kind: 'rich_message', checking: richMessageParsing.checking },
       })
-      : answerWith(richMessageReading.errorAnswer);
+      : answerWith(richMessageParsing.errorAnswer);
   }
   const formattedTextReading = readSpecifiedFormattedText(
     { text, parseMode, entities },
@@ -337,9 +349,27 @@ function readTextMessageReplacement<Parameters extends EditParameters>(
   return formattedTextReading.read
     ? proceedWith({
       parameters,
-      content: { kind: 'text', ...formattedTextReading.formattedText },
+      parsedContent: { kind: 'text', ...formattedTextReading.formattedText },
     })
     : answerWith(formattedTextReading.errorAnswer);
+}
+
+/**
+ * The step that checks the parsed new content of `editMessageText` where TDLib's
+ * `edit_message_text` checks it, after the new keyboard: a rich message as
+ * `checkSpecifiedRichMessage` checks it; text needs no further check here.
+ */
+function checkTextMessageReplacement<
+  Edit extends { readonly parsedContent: ParsedTextMessageReplacement },
+>(edit: Edit): BotApiStepResult<Edit & { readonly content: TextMessageReplacementRequest }> {
+  const { parsedContent } = edit;
+  if (parsedContent.kind === 'text') {
+    return proceedWith({ ...edit, content: parsedContent });
+  }
+  const checking = checkSpecifiedRichMessage(parsedContent.checking);
+  return checking.read
+    ? proceedWith({ ...edit, content: { kind: 'rich_message', ...checking.richMessage } })
+    : answerWith(checking.errorAnswer);
 }
 
 /** Downloads the files that new rich message content names by URL; text has none. */

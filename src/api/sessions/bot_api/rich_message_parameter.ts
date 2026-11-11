@@ -255,23 +255,6 @@ function readArrayElements<Element>(
 }
 
 /**
- * Reads a `rich_message` parameter as `parseRichMessageParameter` does, failing with the fault of
- * the first phase that finds one.
- */
-export function readRichMessageParameter(
-  richMessageParameter: string | undefined,
-  uploadedFiles: BotApiUploadedFiles,
-  invalidParametersDescription: string,
-): RichMessageParameterReading {
-  const parsing = parseRichMessageParameter(
-    richMessageParameter,
-    uploadedFiles,
-    invalidParametersDescription,
-  );
-  return parsing.parsed ? parsing.checking : { read: false, description: parsing.description };
-}
-
-/**
  * Parses a `rich_message` parameter as the official Bot API server's `get_input_rich_message`
  * parses it, then checks it as TDLib's `RichMessage::get_rich_message` does. Only a message of
  * blocks is supported.
@@ -288,9 +271,10 @@ export function readRichMessageParameter(
  * to surface the bot's mistake in tests. The strings of the message are cleaned, and the entities
  * Telegram detects in its text are marked, when the message is sent.
  *
- * TDLib checks the blocks when it sends the message, after the Bot API server looks at the chat;
- * the emulator reads them in full first, so a request that also names an unknown chat fails for
- * its blocks.
+ * TDLib checks the blocks when it sends the message, after the Bot API server has read the rest of
+ * the request and TDLib has checked its reply markup, so a method reports `checking` only then.
+ * The emulator finds a chat or a message only when the call executes, so a request that also names
+ * an unknown chat or message fails for its blocks.
  */
 export function parseRichMessageParameter(
   richMessageParameter: string | undefined,

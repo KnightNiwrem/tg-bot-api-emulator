@@ -93,8 +93,10 @@ import {
   sendOptionsParametersShape,
   type SendRequestOptions,
 } from '../send_options.ts';
+import type { RichMessageParameterReading } from '../rich_message_parameter.ts';
 import {
-  readSpecifiedRichMessage,
+  checkSpecifiedRichMessage,
+  parseSpecifiedRichMessage,
   resolveSpecifiedRichMessage,
   type SpecifiedRichMessage,
 } from '../specified_rich_message.ts';
@@ -525,8 +527,9 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendRichMessageParametersSchema,
     steps: (call) =>
       startSteps(call.parameters)
-        .andThen((parameters) => readRichMessage(call, parameters))
-        .andThen((send) => readSendOptions(call, send)),
+        .andThen((parameters) => parseRichMessage(call, parameters))
+        .andThen((send) => readSendOptions(call, send))
+        .andThen(checkRichMessage),
     waitFor: async (context, { richMessage, options }) => {
       const resolution = await resolveSpecifiedRichMessage(context, richMessage);
       if (!context.session.lifetime.admitsCommits) {
@@ -596,21 +599,39 @@ function readMessageText<Parameters extends z.output<typeof sendMessageParameter
     : answerWith(textReading.errorAnswer);
 }
 
-/** The step that reads the rich message of `sendRichMessage`, as `readSpecifiedRichMessage` does. */
-function readRichMessage<Parameters extends z.output<typeof sendRichMessageParametersSchema>>(
+/**
+ * The step that parses the rich message of `sendRichMessage`, as `parseSpecifiedRichMessage` does,
+ * before the official server's `do_send_message` reads the rest of the request.
+ */
+function parseRichMessage<Parameters extends z.output<typeof sendRichMessageParametersSchema>>(
   { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters,
 ): BotApiStepResult<
-  { readonly parameters: Parameters; readonly richMessage: SpecifiedRichMessage }
+  { readonly parameters: Parameters; readonly richMessageChecking: RichMessageParameterReading }
 > {
-  const richMessageReading = readSpecifiedRichMessage(
+  const parsing = parseSpecifiedRichMessage(
     parameters.rich_message,
     uploadedFiles,
     invalidParametersDescription,
   );
-  return richMessageReading.read
-    ? proceedWith({ parameters, richMessage: richMessageReading.richMessage })
-    : answerWith(richMessageReading.errorAnswer);
+  return parsing.parsed
+    ? proceedWith({ parameters, richMessageChecking: parsing.checking })
+    : answerWith(parsing.errorAnswer);
+}
+
+/**
+ * The step that checks the rich message of `sendRichMessage` as `checkSpecifiedRichMessage` does,
+ * where TDLib's `send_message` checks it: after the reply markup.
+ */
+function checkRichMessage<
+  Send extends { readonly richMessageChecking: RichMessageParameterReading },
+>(
+  send: Send,
+): BotApiStepResult<Send & { readonly richMessage: SpecifiedRichMessage }> {
+  const checking = checkSpecifiedRichMessage(send.richMessageChecking);
+  return checking.read
+    ? proceedWith({ ...send, richMessage: checking.richMessage })
+    : answerWith(checking.errorAnswer);
 }
 
 /**

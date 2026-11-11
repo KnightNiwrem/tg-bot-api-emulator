@@ -5,7 +5,10 @@ import { presentBotApiError } from './errors/error_template.ts';
 import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 import { checkRichMessageButtons } from './reply_markup_reading.ts';
-import { readRichMessageParameter } from './rich_message_parameter.ts';
+import {
+  parseRichMessageParameter,
+  type RichMessageParameterReading,
+} from './rich_message_parameter.ts';
 import {
   type RequestedRichMessageFileTypes,
   resolveRichMessageWebFiles,
@@ -48,37 +51,53 @@ export async function resolveSpecifiedRichMessage(
 }
 
 /**
- * Reads a `rich_message` parameter as `readRichMessageParameter` does, with its buttons as
- * `checkRichMessageButtons` checks them, answering Telegram's error for a message it
- * cannot read.
+ * Parses a `rich_message` parameter as `parseRichMessageParameter` does, answering Telegram's error
+ * for a fault the official Bot API server finds while it parses the message. What TDLib checks
+ * waits in `checking` for `checkSpecifiedRichMessage`, which a method calls where TDLib checks the
+ * message: once the server has read the rest of the request and TDLib has checked its reply markup.
  */
-export function readSpecifiedRichMessage(
+export function parseSpecifiedRichMessage(
   richMessageParameter: string | undefined,
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
 ):
-  | { readonly read: true; readonly richMessage: SpecifiedRichMessage }
-  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
-  const parameterReading = readRichMessageParameter(
+  | { readonly parsed: true; readonly checking: RichMessageParameterReading }
+  | { readonly parsed: false; readonly errorAnswer: BotApiMethodAnswer } {
+  const parsing = parseRichMessageParameter(
     richMessageParameter,
     uploadedFiles,
     invalidParametersDescription,
   );
-  if (!parameterReading.read) {
-    return { read: false, errorAnswer: botApiError(400, parameterReading.description) };
+  return parsing.parsed
+    ? { parsed: true, checking: parsing.checking }
+    : { parsed: false, errorAnswer: botApiError(400, parsing.description) };
+}
+
+/**
+ * Reports the checks of a parsed rich message, as TDLib's `RichMessage::get_rich_message` checks
+ * its blocks, then its buttons as `checkRichMessageButtons` checks them, answering Telegram's error
+ * for the first fault.
+ */
+export function checkSpecifiedRichMessage(
+  checking: RichMessageParameterReading,
+):
+  | { readonly read: true; readonly richMessage: SpecifiedRichMessage }
+  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
+  if (!checking.read) {
+    return { read: false, errorAnswer: botApiError(400, checking.description) };
   }
-  const buttonReading = checkRichMessageButtons(parameterReading.richMessage);
-  if (!buttonReading.read) {
+  const buttonChecking = checkRichMessageButtons(checking.richMessage);
+  if (!buttonChecking.read) {
     return {
       read: false,
-      errorAnswer: presentBotApiError(BOT_API_ERRORS.buttonInvalid, buttonReading.buttonFailure),
+      errorAnswer: presentBotApiError(BOT_API_ERRORS.buttonInvalid, buttonChecking.buttonFailure),
     };
   }
   return {
     read: true,
     richMessage: {
-      richMessage: buttonReading.richMessage,
-      detectsEntities: parameterReading.detectsEntities,
+      richMessage: buttonChecking.richMessage,
+      detectsEntities: checking.detectsEntities,
     },
   };
 }

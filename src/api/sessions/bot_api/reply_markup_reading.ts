@@ -268,7 +268,7 @@ function checkReplyInterfaceMarkup(
 /**
  * Checks the buttons of a rich message, in rows and in its text, as TDLib's
  * `get_inline_keyboard_button` checks them for a rich message: as `checkInlineKeyboard` checks the
- * buttons of an inline keyboard. `readRichMessageParameter` has already refused a login button
+ * buttons of an inline keyboard. `parseRichMessageParameter` has already refused a login button
  * that names a bot, as the official Bot API server does while it parses the blocks, so no button
  * has a bot to resolve.
  */
