@@ -366,6 +366,67 @@ Deno.test('the query answer methods name the parameter that does not fit their s
   );
 });
 
+// A JSON parameter is refused where the official Bot API server reads it, so a required parameter
+// it reads earlier is reported first: `from_chat_id` before `message_ids`
+// (https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14390-L14402,
+// #L14457-L14469), and a message's content or its required fields before `reply_markup`
+// (#L14243-L14251, #L14365-L14385, #L14651-L14665). Telegram answered these orders in a live
+// capture of issue #250 on 2026-11-11.
+Deno.test('a JSON parameter is refused only once the parameters read before it fit', async () => {
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
+  const fromChatIdRequired = 'Bad Request: parameter "from_chat_id" is required';
+  const unparsableMarkup = '{';
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    ['forwardMessages', { chat_id: 1, message_ids: '[1,' }, fromChatIdRequired],
+    ['copyMessages', { chat_id: 1, message_ids: '[1,' }, fromChatIdRequired],
+    ['forwardMessages', { chat_id: 1, message_ids: [1, {}] }, fromChatIdRequired],
+    ['copyMessages', { chat_id: 1, message_ids: [1, {}] }, fromChatIdRequired],
+    ['deleteMessages', { message_ids: '[1,' }, "Bad Request: can't parse message_ids JSON object"],
+    [
+      'sendMessage',
+      { chat_id: 1, reply_markup: unparsableMarkup },
+      'Bad Request: message text is empty',
+    ],
+    [
+      'editMessageText',
+      { chat_id: 1, message_id: 1, reply_markup: unparsableMarkup },
+      'Bad Request: message text is empty',
+    ],
+    [
+      'sendContact',
+      { chat_id: 1, first_name: 'Ada', reply_markup: unparsableMarkup },
+      'Bad Request: parameter "phone_number" is required',
+    ],
+    [
+      'copyMessage',
+      { chat_id: 1, message_id: 1, reply_markup: unparsableMarkup },
+      fromChatIdRequired,
+    ],
+    // Once the parameters read before it fit, the JSON parameter is refused as before.
+    [
+      'sendMessage',
+      { chat_id: 1, text: 'Hi', reply_markup: unparsableMarkup },
+      "Bad Request: can't parse reply keyboard markup JSON object",
+    ],
+    [
+      'forwardMessages',
+      { chat_id: 1, from_chat_id: 1, message_ids: [1, {}] },
+      'Bad Request: invalid forwardMessages parameters: message_ids[1]',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected each JSON parameter to be refused where the official server reads it',
+  );
+});
+
 Deno.test('the deletion and reaction methods name the parameter that does not fit their schema', async () => {
   await using fixture = await createFixture();
   const { api, botApiPath } = fixture;

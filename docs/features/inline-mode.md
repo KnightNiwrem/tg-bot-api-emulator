@@ -61,16 +61,28 @@ and message content before query state and result metadata, producing errors suc
 `RESULT_ID_DUPLICATE` and the query-too-old error. As the official server's
 [`process_answer_inline_query_query`][answer-inline-query] does, the button is read before the
 results. Empty `button` text is no button, and a `button` that is not JSON the server can read is
-refused with `Bad Request: can't parse inline query results button JSON object`. Results are read in
-two passes, as upstream reads them. First, as the server's
-[`get_inline_query_results`][inline-query-results] does, each result in turn is parsed in full: its
-fields, then the text or rich message it sends, then its caption, with their formatting. Only then,
-as TDLib's [`answer_inline_query`][answer] does, is each result in turn checked: the MIME type of a
-file named by URL, then its inline keyboard's buttons, then what it sends, such as a location's
-coordinates or a rich message's buttons and files. So a later result that cannot be parsed is
-reported ahead of an earlier result's keyboard or location error. The emulator checks a login
-button's bot username with the other buttons, in the second pass, although the server checks it
-while parsing.
+refused with `Bad Request: can't parse inline query results button JSON object`. Results are then
+read as upstream reads them:
+
+1. As the server's [`get_inline_query_results`][inline-query-results] does, each result in turn is
+   parsed in the order of [`get_inline_query_result`][inline-query-result]: its type and `id`, then
+   the text or rich message its `input_message_content` sends, then its caption, then its inline
+   keyboard, including each login button's bot username, and last the fields of its type. A caption
+   is parsed whatever the type, so an article's caption that cannot be read is reported as Telegram
+   reports it, while a well-formed one is refused as a field an article does not take.
+2. The bots that the results' login buttons name are resolved, so an unknown bot is reported as
+   `Bad Request: bot "name" not found`.
+3. As TDLib's [`answer_inline_query`][answer] does, the button's `start_parameter` is checked, then
+   the number of results, and only then each result in turn: the MIME type of a file named by URL,
+   then its inline keyboard's links, then what it sends, such as a location's coordinates or a rich
+   message's buttons and files.
+
+So a later result that cannot be parsed is reported ahead of an earlier result's keyboard or
+location error, and an invalid `start_parameter` or a 51st result ahead of any result's link. A
+login button's invalid bot username inside a result is reported as
+`Bad Request: can't parse InlineQueryResult: Can't parse InlineKeyboardButton: LoginUrl bot username is invalid`.
+A Web App `button` over HTTP is still refused while the button is read, as parameters that do not
+fit the method, rather than with TDLib's link error after the results are parsed.
 
 With `receives_chosen_inline_results: true`, a choice also generates `chosen_inline_result` for the
 inline bot. If the result has an inline keyboard, that update supplies `inline_message_id`. Callback
@@ -271,3 +283,4 @@ public.
 [cache-expiry]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L2280-L2320
 [answer-inline-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15449-L15474
 [inline-query-results]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10994-L11011
+[inline-query-result]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L11030-L11299

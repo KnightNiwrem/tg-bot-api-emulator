@@ -4,7 +4,7 @@ import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentBotApiError } from './errors/error_template.ts';
 import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
-import { readRichMessageButtons } from './reply_markup_reading.ts';
+import { checkRichMessageButtons } from './reply_markup_reading.ts';
 import { readRichMessageParameter } from './rich_message_parameter.ts';
 import {
   type RequestedRichMessageFileTypes,
@@ -49,11 +49,10 @@ export async function resolveSpecifiedRichMessage(
 
 /**
  * Reads a `rich_message` parameter as `readRichMessageParameter` does, with its buttons as
- * `readRichMessageButtons` reads them, answering Telegram's error for a message it
+ * `checkRichMessageButtons` checks them, answering Telegram's error for a message it
  * cannot read.
  */
 export function readSpecifiedRichMessage(
-  context: BotApiMethodContext,
   richMessageParameter: string | undefined,
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
@@ -68,7 +67,7 @@ export function readSpecifiedRichMessage(
   if (!parameterReading.read) {
     return { read: false, errorAnswer: botApiError(400, parameterReading.description) };
   }
-  const buttonReading = readRichMessageButtons(context, parameterReading.richMessage);
+  const buttonReading = checkRichMessageButtons(parameterReading.richMessage);
   if (!buttonReading.read) {
     return {
       read: false,

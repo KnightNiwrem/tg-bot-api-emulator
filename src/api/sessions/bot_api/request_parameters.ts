@@ -457,6 +457,30 @@ export function jsonParameter<Output>(
 }
 
 /**
+ * A parameter as `deferredParameter` reads it: the value its schema reads, or the issues its schema
+ * reports, with paths inside the parameter, for a step to answer where the official Bot API server
+ * reads the parameter.
+ */
+export type DeferredParameter<Value> =
+  | { readonly fits: true; readonly value: Value }
+  | { readonly fits: false; readonly issues: readonly z.core.$ZodIssue[] };
+
+/**
+ * A parameter that `schema` reads, such as a `jsonParameter`, whose problems the method's steps
+ * answer, with `readDeferredParameter`, where the official server reads it, rather than before any
+ * step, as a method's schema does. A missing parameter is read as `schema` reads `undefined`, so a
+ * default still applies.
+ */
+export function deferredParameter<Schema extends z.ZodType>(schema: Schema) {
+  return z.unknown().optional().transform((value): DeferredParameter<z.output<Schema>> => {
+    const parsing = schema.safeParse(value);
+    return parsing.success
+      ? { fits: true, value: parsing.data }
+      : { fits: false, issues: parsing.error.issues };
+  });
+}
+
+/**
  * Telegram's description of a problem a parameter schema reports, which a parameter such as a
  * `jsonParameter` with `unparsableJsonDescription` gives its issue, or `undefined` for a problem
  * the emulator describes.

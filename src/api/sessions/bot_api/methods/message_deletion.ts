@@ -23,7 +23,7 @@ const deleteMessageParametersSchema = z.strictObject({
 
 const deleteMessagesParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
-  message_ids: messageIdentifiersParameter().optional(),
+  message_ids: messageIdentifiersParameter(),
 });
 
 /** What the message deletion methods use: the service that deletes chats' messages. */
@@ -59,8 +59,10 @@ export const MESSAGE_DELETION_METHODS: readonly BotApiMethod[] = [
     name: 'deleteMessages',
     recordsActivity: true,
     parameters: deleteMessagesParametersSchema,
-    steps: ({ parameters }) =>
-      startSteps(parameters).andThen(requireMessageIdentifiers).andThen(requireSpecifiedChatId),
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => requireMessageIdentifiers(call, parameters))
+        .andThen(requireSpecifiedChatId),
     // As on Telegram, IDs that identify no message of the chat are skipped.
     execute: (context: MessageDeletionContext, { chat_id: chatId, message_ids: messageIds }) => {
       const result = deleteChatMessages(context, chatId, messageIds);

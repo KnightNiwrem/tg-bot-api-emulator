@@ -535,6 +535,11 @@ Deno.test('every catalogue entry names where its description comes from', () => 
     formattedTextInvalid: FORMATTED_TEXT_ERRORS.map((error) =>
       BOT_API_ERRORS.formattedTextInvalid.provenance(error)
     ),
+    inlineKeyboardButtonUnparsable: [
+      BOT_API_ERRORS.inlineKeyboardButtonUnparsable.provenance({
+        reason: 'login_bot_username_invalid',
+      }),
+    ],
     buttonInvalid: BUTTON_FAILURES.map((failure) =>
       BOT_API_ERRORS.buttonInvalid.provenance(failure)
     ),
@@ -628,6 +633,10 @@ Deno.test('every catalogue entry names where its description comes from', () => 
         reason: 'rich_message_unparsable',
         parsingError: { reason: 'source_missing' },
       }),
+      BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
+        reason: 'keyboard_button_unparsable',
+        buttonError: { reason: 'login_bot_username_invalid' },
+      }),
     ],
   };
   const problems = Object.entries(BOT_API_ERRORS).flatMap(([name, entry]) => {
@@ -700,7 +709,6 @@ const BUTTON_FAILURES: readonly ButtonFailure[] = [
     reason: 'request_outside_private_chat' as const,
     requestKind,
   })),
-  { reason: 'login_bot_username_invalid' },
   { reason: 'login_bot_not_found', botUsername: 'grammy_bot' },
   { reason: 'inline_query_chat_types_empty' },
   ...(['inline_url', 'inline_login', 'inline_web_app', 'keyboard_web_app'] as const).map((

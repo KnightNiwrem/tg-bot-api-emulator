@@ -289,6 +289,14 @@ text or as a list and a later reader refuses, such as `editMessageMedia`'s `medi
 `caption_entities` or a field of `setChatPermissions`' `permissions` that Telegram does not know,
 keeps the description without a path, as do the other methods.
 
+A method's schema refuses a parameter before the method checks anything else, with two exceptions:
+`reply_markup` and `message_ids` are refused, with the same descriptions and paths, only where the
+official server reads them. So `forwardMessages` without `from_chat_id` is answered with
+`Bad Request: parameter "from_chat_id" is required` even when its `message_ids` cannot be read, and
+`sendMessage` without text with `Bad Request: message text is empty` even when its `reply_markup`
+cannot be read. The other JSON parameters, such as `reply_parameters` or `link_preview_options`, are
+still refused before any parameter the server reads ahead of them.
+
 ## Accepted options without their Telegram effects
 
 | Option or method                                   | Emulator behavior                            | Classification and details                                         |

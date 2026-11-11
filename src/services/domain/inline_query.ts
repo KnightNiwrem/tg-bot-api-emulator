@@ -217,11 +217,15 @@ export interface AnswerInlineQueryInput {
   readonly button?: InlineQueryResultsButton;
 }
 
-export type AnswerInlineQueryFailureReason =
+/** Why TDLib refuses an answer's button or its number of results. */
+export type AnswerInlineQueryOptionsFailureReason =
   | 'start_parameter_empty'
   | 'start_parameter_too_long'
   | 'start_parameter_invalid'
-  | 'too_many_results'
+  | 'too_many_results';
+
+export type AnswerInlineQueryFailureReason =
+  | AnswerInlineQueryOptionsFailureReason
   | 'query_id_invalid'
   | 'next_offset_invalid'
   | 'result_id_empty'
@@ -485,20 +489,37 @@ export class InlineQueryService {
   }
 
   /**
+   * TDLib's checks of an answer's button and its number of results, which `answer_inline_query`
+   * makes before it checks any result: the start parameter of a button that opens the bot's
+   * private chat, then at most `MAX_INLINE_QUERY_RESULT_COUNT` results. Reads no state, so the
+   * Bot API can check them in Telegram's order before it checks each result.
+   */
+  findAnswerOptionsFailure(
+    { button, resultCount }: {
+      readonly button?: InlineQueryResultsButton;
+      readonly resultCount: number;
+    },
+  ): AnswerInlineQueryOptionsFailureReason | undefined {
+    const buttonFailure = button === undefined ? undefined : checkResultsButton(button);
+    if (buttonFailure !== undefined) {
+      return buttonFailure;
+    }
+    return resultCount > MAX_INLINE_QUERY_RESULT_COUNT ? 'too_many_results' : undefined;
+  }
+
+  /**
    * Records the bot's answer to an inline query it received, after Telegram's checks. As on
    * Telegram, a query that does not exist, belongs to another bot, or is already answered cannot
    * be answered.
    */
   answerInlineQuery(input: AnswerInlineQueryInput): AnswerInlineQueryResult {
     return this.#transactions.withinTransaction(() => {
-      const buttonFailure = input.button === undefined
-        ? undefined
-        : checkResultsButton(input.button);
-      if (buttonFailure !== undefined) {
-        return { answered: false, reason: buttonFailure };
-      }
-      if (input.results.length > MAX_INLINE_QUERY_RESULT_COUNT) {
-        return { answered: false, reason: 'too_many_results' };
+      const optionsFailure = this.findAnswerOptionsFailure({
+        ...(input.button === undefined ? {} : { button: input.button }),
+        resultCount: input.results.length,
+      });
+      if (optionsFailure !== undefined) {
+        return { answered: false, reason: optionsFailure };
       }
       const messageContents: NormalizedInlineResultContent[] = [];
       for (const result of input.results) {

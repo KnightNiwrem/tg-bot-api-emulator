@@ -598,13 +598,12 @@ function readMessageText<Parameters extends z.output<typeof sendMessageParameter
 
 /** The step that reads the rich message of `sendRichMessage`, as `readSpecifiedRichMessage` does. */
 function readRichMessage<Parameters extends z.output<typeof sendRichMessageParametersSchema>>(
-  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters,
 ): BotApiStepResult<
   { readonly parameters: Parameters; readonly richMessage: SpecifiedRichMessage }
 > {
   const richMessageReading = readSpecifiedRichMessage(
-    context,
     parameters.rich_message,
     uploadedFiles,
     invalidParametersDescription,

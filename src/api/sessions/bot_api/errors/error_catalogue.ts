@@ -32,7 +32,11 @@ import type { PollOptionError } from '../input_poll_option_parameter.ts';
 import type { MenuButtonError } from '../menu_button_parameter.ts';
 import type { MessageEntityError } from '../message_entities_parameter.ts';
 import type { ReactionTypeError } from '../reaction_type_parameter.ts';
-import type { ButtonFailure, LinkButton } from '../reply_markup_reading.ts';
+import type {
+  ButtonFailure,
+  InlineKeyboardButtonParsingError,
+  LinkButton,
+} from '../reply_markup_reading.ts';
 import type { JsonObjectFieldError } from '../request_parameters.ts';
 import type {
   RichBlockParsingError,
@@ -285,6 +289,12 @@ const LINK_BUTTON_ERRORS = {
   LinkButton,
   { readonly buttonName: string; readonly provenance: BotApiErrorProvenance }
 >;
+
+/**
+ * How the official server's `get_array_generic` prefixes a fault of a button it cannot parse in a
+ * row of an inline keyboard.
+ */
+const INLINE_KEYBOARD_BUTTON_PARSING_PREFIX = "Can't parse InlineKeyboardButton: ";
 
 /** TDLib's errors for a link to a user on a button that needs an HTTPS link. */
 const USER_LINK_NOT_ALLOWED_ERRORS = {
@@ -1770,7 +1780,16 @@ export const BOT_API_ERRORS = {
   // Formatted text and buttons, as the official server and TDLib read them.
   /** Text with its parse mode or entities that `get_formatted_text` cannot read. */
   formattedTextInvalid: messageErrorTemplate('', describeFormattedTextError),
-  /** A button of a keyboard or a rich message that Telegram cannot read. */
+  /**
+   * A button of an inline keyboard that the official server cannot parse, which the array of
+   * buttons that `get_array_generic` reads around it prefixes. Inside an inline query result,
+   * `inlineQueryResultInvalid` prefixes it again.
+   */
+  inlineKeyboardButtonUnparsable: messageErrorTemplate(
+    INLINE_KEYBOARD_BUTTON_PARSING_PREFIX,
+    describeInlineKeyboardButtonParsingError,
+  ),
+  /** A parsed button of a keyboard or a rich message that Telegram cannot read. */
   buttonInvalid: messageErrorTemplate('', describeButtonFailure),
   /** Coordinates that name no point on Earth, for a location a message or an inline result sends. */
   locationInvalid: fixedBotApiError(400, 'Bad Request: invalid location specified', LOCATION_CHECK),
@@ -2130,15 +2149,26 @@ function describeMessageEntityError({ reason }: MessageEntityError): TelegramErr
   }
 }
 
+function describeInlineKeyboardButtonParsingError(
+  { reason }: InlineKeyboardButtonParsingError,
+): TelegramErrorMessage {
+  switch (reason) {
+    case 'login_bot_username_invalid':
+      return {
+        message: 'LoginUrl bot username is invalid',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10456-L10466'),
+      };
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled inline keyboard button parsing error: ${unhandledReason}`);
+    }
+  }
+}
+
 function describeButtonFailure(failure: ButtonFailure): TelegramErrorMessage {
   switch (failure.reason) {
     case 'request_outside_private_chat':
       return REQUEST_OUTSIDE_PRIVATE_CHAT_ERRORS[failure.requestKind];
-    case 'login_bot_username_invalid':
-      return {
-        message: 'LoginUrl bot username is invalid',
-        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10459-L10466'),
-      };
     case 'login_bot_not_found':
       return {
         message: `bot "${failure.botUsername}" not found`,
@@ -2297,6 +2327,10 @@ function describeInlineQueryResultError(error: InlineQueryResultError): Telegram
       return describeRichMessageParsingError(error.parsingError);
     case 'field_type_invalid':
       return describeJsonObjectFieldError(error);
+    case 'keyboard_button_unparsable': {
+      const { message, provenance } = describeInlineKeyboardButtonParsingError(error.buttonError);
+      return { message: `${INLINE_KEYBOARD_BUTTON_PARSING_PREFIX}${message}`, provenance };
+    }
     default: {
       const unhandledError: never = error;
       throw new Error(`Unhandled inline query result error: ${JSON.stringify(unhandledError)}`);
