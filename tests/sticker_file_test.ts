@@ -15,6 +15,13 @@ import {
 
 const UNKNOWN_CHUNK = webpChunk('ABCD', new Uint8Array([1, 2, 3]));
 
+/** A lossless 64×64 bitstream whose header names `version`, which must be 0. */
+function losslessOfVersion(version: number): Uint8Array<ArrayBuffer> {
+  const bitstream = vp8lBitstream(64, 64);
+  bitstream[4] |= version << 5;
+  return bitstream;
+}
+
 Deno.test('Static WebP images in every container form are read with their dimensions', () => {
   const images = {
     libwebpPixel: LIBWEBP_TRANSPARENT_PIXEL,
@@ -22,6 +29,10 @@ Deno.test('Static WebP images in every container form are read with their dimens
     lossless: staticWebpSticker(512, 384),
     smallest: staticWebpSticker(1, 1),
     largestLossless: staticWebpSticker(16_384, 16_384),
+    largestCanvas: webpFile([
+      webpChunk('VP8X', vp8xHeader(65_535, 65_535)),
+      webpChunk('VP8L', vp8lBitstream(1, 1)),
+    ]),
     extendedLossy: webpFile([
       webpChunk('VP8X', vp8xHeader(640, 480, { flags: VP8X_ALPHA_FLAG })),
       webpChunk('ALPH', new Uint8Array([0, 0, 0])),
@@ -46,6 +57,7 @@ Deno.test('Static WebP images in every container form are read with their dimens
       lossless: { read: true, width: 512, height: 384 },
       smallest: { read: true, width: 1, height: 1 },
       largestLossless: { read: true, width: 16_384, height: 16_384 },
+      largestCanvas: { read: true, width: 65_535, height: 65_535 },
       extendedLossy: { read: true, width: 640, height: 480 },
       extendedLossless: { read: true, width: 700, height: 300 },
     },
@@ -113,6 +125,13 @@ Deno.test('Content that is not a well-formed static WebP image is refused', () =
       webpChunk('VP8X', vp8xHeader(64, 64)),
       webpChunk('VP8L', brokenLossless),
     ]),
+    oversizedExtendedHeader: webpFile([
+      webpChunk('VP8X', new Uint8Array([...vp8xHeader(64, 64), 0, 0])),
+      lossless,
+    ]),
+    // 65536 × 65536 pixels exceed the 2^32 - 1 the specification allows a canvas.
+    canvasOfTooManyPixels: webpFile([webpChunk('VP8X', vp8xHeader(65_536, 65_536)), lossless]),
+    losslessOfLaterVersion: webpFile([webpChunk('VP8L', losslessOfVersion(1))]),
   };
 
   for (const [name, content] of Object.entries(contents)) {

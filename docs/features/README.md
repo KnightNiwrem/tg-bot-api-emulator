@@ -87,7 +87,8 @@ above determines whether an individual method is available.
 - Basic groups, channels, forum topics, direct messages of channels, and chat migration. Supergroups
   are the only shared chat kind exposed by the HTTP server.
 - Media other than photos, documents, videos, voice notes, audio files and regular static stickers
-  that bots resend by `file_id`, [sticker uploads and sets](media-and-files.md#real-gaps), dice,
+  that bots resend by `file_id`,
+  [sticker uploads and sets](media-and-files.md#sticker-uploads-and-other-kinds-of-stickers), dice,
   live locations, venues, games, checklists, ephemeral messages and stories. Drafts lack
   [topics](messages.md#real-gaps), rich messages lack
   [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
