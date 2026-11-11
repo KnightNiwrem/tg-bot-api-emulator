@@ -439,9 +439,9 @@ export interface BotPrivateChatSendingTypes {
 /**
  * A bot reaches its private chat with another bot it knows, as `BotToBotPrivateChatPolicy`
  * identifies it, and finds the chat's messages by the IDs of its own message box. As in any
- * private chat, the chat stores message effects. As Telegram documents for private chats, its
- * servers refuse a message unless both bots turned on Bot-to-Bot Communication Mode, which they
- * check once the Bot API server checked everything it can.
+ * private chat, the chat stores message effects. As Telegram documents for private chats, and as
+ * its servers answered, they refuse a message unless both bots turned on Bot-to-Bot Communication
+ * Mode, which they check once the Bot API server checked everything it can.
  */
 export interface BotToBotPrivateChatSendingTypes {
   readonly address: PrivateChatAddress;
@@ -459,7 +459,8 @@ export interface BotToBotPrivateChatSendingTypes {
  * A bot that addresses itself, by its own ID or username, reaches a chat that holds no messages.
  * As observed on Telegram, its servers refuse every message there with `USER_IS_BOT`, which TDLib
  * reports as "The bot can't send messages to the bot", once the Bot API server checked everything
- * it can, so nothing is ever stored there.
+ * it can, so nothing is ever stored there. They do so whether or not the bot turned on Bot-to-Bot
+ * Communication Mode.
  */
 export interface BotSelfChatSendingTypes {
   readonly address: PrivateChatAddress;
