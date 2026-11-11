@@ -24,6 +24,7 @@ import {
 } from '../../contracts/conversation_reads.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import { refuseSupergroupRequest } from './chat_access_refusals.ts';
 
 /** Where the account routes are mounted within the server, as a contract path template. */
 const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
@@ -44,9 +45,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
       const result = supergroupMessaging.getMessageHistory({ accountId, chatId });
       if (!result.found) {
-        return result.reason === 'not_a_member'
-          ? { status: 403, body: { reason: result.reason } }
-          : { status: 404, body: { reason: result.reason } };
+        return refuseSupergroupRequest(result.reason);
       }
       return {
         status: 200,
@@ -69,9 +68,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
         chatId,
       });
       if (!result.found) {
-        return result.reason === 'not_a_member'
-          ? { status: 403, body: { reason: result.reason } }
-          : { status: 404, body: { reason: result.reason } };
+        return refuseSupergroupRequest(result.reason);
       }
       return {
         status: 200,
@@ -93,9 +90,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
       const result = supergroupMessaging.getMessageHistory({ accountId, chatId });
       if (!result.found) {
-        return result.reason === 'not_a_member'
-          ? { status: 403, body: { reason: result.reason } }
-          : { status: 404, body: { reason: result.reason } };
+        return refuseSupergroupRequest(result.reason);
       }
       return {
         status: 200,
@@ -121,9 +116,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
         chat: { type: 'supergroup', chatId },
       });
       if (!result.found) {
-        return result.reason === 'not_a_member'
-          ? { status: 403, body: { reason: result.reason } }
-          : { status: 404, body: { reason: result.reason } };
+        return refuseSupergroupRequest(result.reason);
       }
       const { shownReplyInterface } = result;
       return {

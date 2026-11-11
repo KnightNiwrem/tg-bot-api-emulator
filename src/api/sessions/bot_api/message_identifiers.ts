@@ -11,14 +11,6 @@ import {
 } from './method_steps.ts';
 import { type DeferredParameter, deferredParameter, jsonParameter } from './request_parameters.ts';
 
-/** Telegram's descriptions for a list of message identifiers it rejects. */
-export const MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION = BOT_API_ERRORS
-  .messageIdentifiersNotSpecified.description();
-export const TOO_MANY_MESSAGE_IDENTIFIERS_DESCRIPTION = BOT_API_ERRORS.tooManyMessageIdentifiers
-  .description();
-export const INVALID_MESSAGE_IDENTIFIER_DESCRIPTION = BOT_API_ERRORS.messageIdentifierInvalid
-  .description();
-
 /** Telegram reads a missing or non-positive `message_id` as 0, which identifies no message. */
 export const NO_MESSAGE_ID = 0;
 

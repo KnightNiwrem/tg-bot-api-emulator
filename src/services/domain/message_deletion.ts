@@ -11,12 +11,13 @@ import {
   holdsSupergroupAdministratorRight,
   type SupergroupBotAccessFailureReason,
 } from '../../types/chat_membership.ts';
-import type {
-  ChatMessageLookup,
-  PrivateChatAccessPredicates,
-  PrivateChatIdentityPolicy,
-  SupergroupAccessPredicates,
-  SupergroupIdentityPolicy,
+import {
+  type ChatMessageLookup,
+  type PrivateChatAccessPredicates,
+  type PrivateChatIdentityPolicy,
+  reachSupergroupAsMember,
+  type SupergroupAccessPredicates,
+  type SupergroupIdentityPolicy,
 } from '../../types/chat_policy.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
@@ -37,7 +38,7 @@ import {
 } from '../../types/virtual_message.ts';
 
 /** Messages of the bot's private chat with an account, which the bot deletes. */
-export interface BotPrivateChatMessagesDeletion {
+interface BotPrivateChatMessagesDeletion {
   readonly fromBotId: number;
   /** The bot's private chat, by the account it is with. */
   readonly chat: PrivateChatAddress;
@@ -46,7 +47,7 @@ export interface BotPrivateChatMessagesDeletion {
 }
 
 /** Messages of a supergroup, which a bot deletes as a member. */
-export interface BotSupergroupMessagesDeletion {
+interface BotSupergroupMessagesDeletion {
   readonly fromBotId: number;
   readonly chat: SupergroupChatAddress;
   /** The supergroup's IDs of the messages. */
@@ -335,17 +336,10 @@ export class MessageDeletionService {
     this.#accountSupergroupTargeting = {
       ...supergroupMessages,
       reachChat: (accountId, chat) => {
-        const identification = supergroups.identifyChatForAccount(accountId, chat);
-        if (!identification.identified) {
-          return { reached: false, reason: identification.reason };
-        }
-        const membership = supergroups.resolveAccountMembership(
-          accountId,
-          identification.supergroup,
-        );
-        return membership.member
-          ? { reached: true, key: identification.key, membership: membership.membership }
-          : { reached: false, reason: membership.reason };
+        const reach = reachSupergroupAsMember(supergroups, accountId, chat);
+        return reach.reached
+          ? { reached: true, key: reach.key, membership: reach.membership }
+          : reach;
       },
       findRefusal: ({ membership }, accountId, message) =>
         (isSupergroupContentMessage(message) && message.sender.kind === 'account' &&

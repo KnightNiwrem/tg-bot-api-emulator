@@ -31,7 +31,7 @@ const MAX_INLINE_QUERY_CACHE_TIME_SECONDS = 86_400;
 const MAX_START_PARAMETER_LENGTH = 64;
 
 /** The kinds of result an account's client lists, by the Bot API's `type` names. */
-export const ACCOUNT_INLINE_QUERY_RESULT_TYPES = [
+const ACCOUNT_INLINE_QUERY_RESULT_TYPES = [
   'article',
   'contact',
   'location',

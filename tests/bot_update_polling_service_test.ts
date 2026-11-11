@@ -5,7 +5,7 @@ import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_
 import { BotActivityService } from '../src/services/bot_activity/bot_activity.ts';
 import {
   BotUpdatePollingService,
-  type GetUpdatesResult,
+  type UpdatePollResult,
 } from '../src/services/update_polling/bot_update_polling.ts';
 import { BotUpdateConsumerService } from '../src/services/update_consumers/bot_update_consumer.ts';
 import { BotWebhookRepository } from '../src/repositories/bot_webhook/bot_webhook.ts';
@@ -344,7 +344,7 @@ function createPrivateMessage(messageId: number): BotApiPrivateMessage {
   };
 }
 
-function expectRetrievedUpdates(result: GetUpdatesResult): readonly BotApiUpdate[] {
+function expectRetrievedUpdates(result: UpdatePollResult): readonly BotApiUpdate[] {
   if (!result.retrieved) {
     throw new Error(`Expected getUpdates to retrieve updates, received ${result.reason}`);
   }

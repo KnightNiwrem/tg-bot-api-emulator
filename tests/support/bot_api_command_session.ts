@@ -145,6 +145,3 @@ export function createBotApiCommandSession(
     [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }
-
-/** The session of `createBotApiCommandSession`. */
-export type BotApiCommandSession = ReturnType<typeof createBotApiCommandSession>;

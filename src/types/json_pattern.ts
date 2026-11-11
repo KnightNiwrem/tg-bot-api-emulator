@@ -187,7 +187,7 @@ export function matchesJsonPattern(value: JsonValue, pattern: JsonValue): boolea
 }
 
 /** Whether a JSON value is an object, which neither an array, a number nor `null` is. */
-export function isJsonObject(
+function isJsonObject(
   value: JsonValue,
 ): value is { readonly [member: string]: JsonValue } {
   return typeof value === 'object' && value !== null && !Array.isArray(value) &&

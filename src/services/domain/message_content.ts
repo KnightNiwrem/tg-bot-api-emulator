@@ -1158,7 +1158,7 @@ function hasUnstoredContent(content: NormalizedOutgoingContent): boolean {
  * Whether normalized content would leave a message's content as it is. Content with a new upload
  * or a new poll always changes it.
  */
-export function isUnchangedContent(
+function isUnchangedContent(
   replacement: NormalizedOutgoingContent,
   content: MessageContent,
 ): boolean {

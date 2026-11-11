@@ -98,7 +98,7 @@ type OnlyUndefined<Type> = [Type] extends [undefined] ? [undefined] extends [Typ
  * it is assignable to, so a key is checked against the variant it belongs to. Array elements add
  * `[]` to the path.
  */
-export type UnknownKeyPaths<Local, Reference, Path extends string = '', Enclosing = never> =
+type UnknownKeyPaths<Local, Reference, Path extends string = '', Enclosing = never> =
   IsEnclosed<Local, Reference, Enclosing> extends true ? never
     : ComparedMembers<Local, Reference> extends infer LocalMember
       ? LocalMember extends unknown ? MemberUnknownKeyPaths<
@@ -151,7 +151,7 @@ type KeyComparedMembers<LocalObject, ReferenceObjects> =
  * the reference offers variants, the path continues into the likely counterpart of each local
  * member, and ends when there is no single one.
  */
-export type IncompatibleValuePaths<Local, Reference, Path extends string = '', Enclosing = never> =
+type IncompatibleValuePaths<Local, Reference, Path extends string = '', Enclosing = never> =
   IsEnclosed<Local, Reference, Enclosing> extends true ? never
     : EachMemberIncompatibleValuePaths<
       Local,

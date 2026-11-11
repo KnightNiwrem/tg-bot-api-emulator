@@ -12,12 +12,13 @@ import {
   holdsSupergroupAdministratorRight,
   type SupergroupBotAccessFailureReason,
 } from '../../types/chat_membership.ts';
-import type {
-  ChatMessageLookup,
-  PrivateChatAccessPredicates,
-  PrivateChatIdentityPolicy,
-  SupergroupAccessPredicates,
-  SupergroupIdentityPolicy,
+import {
+  type ChatMessageLookup,
+  type PrivateChatAccessPredicates,
+  type PrivateChatIdentityPolicy,
+  reachSupergroupAsMember,
+  type SupergroupAccessPredicates,
+  type SupergroupIdentityPolicy,
 } from '../../types/chat_policy.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
@@ -765,30 +766,6 @@ function createSupergroupPinning(
       });
     },
   };
-}
-
-/** Reaches a supergroup as an account that is a member, with its standing there. */
-function reachSupergroupAsMember(
-  supergroups: SupergroupPinningPolicy,
-  accountId: number,
-  chat: SupergroupChatAddress,
-):
-  | {
-    readonly reached: true;
-    readonly key: SupergroupChatKey;
-    readonly supergroup: Supergroup;
-    readonly membership: ChatMembership;
-  }
-  | { readonly reached: false; readonly reason: 'chat_not_found' | 'not_a_member' } {
-  const identification = supergroups.identifyChatForAccount(accountId, chat);
-  if (!identification.identified) {
-    return { reached: false, reason: identification.reason };
-  }
-  const { key, supergroup } = identification;
-  const membership = supergroups.resolveAccountMembership(accountId, supergroup);
-  return membership.member
-    ? { reached: true, key, supergroup, membership: membership.membership }
-    : { reached: false, reason: membership.reason };
 }
 
 /**

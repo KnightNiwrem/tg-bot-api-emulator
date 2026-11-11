@@ -17,22 +17,9 @@ export function describeInvalidMethodParameters(methodName: string): string {
 }
 
 /**
- * The answer to parameters that do not fit a method's schema, for a method whose description of
- * them is `invalidParametersDescription`: Telegram's description of the first problem the schema
- * reports, if a parameter gives one, such as `reply_markup` text that is not JSON, and otherwise
- * `invalidParametersDescription`.
- */
-export function parameterSchemaFailureAnswer(
-  error: z.ZodError,
-  invalidParametersDescription: string,
-): BotApiMethodAnswer {
-  return botApiError(400, findFirstTelegramIssueDescription(error) ?? invalidParametersDescription);
-}
-
-/**
  * The answer to parameters that do not fit a method's schema: Telegram's description of the first
- * problem the schema reports, if a parameter gives one, as `parameterSchemaFailureAnswer` answers,
- * and otherwise the emulator's description naming the problem's path, such as
+ * problem the schema reports, if a parameter gives one, such as `reply_markup` text that is not
+ * JSON, and otherwise the emulator's description naming the problem's path, such as
  * `reply_markup.inline_keyboard[0][1]`. An unknown key is named by its own path, and a value no
  * alternative of a union accepts by the union's path. The path never includes a parameter's value,
  * so the description does not echo the bot's data.

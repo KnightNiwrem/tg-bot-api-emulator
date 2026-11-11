@@ -6,9 +6,6 @@ import type { BotApiFamilyContext, BotApiMethodAnswer } from './method_call.ts';
 import { answerWith, type BotApiStepResult, proceedWith } from './method_steps.ts';
 import { CHAT_USERNAME_PREFIX, type ChatIdentifier } from './request_parameters.ts';
 
-/** Telegram's error for a call that names no chat at all. */
-export const CHAT_ID_EMPTY_DESCRIPTION = BOT_API_ERRORS.chatIdEmpty.description();
-
 /** A call's parameters once a step has found the chat they name by `chat_id`. */
 export type WithSpecifiedChatId<Parameters extends { readonly chat_id?: number }> =
   & Omit<Parameters, 'chat_id'>

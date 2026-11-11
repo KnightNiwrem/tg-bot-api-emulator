@@ -11,12 +11,13 @@ import type {
   ChatMembership,
   SupergroupBotAccessFailureReason,
 } from '../../types/chat_membership.ts';
-import type {
-  ChatMessageLookup,
-  PrivateChatAccessPredicates,
-  PrivateChatIdentityPolicy,
-  SupergroupAccessPredicates,
-  SupergroupIdentityPolicy,
+import {
+  type ChatMessageLookup,
+  type PrivateChatAccessPredicates,
+  type PrivateChatIdentityPolicy,
+  reachSupergroupAsMember,
+  type SupergroupAccessPredicates,
+  type SupergroupIdentityPolicy,
 } from '../../types/chat_policy.ts';
 import type { ChatDomainEvent } from '../../types/chat_domain_event.ts';
 import type { InlineKeyboard } from '../../types/inline_keyboard.ts';
@@ -1069,16 +1070,11 @@ function createAccountSupergroupTargeting(
 ): AccountEditTargeting<AccountSupergroupEditTypes> {
   return {
     reachMessage: ({ fromAccountId, chat, messageId }) => {
-      const identification = supergroups.identifyChatForAccount(fromAccountId, chat);
-      if (!identification.identified) {
-        return { reached: false, reason: identification.reason };
+      const reach = reachSupergroupAsMember(supergroups, fromAccountId, chat);
+      if (!reach.reached) {
+        return reach;
       }
-      const { key, supergroup } = identification;
-      const membership = supergroups.resolveAccountMembership(fromAccountId, supergroup);
-      if (!membership.member) {
-        return { reached: false, reason: membership.reason };
-      }
-      const message = supergroups.findMessageByChatMessageId(key, messageId);
+      const message = supergroups.findMessageByChatMessageId(reach.key, messageId);
       return message === undefined
         ? { reached: false, reason: 'message_not_found' }
         : { reached: true, message };

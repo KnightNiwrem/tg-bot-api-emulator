@@ -1,7 +1,8 @@
 import type { BotApiUpdate } from '../../types/bot_api.ts';
 import type { Deadline, Scheduler } from '../../timing/session/session_timing.ts';
 
-export interface GetUpdatesRequest {
+/** A bot's request for its pending updates, which may wait up to `timeoutSeconds` for one. */
+export interface UpdatePollRequest {
   readonly offset?: number;
   readonly limit: number;
   readonly timeoutSeconds: number;
@@ -11,7 +12,8 @@ export interface GetUpdatesRequest {
 /** Why a held long poll ended without reading updates. */
 type LongPollTerminationReason = 'terminated_by_other_long_poll' | 'terminated_by_webhook';
 
-export type GetUpdatesResult =
+/** The updates a poll read, or why it read none. */
+export type UpdatePollResult =
   | { readonly retrieved: true; readonly updates: readonly BotApiUpdate[] }
   | {
     readonly retrieved: false;
@@ -69,7 +71,7 @@ interface PollingTransactions {
 
 /** What a request's arrival decided: its answer, or the wait it is held for, and what it reads. */
 type PollArrival =
-  | { readonly held: false; readonly result: GetUpdatesResult }
+  | { readonly held: false; readonly result: UpdatePollResult }
   | {
     readonly held: true;
     readonly firstUnconfirmedUpdateId: number | undefined;
@@ -131,9 +133,9 @@ export class BotUpdatePollingService {
    */
   async getUpdates(
     botId: number,
-    { offset, limit, timeoutSeconds, signal }: GetUpdatesRequest,
+    { offset, limit, timeoutSeconds, signal }: UpdatePollRequest,
     changeOnArrival: () => void = () => {},
-  ): Promise<GetUpdatesResult> {
+  ): Promise<UpdatePollResult> {
     const arrival = this.#transactions.execute((): PollArrival => {
       changeOnArrival();
       // Telegram resolves a negative offset once, when the request arrives, so updates enqueued
@@ -177,7 +179,7 @@ export class BotUpdatePollingService {
 
     // A poll that a conflict terminated but that is answered only after the session ended is
     // answered as any other poll the end finds unanswered.
-    const answer = this.#transactions.execute((): GetUpdatesResult => {
+    const answer = this.#transactions.execute((): UpdatePollResult => {
       const { terminationReason } = heldLongPoll;
       if (terminationReason !== undefined) {
         return { retrieved: false, reason: terminationReason };
@@ -208,7 +210,7 @@ export class BotUpdatePollingService {
     return this.#botUpdates.readPendingUpdates(botId).slice(0, limit);
   }
 
-  #deliverUpdates(botId: number, updates: readonly BotApiUpdate[]): GetUpdatesResult {
+  #deliverUpdates(botId: number, updates: readonly BotApiUpdate[]): UpdatePollResult {
     this.#updateActivity.recordUpdateDeliveries(botId, updates, 'polling');
     return { retrieved: true, updates };
   }

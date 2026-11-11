@@ -142,6 +142,34 @@ export interface SupergroupAccessPredicates {
   ): SupergroupMembershipResolution<SupergroupBotAccessFailureReason>;
 }
 
+/** A supergroup an account reached as a current member, with its standing there. */
+export type SupergroupMemberReach =
+  | ({ readonly reached: true; readonly membership: ChatMembership } & IdentifiedSupergroup)
+  | { readonly reached: false; readonly reason: 'chat_not_found' | 'not_a_member' };
+
+/**
+ * Reaches the supergroup an address names as an account that is a current member of it, for an
+ * operation whose check order asks whether the supergroup exists and then whether the account is a
+ * member, with no check between them.
+ */
+export function reachSupergroupAsMember(
+  supergroups:
+    & Pick<SupergroupIdentityPolicy, 'identifyChatForAccount'>
+    & Pick<SupergroupAccessPredicates, 'resolveAccountMembership'>,
+  accountId: number,
+  address: SupergroupChatAddress,
+): SupergroupMemberReach {
+  const identification = supergroups.identifyChatForAccount(accountId, address);
+  if (!identification.identified) {
+    return { reached: false, reason: identification.reason };
+  }
+  const { key, supergroup } = identification;
+  const membership = supergroups.resolveAccountMembership(accountId, supergroup);
+  return membership.member
+    ? { reached: true, key, supergroup, membership: membership.membership }
+    : { reached: false, reason: membership.reason };
+}
+
 /**
  * Message lookup: finds a chat's message by its chat message ID, the ID by which the chat's
  * messages are addressed, which in a private chat is its ID in the bot's message box, by which
