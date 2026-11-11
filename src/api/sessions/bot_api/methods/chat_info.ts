@@ -192,10 +192,11 @@ export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
 /**
  * Finds everything a bot may learn about a chat: the private chat with an account that started
  * it or with another bot it knows, or a supergroup the bot may read, which a public one is to bots
- * that are not members. Bot-to-Bot Communication Mode does not matter for the chat with a bot. It
- * shows the chat's newest pinned message, as the official Bot API server's `getChat` asks TDLib's
- * `getChatPinnedMessage` for it, and a supergroup shows the bot's own primary invite link, as
- * `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it.
+ * that are not members. The private chat with an account, and a supergroup, show the chat's newest
+ * pinned message, as the official Bot API server's `getChat` asks TDLib's `getChatPinnedMessage`
+ * for it, and a supergroup shows the bot's own primary invite link, as
+ * `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it. The chat with another bot is shown
+ * whether or not either bot turned on Bot-to-Bot Communication Mode.
  */
 function findChatFullInfo(
   context: ChatInfoContext,

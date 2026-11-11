@@ -26,6 +26,7 @@ interface PrivateBotMessage {
   readonly date: number;
   readonly text?: string;
   readonly reply_to_message?: PrivateBotMessage;
+  readonly poll?: Record<string, unknown>;
 }
 
 interface MessageUpdate {
@@ -322,6 +323,33 @@ Deno.test('what a bot knows of other bots stays in its session', async () => {
       (await fixture.callBotApi(alpha, 'sendMessage', { chat_id: beta.id, text: 'again' })).ok,
     ],
     [CHAT_NOT_FOUND, true],
+  );
+});
+
+Deno.test("the bot receiving an open quiz in its private chat with another bot sees the quiz's solution", async () => {
+  await using fixture = await createFixture();
+  const alpha = await fixture.createBot('alpha_bot', true);
+  const beta = await fixture.createBot('beta_bot', true);
+
+  const sent = await fixture.callBotApi(alpha, 'sendPoll', {
+    chat_id: '@beta_bot',
+    question: 'Which is round?',
+    options: ['Pasta', 'Pizza'],
+    type: 'quiz',
+    correct_option_ids: [1],
+    explanation: 'Pizza is round',
+  });
+  const received = await fixture.readUpdates(beta);
+
+  assertEquals(sent.ok, true, `Expected the quiz to be sent, received ${JSON.stringify(sent)}`);
+  assertEquals(
+    received.map(({ message }) => [
+      message?.poll?.is_closed,
+      message?.poll?.correct_option_ids,
+      message?.poll?.explanation,
+    ]),
+    [[false, [1], 'Pizza is round']],
+    "Expected beta to see the open quiz's solution, as the bot of the private chat it was sent to",
   );
 });
 

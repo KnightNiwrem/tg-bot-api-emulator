@@ -221,10 +221,24 @@ export function showsQuizSolution(
       (pollMessage !== undefined && isSentToBotPrivateChat(pollMessage, observerId)));
 }
 
-/** Whether a message was sent, not forwarded, to the private chat of the given bot. */
+/**
+ * Whether a message was sent, not forwarded, to a private chat of the given bot: its chat with an
+ * account, or with another bot.
+ */
 function isSentToBotPrivateChat(message: ChatMessage, botId: number): boolean {
-  return message.kind === 'private_message' && message.chat.conversation.botId === botId &&
-    message.forwardInfo === undefined;
+  if (message.forwardInfo !== undefined) {
+    return false;
+  }
+  switch (message.kind) {
+    case 'private_message':
+      return message.chat.conversation.botId === botId;
+    case 'bot_to_bot_private_message': {
+      const { lowerBotId, higherBotId } = message.chat.conversation;
+      return lowerBotId === botId || higherBotId === botId;
+    }
+    case 'supergroup_message':
+      return false;
+  }
 }
 
 /**

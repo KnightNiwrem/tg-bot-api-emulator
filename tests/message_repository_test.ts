@@ -564,8 +564,8 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
       return deleted;
     },
   );
-  const otherChatMessages = [SECOND_PRIVATE_CHAT, SECOND_SUPERGROUP].map((chat) =>
-    addText(messages, chat, 'other chat')
+  const otherChatMessages = [SECOND_PRIVATE_CHAT, BOT_TO_BOT_PRIVATE_CHAT, SECOND_SUPERGROUP].map(
+    (chat) => addText(messages, chat, 'other chat'),
   );
   const edit = {
     content: { kind: 'text', text: 'edited', entities: [] },
@@ -576,6 +576,7 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
     () => messages.editMessage(SECOND_PRIVATE_CHAT, privateMessage.id, edit),
     () => messages.editMessage(SECOND_SUPERGROUP, supergroupMessage.id, edit),
     () => messages.editMessage(FIRST_SUPERGROUP, privateMessage.id, edit),
+    () => messages.editMessage(BOT_TO_BOT_PRIVATE_CHAT, privateMessage.id, edit),
     () => messages.setMessageReactions(SECOND_SUPERGROUP, supergroupMessage.id, []),
   ].map((change) => {
     try {
@@ -585,7 +586,7 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
       return error instanceof Error ? 'refused' : error;
     }
   });
-  assertEquals(refusals, ['refused', 'refused', 'refused', 'refused']);
+  assertEquals(refusals, ['refused', 'refused', 'refused', 'refused', 'refused']);
   assertEquals(
     [privateMessage, supergroupMessage].map((message) =>
       messages.findChatMessage(message.chat, message.id) === message
@@ -599,7 +600,7 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
     ['kept'],
     ['other chat'],
     [],
-    [],
+    ['other chat'],
     ['kept'],
     ['other chat'],
   ]);
@@ -607,7 +608,7 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
     [privateMessage, supergroupMessage, ...otherChatMessages].map((message) =>
       messages.findChatMessage(message.chat, message.id) !== undefined
     ),
-    [false, false, true, true],
+    [false, false, true, true, true],
   );
 });
 

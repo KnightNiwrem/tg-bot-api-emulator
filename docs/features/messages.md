@@ -96,7 +96,7 @@ Each bot sees the chat from its own side, as Telegram showed it on 2026-11-11: `
 bot, as a private chat, and `from` is the sending bot. The recipient receives a `message` update,
 and the sender none for its own message. As in every private chat, each bot numbers the message in
 the one message box that numbers all its private chats, with accounts and with bots alike, so the
-two bots know it by different IDs, and an ID of another chat's message names no message of this one.
+two bots' IDs of it may differ, and an ID of another chat's message names no message of this one.
 The recipient replies by the numeric `chat.id` of the update, with `reply_parameters` naming its own
 ID of the message, and the sender sees the reply and the replied message by its own IDs.
 
