@@ -20,18 +20,21 @@
  * @module
  */
 import type { ChatMembership, SupergroupBotAccessFailureReason } from './chat_membership.ts';
-import type {
-  ChatAddress,
-  ChatKey,
-  PrivateChatAddress,
-  PrivateChatKey,
-  PrivateConversation,
-  PrivateConversationRole,
-  Supergroup,
-  SupergroupChatAddress,
-  SupergroupChatKey,
+import {
+  type BotToBotPrivateChatKey,
+  type ChatAddress,
+  type ChatKey,
+  getBotToBotConversationPeerId,
+  type PrivateChatAddress,
+  type PrivateChatKey,
+  type PrivateConversation,
+  type PrivateConversationRole,
+  type Supergroup,
+  type SupergroupChatAddress,
+  type SupergroupChatKey,
 } from './virtual_chat.ts';
 import {
+  type BotToBotPrivateMessage,
   isPrivateContentMessage,
   type PrivateMessage,
   type SupergroupMessage,
@@ -215,6 +218,37 @@ export const privateChatMessagePolicy:
       message.sender === 'bot' && isPrivateContentMessage(message)
         ? []
         : [message.chat.conversation.botId],
+  };
+
+/**
+ * How bot-to-bot private chats number messages and who learns of them. As in every private chat,
+ * each bot numbers the messages of all its private chats in its own box and sees them by its own
+ * IDs. Only the bot that did not write a message receives an update about it: as on Telegram, the
+ * sender receives none for its own message.
+ */
+export const botToBotPrivateChatMessagePolicy:
+  & MessageIdAllocationPolicy<BotToBotPrivateChatKey>
+  & {
+    /** The box from which one of the conversation's bots sees its messages: its own. */
+    getObserverBoxOwnerId(chat: BotToBotPrivateChatKey, observerBotId: number): number;
+    /**
+     * The bots that receive an update about a bot-to-bot private message, before subscriptions
+     * filter them.
+     */
+    selectMessageRecipientBotIds(message: BotToBotPrivateMessage): readonly number[];
+  } = {
+    getNumberingBoxOwnerIds: ({ conversation }) => [
+      conversation.lowerBotId,
+      conversation.higherBotId,
+    ],
+    getObserverBoxOwnerId: ({ conversation }, observerBotId) => {
+      // Fails for a bot that is no participant of the conversation.
+      getBotToBotConversationPeerId(conversation, observerBotId);
+      return observerBotId;
+    },
+    selectMessageRecipientBotIds: ({ chat, sender }) => [
+      getBotToBotConversationPeerId(chat.conversation, sender.botId),
+    ],
   };
 
 /**

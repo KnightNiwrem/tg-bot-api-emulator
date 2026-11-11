@@ -1,3 +1,4 @@
+import { viewPrivateChatMessageForBot } from './chat_message_view.ts';
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 
@@ -91,11 +92,14 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
         return refuseInlineQueryResultChoice(result.reason);
       }
       const { message } = result;
-      return message.kind === 'private_message'
-        ? { status: 201, body: { message: botMessageViews.viewPrivateMessageForBot(message) } }
-        : {
+      return message.kind === 'supergroup_message'
+        ? {
           status: 201,
           body: { message: botMessageViews.viewSupergroupMessage(message, accountId) },
+        }
+        : {
+          status: 201,
+          body: { message: viewPrivateChatMessageForBot(botMessageViews, message) },
         };
     },
   );

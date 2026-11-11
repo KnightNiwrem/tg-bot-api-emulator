@@ -3,7 +3,7 @@ import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
 import type {
   ChatAction,
-  ChatKey,
+  ChatActionChatKey,
   PrivateConversationKey,
   SharedChat,
   VisibleChatAction,
@@ -52,9 +52,9 @@ interface SupergroupMembershipLookup {
 }
 
 interface ChatActionStore {
-  showAction(chat: ChatKey, shownAction: VisibleChatAction): void;
-  removeAction(chat: ChatKey, botId: number): boolean;
-  getActions(chat: ChatKey): readonly VisibleChatAction[];
+  showAction(chat: ChatActionChatKey, shownAction: VisibleChatAction): void;
+  removeAction(chat: ChatActionChatKey, botId: number): boolean;
+  getActions(chat: ChatActionChatKey): readonly VisibleChatAction[];
 }
 
 interface ChatActionServiceDependencies {
@@ -65,7 +65,7 @@ interface ChatActionServiceDependencies {
 }
 
 type ChatActionChatLookup =
-  | { readonly found: true; readonly chat: ChatKey }
+  | { readonly found: true; readonly chat: ChatActionChatKey }
   | { readonly found: false; readonly reason: ChatActionsLookupFailureReason };
 
 /**
@@ -96,7 +96,7 @@ export class ChatActionService {
   recordBotChatAction(
     { botId, chat, action }: {
       readonly botId: number;
-      readonly chat: ChatKey;
+      readonly chat: ChatActionChatKey;
       readonly action: ChatAction;
     },
   ): void {
@@ -108,7 +108,7 @@ export class ChatActionService {
   }
 
   /** Ends the chat action of a bot that sent a message to the chat. */
-  endBotChatAction({ botId, chat }: { readonly botId: number; readonly chat: ChatKey }) {
+  endBotChatAction({ botId, chat }: { readonly botId: number; readonly chat: ChatActionChatKey }) {
     this.#chatActions.removeAction(chat, botId);
   }
 

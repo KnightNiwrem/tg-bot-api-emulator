@@ -76,7 +76,9 @@ the start of the text or caption, or a reply to an account's message, even an ac
 meant for a bot or sent through an inline bot. A message that replies to one bot and commands
 another reaches neither, an [intentional routing rule](#intentional-deviations). Bots' messages
 still decide which bot receives an account's unqualified command, and bots' service messages reach
-every bot as before. The setting is not part of the bot's `getMe` profile.
+every bot as before. The setting is not part of the bot's `getMe` profile. In a private chat between
+two bots, unlike a supergroup, a message needs
+[both bots to turn the mode on](messages.md#private-messages-between-bots).
 
 Edits of bots' messages and bots' messages that address no bot reach no bot, a
 [real gap](#real-gaps).
@@ -481,9 +483,10 @@ production read permissions.
   document that a bot with Bot-to-Bot Communication Mode receives every other bot's group message,
   addressed or not, when it is an administrator or has privacy mode disabled. The emulator delivers
   only [addressed bot messages](#bot-to-bot-communication), and no edits of bots' messages. Tests of
-  bots that watch other bots' messages need both. Bot-to-bot messages in private chats, channels and
-  business connections are unsupported too. Telegram's servers apply these rules; the Bot API and
-  TDLib source at the comparison baseline show no trace of the setting.
+  bots that watch other bots' messages need both. Bot-to-bot messages in channels and business
+  connections are unsupported too; those in private chats are
+  [supported](messages.md#private-messages-between-bots). Telegram's servers apply these rules; the
+  Bot API and TDLib source at the comparison baseline show no trace of the setting.
 
 - **Administrator rights enforcement.** Rights that the
   [administrator operations](#administrator-operations) table does not list, such as

@@ -1,6 +1,11 @@
 import { assertEquals } from '@std/assert';
 import { MessageRepository } from '../src/repositories/message/message.ts';
-import type { ChatKey, PrivateChatKey, SupergroupChatKey } from '../src/types/virtual_chat.ts';
+import type {
+  BotToBotPrivateChatKey,
+  ChatKey,
+  PrivateChatKey,
+  SupergroupChatKey,
+} from '../src/types/virtual_chat.ts';
 import { type ChatMessage, getContentText } from '../src/types/virtual_message.ts';
 
 Deno.test('MessageRepository stores ordered private conversation history', () => {
@@ -455,27 +460,42 @@ const OTHER_ACCOUNT_PRIVATE_CHAT: PrivateChatKey = {
   type: 'private',
   conversation: { accountId: 4, botId: 2 },
 };
+/** The private chat of the bots of `FIRST_PRIVATE_CHAT` and `SECOND_PRIVATE_CHAT`. */
+const BOT_TO_BOT_PRIVATE_CHAT: BotToBotPrivateChatKey = {
+  type: 'bot_to_bot_private',
+  conversation: { lowerBotId: 2, higherBotId: 3 },
+};
 const FIRST_SUPERGROUP: SupergroupChatKey = { type: 'supergroup', chatId: -1_000_000_000_001 };
 const SECOND_SUPERGROUP: SupergroupChatKey = { type: 'supergroup', chatId: -1_000_000_000_002 };
 const CHATS: readonly ChatKey[] = [
   FIRST_PRIVATE_CHAT,
   SECOND_PRIVATE_CHAT,
   OTHER_ACCOUNT_PRIVATE_CHAT,
+  BOT_TO_BOT_PRIVATE_CHAT,
   FIRST_SUPERGROUP,
   SECOND_SUPERGROUP,
 ];
 
-/** Stores a text message of the account in a private chat, or of account 1 in a supergroup. */
+/**
+ * Stores a text message of the account in a private chat, of bot 2 in a bot-to-bot private chat,
+ * or of account 1 in a supergroup.
+ */
 function addText(messages: MessageRepository, chat: ChatKey, text: string): ChatMessage {
   const content = { kind: 'text', text, entities: [] } as const;
-  return chat.type === 'private'
-    ? messages.addMessage({ chat, sender: 'account', sentAtUnixSeconds: 1_700_000_000, content })
-    : messages.addMessage({
-      chat,
-      sender: { kind: 'account', accountId: 1 },
-      sentAtUnixSeconds: 1_700_000_000,
-      content,
-    });
+  const sentAtUnixSeconds = 1_700_000_000;
+  switch (chat.type) {
+    case 'private':
+      return messages.addMessage({ chat, sender: 'account', sentAtUnixSeconds, content });
+    case 'bot_to_bot_private':
+      return messages.addMessage({ chat, sender: { botId: 2 }, sentAtUnixSeconds, content });
+    case 'supergroup':
+      return messages.addMessage({
+        chat,
+        sender: { kind: 'account', accountId: 1 },
+        sentAtUnixSeconds,
+        content,
+      });
+  }
 }
 
 function getTexts(messages: readonly ChatMessage[]): readonly string[] {
@@ -492,12 +512,14 @@ Deno.test('MessageRepository keeps one log per chat, whatever the chat type', ()
     addText(messages, OTHER_ACCOUNT_PRIVATE_CHAT, 'other account a'),
     addText(messages, SECOND_SUPERGROUP, 'supergroup 2a'),
     addText(messages, FIRST_SUPERGROUP, 'supergroup 1b'),
+    addText(messages, BOT_TO_BOT_PRIVATE_CHAT, 'bots a'),
   ];
 
   assertEquals(CHATS.map((chat) => getTexts(messages.getChatMessages(chat))), [
     ['private 1a', 'private 1b'],
     ['private 2a'],
     ['other account a'],
+    ['bots a'],
     ['supergroup 1a', 'supergroup 1b'],
     ['supergroup 2a'],
   ]);
@@ -511,22 +533,24 @@ Deno.test('MessageRepository keeps one log per chat, whatever the chat type', ()
       ['private_message', 'private'],
       ['supergroup_message', 'supergroup'],
       ['supergroup_message', 'supergroup'],
+      ['bot_to_bot_private_message', 'bot_to_bot_private'],
     ],
   );
-  // Each message is found through its own chat's key only: not through another chat of either
-  // participant, nor through a chat of the other type.
+  // Each message is found through its own chat's key only: not through another chat of any
+  // participant, nor through a chat of another type.
   assertEquals(
     stored.map((message) =>
       CHATS.map((chat) => messages.findChatMessage(chat, message.id) === message)
     ),
     [
-      [true, false, false, false, false],
-      [false, false, false, true, false],
-      [false, true, false, false, false],
-      [true, false, false, false, false],
-      [false, false, true, false, false],
-      [false, false, false, false, true],
-      [false, false, false, true, false],
+      [true, false, false, false, false, false],
+      [false, false, false, false, true, false],
+      [false, true, false, false, false, false],
+      [true, false, false, false, false, false],
+      [false, false, true, false, false, false],
+      [false, false, false, false, false, true],
+      [false, false, false, false, true, false],
+      [false, false, false, true, false, false],
     ],
   );
 });
@@ -574,6 +598,7 @@ Deno.test("MessageRepository deletes and edits a message only through its own ch
   assertEquals(CHATS.map((chat) => getTexts(messages.getChatMessages(chat))), [
     ['kept'],
     ['other chat'],
+    [],
     [],
     ['kept'],
     ['other chat'],

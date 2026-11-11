@@ -7,6 +7,7 @@ import type { BotMessageSendingWorkflows } from '../services/bot_message_sending
 import type { BotDefaultAdministratorRightsService } from '../services/domain/bot_default_administrator_rights.ts';
 import type { BotDescriptionService } from '../services/domain/bot_description.ts';
 import type { BotMenuButtonService } from '../services/domain/bot_menu_button.ts';
+import type { BotPeerDirectory } from '../services/domain/bot_peer_directory.ts';
 import type { BotMessageViewService } from '../services/bot_message_view/bot_message_view.ts';
 import type { BotRateLimitService } from '../services/domain/bot_rate_limit.ts';
 import type { BotServerErrorService } from '../services/domain/bot_server_error.ts';
@@ -52,6 +53,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly sharedChatAdministration: SharedChatAdministrationService;
   readonly chatAdmission: ChatAdmissionService;
   readonly privateMessaging: PrivateMessagingService;
+  readonly botPeers: BotPeerDirectory;
   readonly supergroupMessaging: SupergroupMessagingService;
   readonly messageSending: MessageSendingService;
   readonly messageEditing: MessageEditingService;

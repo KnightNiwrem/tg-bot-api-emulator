@@ -191,7 +191,8 @@ const namedChatIdSchema = integerParameter(z.int());
 
 /**
  * Finds the chat a call's `chat_id` names, by its ID or by a public username, for the call's bot
- * activity record; `undefined` when it names no chat.
+ * activity record; `undefined` when it names no chat. Recording the call changes nothing, so a
+ * username is looked up without the bot getting to know the bot it names.
  */
 function findNamedChatId(
   context: BotApiMethodContext,
@@ -202,7 +203,9 @@ function findNamedChatId(
     return undefined;
   }
   if (chatIdentifier.startsWith(CHAT_USERNAME_PREFIX)) {
-    return resolveChatIdentifier(context, chatIdentifier);
+    return context.session.sharedChatAdministration.findPublicChatId(
+      chatIdentifier.slice(CHAT_USERNAME_PREFIX.length),
+    );
   }
   const chatId = namedChatIdSchema.safeParse(chatIdentifier);
   return chatId.success ? chatId.data : undefined;

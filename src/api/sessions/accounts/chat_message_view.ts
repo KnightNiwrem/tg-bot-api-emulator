@@ -30,7 +30,7 @@ export function viewSupergroupChatMessageForAccount(
   message: ChatMessage,
   accountId: number,
 ): ReturnType<BotMessageViews['viewSupergroupMessage']> {
-  if (message.kind === 'private_message') {
+  if (message.kind !== 'supergroup_message') {
     throw new Error(`A supergroup's lookup found a ${message.kind}`);
   }
   return botMessageViews.viewSupergroupMessage(message, accountId);

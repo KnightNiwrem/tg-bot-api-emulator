@@ -1,6 +1,6 @@
 import { type ChangeStaging, UNSTAGED_CHANGES } from '../../transactions/staging/change_staging.ts';
 import { TransactionalMap } from '../../transactions/staging/transactional_collections.ts';
-import type { ChatKey, VisibleChatAction } from '../../types/virtual_chat.ts';
+import type { ChatActionChatKey, VisibleChatAction } from '../../types/virtual_chat.ts';
 
 /** Stores the chat actions bots show in each chat, one per bot, in the order the bots sent them. */
 export class ChatActionRepository {
@@ -12,7 +12,7 @@ export class ChatActionRepository {
   }
 
   /** Replaces the bot's action in the chat with a newly sent one, which becomes the latest. */
-  showAction(chat: ChatKey, shownAction: VisibleChatAction): void {
+  showAction(chat: ChatActionChatKey, shownAction: VisibleChatAction): void {
     const chatKey = serializeChatKey(chat);
     this.#actionsByChatKey.set(chatKey, [
       ...this.#withoutBotAction(chatKey, shownAction.botId),
@@ -21,7 +21,7 @@ export class ChatActionRepository {
   }
 
   /** Removes the bot's action from the chat. Returns whether the chat showed one. */
-  removeAction(chat: ChatKey, botId: number): boolean {
+  removeAction(chat: ChatActionChatKey, botId: number): boolean {
     const chatKey = serializeChatKey(chat);
     const actions = this.#actionsByChatKey.get(chatKey) ?? [];
     const remainingActions = this.#withoutBotAction(chatKey, botId);
@@ -34,7 +34,7 @@ export class ChatActionRepository {
   }
 
   /** Returns the chat's actions, oldest first. */
-  getActions(chat: ChatKey): readonly VisibleChatAction[] {
+  getActions(chat: ChatActionChatKey): readonly VisibleChatAction[] {
     return this.#actionsByChatKey.get(serializeChatKey(chat)) ?? [];
   }
 
@@ -43,7 +43,7 @@ export class ChatActionRepository {
   }
 }
 
-function serializeChatKey(chat: ChatKey): string {
+function serializeChatKey(chat: ChatActionChatKey): string {
   switch (chat.type) {
     case 'private':
       return `private:${chat.conversation.accountId}:${chat.conversation.botId}`;

@@ -504,9 +504,12 @@ function botChatMessageTarget(context: MessageEditContext, chatId: number, messa
 }
 
 /** Shows the bot the message its edit of a chat message left, as the bot sees its chat. */
-function viewChatMessageEdit<EditFailure extends { readonly edited: false }>(
+function viewChatMessageEdit<
+  EditedMessage extends ChatMessage,
+  EditFailure extends { readonly edited: false },
+>(
   context: MessageEditContext,
-  result: { readonly edited: true; readonly message: ChatMessage } | EditFailure,
+  result: { readonly edited: true; readonly message: EditedMessage } | EditFailure,
 ): { readonly edited: true; readonly message: BotApiEditedMessage } | EditFailure {
   return result.edited
     ? {

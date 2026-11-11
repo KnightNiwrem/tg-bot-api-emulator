@@ -11,6 +11,48 @@ export interface PrivateConversationKey {
 }
 
 /**
+ * Identifies a private conversation between two bots by its participants. Neither bot has a role
+ * of its own, so the key names them in the order of their IDs, and is the same whichever bot
+ * addresses the conversation. `getBotToBotConversationKey` builds it.
+ */
+export interface BotToBotConversationKey {
+  readonly lowerBotId: number;
+  readonly higherBotId: number;
+}
+
+/**
+ * The key of the private conversation between a bot and another bot. A bot has no private
+ * conversation with itself.
+ *
+ * @throws {Error} when both IDs name the same bot.
+ */
+export function getBotToBotConversationKey(
+  botId: number,
+  peerBotId: number,
+): BotToBotConversationKey {
+  if (botId === peerBotId) {
+    throw new Error(`Bot ${botId} has no private conversation with itself`);
+  }
+  return botId < peerBotId
+    ? { lowerBotId: botId, higherBotId: peerBotId }
+    : { lowerBotId: peerBotId, higherBotId: botId };
+}
+
+/** The other bot of a bot-to-bot conversation, as one of its bots sees it. */
+export function getBotToBotConversationPeerId(
+  { lowerBotId, higherBotId }: BotToBotConversationKey,
+  botId: number,
+): number {
+  if (botId === lowerBotId) {
+    return higherBotId;
+  }
+  if (botId === higherBotId) {
+    return lowerBotId;
+  }
+  throw new Error(`Bot ${botId} is no participant of conversation ${lowerBotId}:${higherBotId}`);
+}
+
+/**
  * A chat as an actor addresses it, relative to that actor: its private chat with a peer, a bot for
  * an account and an account for a bot, or a supergroup. The chat type's identity policy resolves
  * it to the `ChatKey` of the chat it names, without deciding what the actor may do there.
@@ -46,14 +88,17 @@ export function getBotApiChatAddress(chatId: number): ChatAddress {
 }
 
 /**
- * A chat as the emulator identifies it, the same for every participant: a private conversation by
- * its participants' roles, or a supergroup by its ID.
+ * A chat as the emulator identifies it, the same for every participant: a private conversation of
+ * an account and a bot by its participants' roles, a private conversation of two bots by its
+ * bots, or a supergroup by its ID. The Bot API shows both kinds of conversation as private chats.
  */
 export type ChatKey =
   | { readonly type: 'private'; readonly conversation: PrivateConversationKey }
+  | { readonly type: 'bot_to_bot_private'; readonly conversation: BotToBotConversationKey }
   | { readonly type: 'supergroup'; readonly chatId: number };
 
 export type PrivateChatKey = Extract<ChatKey, { readonly type: 'private' }>;
+export type BotToBotPrivateChatKey = Extract<ChatKey, { readonly type: 'bot_to_bot_private' }>;
 export type SupergroupChatKey = Extract<ChatKey, { readonly type: 'supergroup' }>;
 
 /** The type of a chat as the emulator keys it, which selects the chat type's rules and messages. */
@@ -74,10 +119,11 @@ export type ChatActor =
   | { readonly kind: 'bot'; readonly botId: number };
 
 /**
- * The chat a bot's address names, identified without checking that it exists: its private
- * conversation with the account, or the supergroup.
+ * The chat in which a bot's chat action shows, which the bot's address names, identified without
+ * checking that it exists: its private conversation with the account, or the supergroup. Only an
+ * account's client shows chat actions, so the peer of a private address is taken as an account.
  */
-export function getBotChatKey(botId: number, address: ChatAddress): ChatKey {
+export function getBotChatActionChatKey(botId: number, address: ChatAddress): ChatActionChatKey {
   return address.type === 'private'
     ? { type: 'private', conversation: { accountId: address.peerId, botId } }
     : { type: 'supergroup', chatId: address.chatId };
@@ -100,6 +146,12 @@ export type ChatAction =
   | 'find_location'
   | 'record_video_note'
   | 'upload_video_note';
+
+/**
+ * A chat in which accounts' clients show the chat actions of bots: a bot's private chat with an
+ * account, or a supergroup. A bot-to-bot conversation has no account to show them to.
+ */
+export type ChatActionChatKey = PrivateChatKey | SupergroupChatKey;
 
 /** A chat action a bot shows, which `cancel` is not. */
 export type ShownChatActionType = Exclude<ChatAction, 'cancel'>;

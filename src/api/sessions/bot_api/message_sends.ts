@@ -11,7 +11,7 @@ import {
   type ChatAction,
   type ChatAddress,
   getBotApiChatAddress,
-  getBotChatKey,
+  getBotChatActionChatKey,
 } from '../../../types/virtual_chat.ts';
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { missingAuthenticatedBotError } from './authenticated_bot_failures.ts';
@@ -397,7 +397,7 @@ export function sendChatAction(
   }
   context.session.chatActions.recordBotChatAction({
     botId: context.bot.id,
-    chat: getBotChatKey(context.bot.id, chat),
+    chat: getBotChatActionChatKey(context.bot.id, chat),
     action,
   });
   return { sent: true };

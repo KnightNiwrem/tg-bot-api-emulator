@@ -1,4 +1,5 @@
 import {
+  projectBotPrivateChatFullInfo,
   projectPrivateChatFullInfo,
   projectSupergroupChatFullInfo,
 } from '../../projections/bot_api_chat_full_info.ts';
@@ -7,12 +8,14 @@ import type { ObservedFile } from '../../projections/bot_api_file.ts';
 import {
   type AdministratorEditability,
   type ExternalReplyProjectionContext,
+  type ObservedBotToBotPrivateMessage,
   type ObservedPoll,
   type ObservedPrivateMessage,
   type ObservedSupergroupMessage,
   projectBotAsUser,
   projectBotBlockChangeForBot,
   projectBotMembershipChangeForBot,
+  projectBotToBotPrivateMessage,
   projectCallbackQueryForBot,
   projectChatJoinRequest,
   projectChatMember,
@@ -28,6 +31,7 @@ import {
   projectPreCheckoutQueryForBot,
   projectPrivateChat,
   projectPrivateMessageForBot,
+  projectRepliedBotToBotPrivateMessage,
   projectRepliedPrivateMessageForBot,
   projectRepliedSupergroupMessage,
   projectSupergroupChat,
@@ -83,7 +87,11 @@ import {
   type ChatMembership,
   type ChatMemberStatus,
 } from '../../types/chat_membership.ts';
-import { privateChatMessagePolicy, supergroupMessagePolicy } from '../../types/chat_policy.ts';
+import {
+  botToBotPrivateChatMessagePolicy,
+  privateChatMessagePolicy,
+  supergroupMessagePolicy,
+} from '../../types/chat_policy.ts';
 import type { InlineQuery } from '../../types/inline_query.ts';
 import {
   getPollCreatorId,
@@ -99,15 +107,17 @@ import {
 } from '../../types/rich_message.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
-import type {
-  ChatKeyOfType,
-  ChatType,
-  PrivateChatKey,
-  SharedChat,
-  Supergroup,
-  SupergroupChatKey,
+import {
+  type ChatKeyOfType,
+  type ChatType,
+  getBotToBotConversationPeerId,
+  type PrivateChatKey,
+  type SharedChat,
+  type Supergroup,
+  type SupergroupChatKey,
 } from '../../types/virtual_chat.ts';
 import {
+  type BotToBotPrivateMessage,
   type CanonicalMessageId,
   type ChatMessage,
   type ChatMessageOfType,
@@ -211,13 +221,15 @@ export class BotMessageViewService {
   }
 
   /**
-   * Returns a committed message of any chat as a bot of that chat sees it: in a private chat, the
-   * bot of its conversation.
+   * Returns a committed message of any chat as a bot of that chat sees it: in an account's private
+   * chat, the bot of its conversation.
    */
   viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage {
     switch (message.kind) {
       case 'private_message':
         return this.viewPrivateMessageForBot(message);
+      case 'bot_to_bot_private_message':
+        return this.viewBotToBotPrivateMessage(message, botId);
       case 'supergroup_message':
         return this.viewSupergroupMessage(message, botId);
       default: {
@@ -262,6 +274,28 @@ export class BotMessageViewService {
           },
         }
         : {}),
+    });
+  }
+
+  /**
+   * Returns a bot-to-bot private message as one of the conversation's bots sees it, with the
+   * current state of the message it replies to unless that message was deleted. The message must
+   * be committed: both bots exist and it is numbered in the observer's message box.
+   */
+  viewBotToBotPrivateMessage(
+    message: BotToBotPrivateMessage,
+    observerBotId: number,
+  ): BotApiPrivateMessage {
+    const repliedMessage = message.replyToMessageId === undefined
+      ? undefined
+      : this.#messages.findChatMessage(message.chat, message.replyToMessageId);
+    return projectBotToBotPrivateMessage({
+      ...this.#observeBotToBotPrivateMessage(message, observerBotId),
+      ...(repliedMessage === undefined ? {} : {
+        repliedMessage: projectRepliedBotToBotPrivateMessage(
+          this.#observeBotToBotPrivateMessage(repliedMessage, observerBotId),
+        ),
+      }),
     });
   }
 
@@ -563,6 +597,15 @@ export class BotMessageViewService {
   }
 
   /**
+   * Returns everything `getChat` shows a bot about its private chat with another bot, whose access
+   * the caller checked; `undefined` for an ID of no bot.
+   */
+  viewBotPrivateChatFullInfo(peerBotId: number): BotApiChatFullInfo | undefined {
+    const peerBot = this.#bots.getById(peerBotId);
+    return peerBot === undefined ? undefined : projectBotPrivateChatFullInfo(peerBot.profile);
+  }
+
+  /**
    * Returns everything `getChat` shows a bot about a supergroup, whose access the caller checked;
    * `undefined` for a chat that is no supergroup. The newest pinned message is shown as for a
    * private chat, and the observer's own primary invite link in full.
@@ -783,6 +826,39 @@ export class BotMessageViewService {
       observerMessageId: this.#requirePrivateBotMessageId(message.chat, message.id),
       context: this.#resolveProjectionContext(message, observingBotId),
     };
+  }
+
+  /**
+   * Resolves what the projection of a committed bot-to-bot private message for one of the
+   * conversation's bots needs: both bots exist, and it is numbered in the observer's message box.
+   */
+  #observeBotToBotPrivateMessage(
+    message: BotToBotPrivateMessage,
+    observerBotId: number,
+  ): ObservedBotToBotPrivateMessage {
+    const { chat, sender } = message;
+    return {
+      message,
+      sender: this.#requireBotProfile(sender.botId, message.id),
+      peer: this.#requireBotProfile(
+        getBotToBotConversationPeerId(chat.conversation, observerBotId),
+        message.id,
+      ),
+      observerMessageId: this.#requireMessageId(
+        botToBotPrivateChatMessagePolicy.getObserverBoxOwnerId(chat, observerBotId),
+        message.id,
+      ),
+      context: this.#resolveProjectionContext(message, observerBotId),
+    };
+  }
+
+  /** Looks up a bot of a committed message, which exists as long as the session does. */
+  #requireBotProfile(botId: number, messageId: CanonicalMessageId) {
+    const bot = this.#bots.getById(botId);
+    if (bot === undefined) {
+      throw new Error(`Bot ${botId} of message ${messageId} does not exist`);
+    }
+    return bot.profile;
   }
 
   /**

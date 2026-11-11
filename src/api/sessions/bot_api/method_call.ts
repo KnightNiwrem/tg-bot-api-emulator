@@ -31,6 +31,7 @@ export interface BotApiMethodContext {
     | 'inlineQueries'
     | 'botMediaResolver'
     | 'privateMessaging'
+    | 'botPeers'
     | 'supergroupMessaging'
     | 'sharedChatAdministration'
     | 'chatAdmission'

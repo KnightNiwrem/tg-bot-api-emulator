@@ -3,7 +3,8 @@ description: >-
   `check_chat` reads it, by `@` followed by a public username of the `Username` syntax. Only
   such usernames can be created, so only they name chats: any other text after `@` fails with
   `Bad Request: chat not found`, as does a username that names neither a public supergroup nor
-  the private chat with a bot. The emulator resolves a username in `chat_id` or `from_chat_id`
+  the private chat with a bot. A bot that resolves another bot's username may address that bot by
+  its identifier from then on. The emulator resolves a username in `chat_id` or `from_chat_id`
   before reading the method's other parameters, so a request with another fault may fail for the
   username instead.
 oneOf:

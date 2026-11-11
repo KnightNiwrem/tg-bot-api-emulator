@@ -18,6 +18,7 @@ import { CheckoutRepository } from '../repositories/checkout/checkout.ts';
 import { ChatInviteLinkRepository } from '../repositories/chat_invite_link/chat_invite_link.ts';
 import { FileRepository } from '../repositories/file/file.ts';
 import { InlineQueryRepository } from '../repositories/inline_query/inline_query.ts';
+import { KnownBotPeerRepository } from '../repositories/known_bot_peer/known_bot_peer.ts';
 import { LastMessageSendingBotRepository } from '../repositories/last_message_sending_bot/last_message_sending_bot.ts';
 import { MessageRepository } from '../repositories/message/message.ts';
 import { MessageDraftRepository } from '../repositories/message_draft/message_draft.ts';
@@ -36,6 +37,8 @@ import { BotDefaultAdministratorRightsService } from '../services/domain/bot_def
 import { BotDescriptionService } from '../services/domain/bot_description.ts';
 import { BotMediaResolver } from '../services/bot_media_resolution/bot_media_resolution.ts';
 import { BotMenuButtonService } from '../services/domain/bot_menu_button.ts';
+import { BotPeerDirectory } from '../services/domain/bot_peer_directory.ts';
+import { BotToBotPrivateChatPolicy } from '../services/domain/bot_to_bot_private_chat_policy.ts';
 import { BotMessageRepeater } from '../services/bot_message_repetition/bot_message_repetition.ts';
 import {
   BotMessageSender,
@@ -217,6 +220,19 @@ export function createEmulationSession(
     joinRequesterContacts: chatAdmission,
     privateMessages: privateMessaging,
   });
+  const knownBotPeers = new KnownBotPeerRepository(journal);
+  const botToBotPrivateChats = new BotToBotPrivateChatPolicy({
+    bots,
+    knownBotPeers,
+    messages,
+    messageBoxes,
+  });
+  const botPeers = new BotPeerDirectory({
+    publicChats: sharedChatAdministration,
+    bots,
+    knownBotPeers,
+    transactions,
+  });
   const supergroups = new SupergroupChatPolicy({
     sharedChats,
     supergroupMessages: supergroupMessaging,
@@ -225,8 +241,10 @@ export function createEmulationSession(
     accounts,
     bots,
     privateChats,
+    botToBotPrivateChats,
     supergroups,
     privateConversations,
+    knownBotPeers,
     joinRequesterContacts: chatAdmission,
     mediaGroups: messages,
     files,
@@ -461,6 +479,7 @@ export function createEmulationSession(
     sharedChatAdministration,
     chatAdmission,
     privateMessaging,
+    botPeers,
     supergroupMessaging,
     messageEditing,
     messageDeletion,

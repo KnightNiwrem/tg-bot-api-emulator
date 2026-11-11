@@ -1,3 +1,4 @@
+import { viewPrivateChatMessageForBot } from './chat_message_view.ts';
 import { Hono } from 'hono';
 
 import {
@@ -62,11 +63,14 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
           return refuseForward(result.reason);
         }
         const { message } = result;
-        return message.kind === 'private_message'
-          ? { status: 201, body: { message: botMessageViews.viewPrivateMessageForBot(message) } }
-          : {
+        return message.kind === 'supergroup_message'
+          ? {
             status: 201,
             body: { message: botMessageViews.viewSupergroupMessage(message, accountId) },
+          }
+          : {
+            status: 201,
+            body: { message: viewPrivateChatMessageForBot(botMessageViews, message) },
           };
       }
       const draftReading = readAccountMessageDraft(body);

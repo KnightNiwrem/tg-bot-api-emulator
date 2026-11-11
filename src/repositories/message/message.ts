@@ -59,6 +59,12 @@ const storedMessageBuilders: {
     ...assigned,
     ...(message.messageEffectId === undefined ? {} : { messageEffectId: message.messageEffectId }),
   }),
+  bot_to_bot_private: (message, assigned) => ({
+    kind: 'bot_to_bot_private_message',
+    ...copySentMessage(message),
+    ...assigned,
+    ...(message.messageEffectId === undefined ? {} : { messageEffectId: message.messageEffectId }),
+  }),
   supergroup: (message, assigned) => ({
     kind: 'supergroup_message',
     ...copySentMessage(message),
@@ -79,6 +85,15 @@ const messageEditors: {
   ) => ChatMessageOfType<Type>;
 } = {
   private: (
+    {
+      content: _replacedContent,
+      inlineKeyboard: _replacedInlineKeyboard,
+      editedAtUnixSeconds: _replacedEditedAtUnixSeconds,
+      ...preservedFields
+    },
+    edit,
+  ) => ({ ...preservedFields, ...copyMessageEdit(edit) }),
+  bot_to_bot_private: (
     {
       content: _replacedContent,
       inlineKeyboard: _replacedInlineKeyboard,
@@ -313,6 +328,8 @@ function getChatLogKey(chat: ChatKey): string {
   switch (chat.type) {
     case 'private':
       return `private:${chat.conversation.accountId}:${chat.conversation.botId}`;
+    case 'bot_to_bot_private':
+      return `bot_to_bot_private:${chat.conversation.lowerBotId}:${chat.conversation.higherBotId}`;
     case 'supergroup':
       return `supergroup:${chat.chatId}`;
     default: {

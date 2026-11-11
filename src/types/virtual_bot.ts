@@ -18,7 +18,8 @@ export interface VirtualBot {
   readonly requestsInlineLocation: boolean;
   /**
    * Whether the bot turned on BotFather's Bot-to-Bot Communication Mode, which lets a supergroup
-   * message of one bot reach another bot it addresses when either of the two turned it on.
+   * message of one bot reach another bot it addresses when either of the two turned it on, and a
+   * private message between two bots be sent when both turned it on.
    */
   readonly enablesBotToBotCommunication: boolean;
 }

@@ -13,12 +13,14 @@ import { BlockedUserRepository } from '../../src/repositories/blocked_user/block
 import { BotRepository } from '../../src/repositories/bot/bot.ts';
 import { FileRepository } from '../../src/repositories/file/file.ts';
 import { MessageRepository } from '../../src/repositories/message/message.ts';
+import { KnownBotPeerRepository } from '../../src/repositories/known_bot_peer/known_bot_peer.ts';
 import { MessageBoxRepository } from '../../src/repositories/message_box/message_box.ts';
 import { PollRepository } from '../../src/repositories/poll/poll.ts';
 import { PrivateConversationRepository } from '../../src/repositories/private_conversation/private_conversation.ts';
 import { SharedChatRepository } from '../../src/repositories/shared_chat/shared_chat.ts';
 import { TelegramIdentityRepository } from '../../src/repositories/telegram_identity/telegram_identity.ts';
 import { createAccountChatMessageReader } from '../../src/services/domain/account_chat_message.ts';
+import { BotToBotPrivateChatPolicy } from '../../src/services/domain/bot_to_bot_private_chat_policy.ts';
 import { MessageCommitter } from '../../src/services/domain/message_commit.ts';
 import { MessageDeletionService } from '../../src/services/domain/message_deletion.ts';
 import { MessageEditingService } from '../../src/services/domain/message_editing.ts';
@@ -87,6 +89,7 @@ export interface ChatMessagingRepositories {
   readonly files: FileRepository;
   readonly polls: PollRepository;
   readonly messageBoxes: MessageBoxRepository;
+  readonly knownBotPeers: KnownBotPeerRepository;
 }
 
 const NO_JOIN_REQUESTER_CONTACTS: JoinRequesterContacts = {
@@ -114,6 +117,7 @@ export function createChatMessagingRepositories(
     files: new FileRepository(staging),
     polls: new PollRepository(staging),
     messageBoxes: new MessageBoxRepository(staging),
+    knownBotPeers: new KnownBotPeerRepository(staging),
   };
 }
 
@@ -138,6 +142,7 @@ export function createChatMessagingServices(
     files,
     polls,
     messageBoxes,
+    knownBotPeers,
   } = repositories;
   const virtualUsers = new VirtualUserService({ identities, accounts, bots });
 
@@ -202,8 +207,15 @@ export function createChatMessagingServices(
     accounts,
     bots,
     privateChats,
+    botToBotPrivateChats: new BotToBotPrivateChatPolicy({
+      bots,
+      knownBotPeers,
+      messages,
+      messageBoxes,
+    }),
     supergroups,
     privateConversations,
+    knownBotPeers,
     joinRequesterContacts,
     mediaGroups: messages,
     files: uploadRecordingFiles,
