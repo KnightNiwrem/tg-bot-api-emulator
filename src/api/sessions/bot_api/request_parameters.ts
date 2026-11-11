@@ -353,6 +353,11 @@ export function parseBotApiJsonParameter(text: string): { readonly value: unknow
   return exceedsBotApiJsonDepthLimit(text) ? undefined : { value };
 }
 
+/** Whether a value parsed from JSON is an object, which neither an array nor `null` is. */
+export function isParsedJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** The content of a JSON string's source text, quotes included. */
 function decodeJsonString(stringSource: string): string {
   const content: unknown = JSON.parse(stringSource);

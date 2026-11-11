@@ -737,6 +737,105 @@ Deno.test('inline query results send rich messages that reuse files', async () =
   ], "Expected Telegram's errors");
 });
 
+// The official server reads the results with `get_array_generic`, which prefixes the fault it
+// finds while it parses a result, including the result's rich message, with
+// `Can't parse InlineQueryResult: `; TDLib checks the parsed results later, without the prefix:
+// https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10080-L10099
+// https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10842-L10848
+// https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10994-L11011
+// Live Telegram answered the parsing and TDLib cases, with the same unknown query ID, so on
+// 2026-11-10 (issue #293); the emulator's own refusals are its policy, not Telegram's wording.
+Deno.test('answerInlineQuery prefixes the rich message faults the server finds while parsing results', async () => {
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
+  const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
+    supports_inline_queries: true,
+  });
+  const badHeading = { blocks: [{ type: 'heading', text: 'Hi', size: 7 }] };
+  /** Answers with an article sending the rich message, returning the refusal's description. */
+  const answer = async (richMessage: unknown) => {
+    const { body } = await callBotApi(api, `${inlineBot.botApiPath}/answerInlineQuery`, {
+      inline_query_id: '0',
+      results: [{
+        type: 'article',
+        id: 'cats',
+        title: 'Cats',
+        input_message_content: { rich_message: richMessage },
+      }],
+      cache_time: 0,
+    });
+    return isBadRequestResponse(body) ? body.description : JSON.stringify(body);
+  };
+  const cases: ReadonlyArray<readonly [unknown, string]> = [
+    // Faults of the blocks keep their own prefixes and capitals inside the result's.
+    [
+      { blocks: [1] },
+      "Bad Request: can't parse InlineQueryResult: Can't parse InputRichBlock: " +
+      'Object expected as InputRichMessageBlock',
+    ],
+    [
+      {
+        blocks: [{
+          type: 'details',
+          summary: 'Probe',
+          blocks: [{ type: 'list', items: [{ blocks: [{ type: 'blockquote', blocks: [1] }] }] }],
+        }],
+      },
+      "Bad Request: can't parse InlineQueryResult: Can't parse InputRichBlock: " +
+      "Can't parse InputRichBlock: Can't parse InputRichBlockListItem: Can't parse InputRichBlock: " +
+      "Can't parse InputRichBlock: Object expected as InputRichMessageBlock",
+    ],
+    [
+      { blocks: [{ type: 'table', cells: [[1]] }] },
+      "Bad Request: can't parse InlineQueryResult: Can't parse InputRichBlock: " +
+      "Can't parse PageBlockTableCell: RichBlockTableCell must be an object",
+    ],
+    // Faults of the rich message itself.
+    ...[1, 'Hi', true, [], null].map((richMessage) =>
+      [
+        richMessage,
+        `Bad Request: can't parse InlineQueryResult: Field "rich_message" must be of type Object`,
+      ] as const
+    ),
+    [{}, "Bad Request: can't parse InlineQueryResult: Rich message must be non-empty"],
+    [
+      { blocks: 1 },
+      "Bad Request: can't parse InlineQueryResult: Expected an Array of InputRichBlock",
+    ],
+    [
+      { blocks: {} },
+      "Bad Request: can't parse InlineQueryResult: Expected an Array of InputRichBlock",
+    ],
+    // TDLib checks the parsed blocks without the prefix.
+    [badHeading, 'Bad Request: invalid section heading size specified'],
+    [{ blocks: [{ type: 'list', items: [] }] }, 'Bad Request: list must be non-empty'],
+    [
+      { blocks: [{ type: 'table', cells: [[{ text: 'A', rowspan: -1 }]] }] },
+      'Bad Request: invalid table cell rowspan specified',
+    ],
+    // Neither does the emulator's own refusal of what it does not support or reads strictly.
+    [
+      { html: '<b>Probe</b>' },
+      'Bad Request: rich messages written in HTML or Markdown are not supported',
+    ],
+    [
+      { blocks: [{ type: 'audio', audio: { type: 'audio', media: 'invalid-file-id' } }] },
+      'Bad Request: rich message blocks with an animation or an audio file are not supported',
+    ],
+    [
+      { ...badHeading, unexpected_field: true },
+      'Bad Request: invalid answerInlineQuery parameters',
+    ],
+  ];
+  for (const [richMessage, description] of cases) {
+    assertEquals(
+      await answer(richMessage),
+      description,
+      `Expected ${JSON.stringify(richMessage)} to fail as Telegram fails it`,
+    );
+  }
+});
+
 Deno.test('a grammY bot answers inline queries and edits the message it sent to a group', async () => {
   await using fixture = await createSupergroupFixture();
   const { api, sessionPath, owner, supergroup, supergroupPath } = fixture;

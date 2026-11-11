@@ -34,7 +34,11 @@ import type { MessageEntityError } from '../message_entities_parameter.ts';
 import type { ReactionTypeError } from '../reaction_type_parameter.ts';
 import type { ButtonFailure, LinkButton } from '../reply_markup_reading.ts';
 import type { JsonObjectFieldError } from '../request_parameters.ts';
-import type { RichBlockParsingError, RichBlockParsingProblem } from '../rich_message_parameter.ts';
+import type {
+  RichBlockParsingError,
+  RichBlockParsingProblem,
+  RichMessageParsingError,
+} from '../rich_message_parameter.ts';
 import {
   type BotApiErrorProvenance,
   type BotApiErrorTemplate,
@@ -1751,10 +1755,11 @@ export const BOT_API_ERRORS = {
   locationInvalid: fixedBotApiError(400, 'Bad Request: invalid location specified', LOCATION_CHECK),
 
   // Rich messages, as the official server's `get_input_rich_message` reads them and TDLib's
-  // `RichMessage::get_rich_message` checks their blocks. Only `richBlockUnparsable` describes a
-  // fault that the server finds while it reads the blocks, prefixed with each array it was found
-  // in. TDLib checks the blocks once the server has read them, and Telegram's servers after TDLib,
-  // so the other entries, like the emulator's own refusals, have no prefix.
+  // `RichMessage::get_rich_message` checks their blocks. Only `richMessageUnparsable` describes a
+  // fault that the server finds while it reads a rich message object, which an array around the
+  // message, such as the results of `answerInlineQuery`, prefixes, as each array of blocks around
+  // the fault does. TDLib checks the blocks once the server has read them, and Telegram's servers
+  // after TDLib, so the other entries, like the emulator's own refusals, have no prefix.
   /** A `rich_message` given as no text. */
   richMessageEmpty: fixedBotApiError(
     400,
@@ -1771,19 +1776,13 @@ export const BOT_API_ERRORS = {
     'Bad Request: object expected as rich message',
     botApiServerSource('telegram-bot-api/Client.cpp#L12465'),
   ),
-  /** A rich message without `blocks`, `markdown` or `html`. */
-  richMessageSourceMissing: fixedBotApiError(
-    400,
-    'Bad Request: rich message must be non-empty',
-    botApiServerSource('telegram-bot-api/Client.cpp#L12482-L12484'),
-  ),
   /**
-   * A fault that the official server finds while it reads the blocks: the problem as the server
-   * words it, prefixed with `Can't parse <class name>: ` for each array of blocks, list items,
-   * table cells or buttons that `get_array_generic` and `get_array` read around it, outermost
-   * first.
+   * A fault that the official server finds while it reads a rich message object. A fault of its
+   * blocks is the problem as the server words it, prefixed with `Can't parse <class name>: ` for
+   * each array of blocks, list items, table cells or buttons that `get_array_generic` and
+   * `get_array` read around it, outermost first.
    */
-  richBlockUnparsable: messageErrorTemplate('', describeRichBlockParsingError),
+  richMessageUnparsable: messageErrorTemplate('', describeRichMessageParsingError),
   richMessageMarkupUnsupported: fixedBotApiError(
     400,
     'Bad Request: rich messages written in HTML or Markdown are not supported',
@@ -2273,9 +2272,34 @@ function describeInlineQueryResultError(error: InlineQueryResultError): Telegram
       };
     case 'result_text_invalid':
       return describeFormattedTextError(error.textError);
+    case 'rich_message_unparsable':
+      return describeRichMessageParsingError(error.parsingError);
+    case 'field_type_invalid':
+      return describeJsonObjectFieldError(error);
     default: {
       const unhandledError: never = error;
       throw new Error(`Unhandled inline query result error: ${JSON.stringify(unhandledError)}`);
+    }
+  }
+}
+
+function describeRichMessageParsingError(error: RichMessageParsingError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'source_missing':
+      return {
+        message: 'Rich message must be non-empty',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12482-L12484'),
+      };
+    case 'blocks_not_array':
+      return {
+        message: 'Expected an Array of InputRichBlock',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10084-L10089'),
+      };
+    case 'block_unparsable':
+      return describeRichBlockParsingError(error.blockError);
+    default: {
+      const unhandledError: never = error;
+      throw new Error(`Unhandled rich message parsing error: ${JSON.stringify(unhandledError)}`);
     }
   }
 }

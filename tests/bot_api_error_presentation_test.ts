@@ -568,9 +568,16 @@ Deno.test('every catalogue entry names where its description comes from', () => 
       BOT_API_ERRORS.pollOptionInvalid.provenance({ reason: 'option_not_object' }),
       BOT_API_ERRORS.pollOptionInvalid.provenance({ reason: 'field_missing', fieldName: 'text' }),
     ],
-    richBlockUnparsable: RICH_BLOCK_PARSING_PROBLEMS.map((problem) =>
-      BOT_API_ERRORS.richBlockUnparsable.provenance({ enclosingArrays: [], problem })
-    ),
+    richMessageUnparsable: [
+      BOT_API_ERRORS.richMessageUnparsable.provenance({ reason: 'source_missing' }),
+      BOT_API_ERRORS.richMessageUnparsable.provenance({ reason: 'blocks_not_array' }),
+      ...RICH_BLOCK_PARSING_PROBLEMS.map((problem) =>
+        BOT_API_ERRORS.richMessageUnparsable.provenance({
+          reason: 'block_unparsable',
+          blockError: { enclosingArrays: [], problem },
+        })
+      ),
+    ],
     labeledPriceInvalid: [
       BOT_API_ERRORS.labeledPriceInvalid.provenance({ reason: 'price_not_object' }),
       BOT_API_ERRORS.labeledPriceInvalid.provenance({
@@ -604,6 +611,15 @@ Deno.test('every catalogue entry names where its description comes from', () => 
       }),
       BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
         reason: 'input_message_content_missing',
+      }),
+      BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
+        reason: 'field_type_invalid',
+        fieldName: 'rich_message',
+        expectedType: 'Object',
+      }),
+      BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
+        reason: 'rich_message_unparsable',
+        parsingError: { reason: 'source_missing' },
       }),
     ],
   };

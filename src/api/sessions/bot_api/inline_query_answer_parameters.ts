@@ -20,16 +20,24 @@ import type { FormattedTextError } from './formatted_text_reading.ts';
 import { linkPreviewOptionsSchema } from './link_preview_options_parameter.ts';
 import { inlineKeyboardMarkupSchema } from './reply_markup_parameter.ts';
 import { jsonParameter } from './request_parameters.ts';
+import type { RichMessageParsingError } from './rich_message_parameter.ts';
 
 /**
  * Why the official Bot API server's `get_inline_query_result` cannot read a result: it has a type
  * the server does not know, it sends nothing although its type sends only its
- * `input_message_content`, or Telegram cannot read its text with its formatting.
+ * `input_message_content`, Telegram cannot read its text with its formatting, its `rich_message`
+ * is not an object, or the server cannot parse that rich message.
  */
 export type InlineQueryResultError =
   | { readonly reason: 'result_type_unsupported'; readonly resultType: string }
   | { readonly reason: 'input_message_content_missing' }
-  | { readonly reason: 'result_text_invalid'; readonly textError: FormattedTextError };
+  | { readonly reason: 'result_text_invalid'; readonly textError: FormattedTextError }
+  | {
+    readonly reason: 'field_type_invalid';
+    readonly fieldName: 'rich_message';
+    readonly expectedType: 'Object';
+  }
+  | { readonly reason: 'rich_message_unparsable'; readonly parsingError: RichMessageParsingError };
 
 /**
  * Describes text of a result that Telegram cannot read with its formatting, as the official Bot
@@ -61,12 +69,12 @@ export interface UnreadLocation {
 
 /**
  * What a result's `input_message_content` sends, before it is read: text; a rich message, which is
- * still the JSON `InputRichMessage` the bot specified; a contact, whose texts are not yet cleaned;
- * or a static location.
+ * still the JSON value the bot specified, which must be an `InputRichMessage` object; a contact,
+ * whose texts are not yet cleaned; or a static location.
  */
 export type UnreadInputMessageContent =
   | { readonly kind: 'text'; readonly text: UnreadFormattedText }
-  | { readonly kind: 'rich_message'; readonly richMessage: Readonly<Record<string, unknown>> }
+  | { readonly kind: 'rich_message'; readonly richMessage: unknown }
   | { readonly kind: 'contact'; readonly contact: WrittenContact }
   | { readonly kind: 'location'; readonly location: UnreadLocation };
 
@@ -261,7 +269,7 @@ const inputTextMessageContentSchema = z.strictObject({
 // The official Bot API server's `get_input_message_content` reads a `rich_message` in place of
 // any text; the emulator rejects content with both, to surface the ambiguity in tests.
 const inputRichMessageContentSchema = z.strictObject({
-  rich_message: z.record(z.string(), z.unknown()),
+  rich_message: z.unknown(),
 }).transform(({ rich_message }): UnreadInputMessageContent => ({
   kind: 'rich_message',
   richMessage: rich_message,

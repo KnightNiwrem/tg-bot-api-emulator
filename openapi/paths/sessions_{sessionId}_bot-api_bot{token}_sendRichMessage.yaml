@@ -57,7 +57,8 @@ post:
         it, checking in this order: `rich_message` is missing or empty, or has none of `blocks`,
         `markdown`, and `html` (`Bad Request: rich message must be non-empty`), is not JSON (`Bad Request: can't parse rich
         message JSON object`), or not an object (`Bad Request: object expected as rich
-        message`); the Bot API server cannot read a block, a text, or a button anywhere in the
+        message`), or its `blocks` is not an array (`Bad Request: expected an Array of
+        InputRichBlock`); the Bot API server cannot read a block, a text, or a button anywhere in the
         message, with its description, such as `Bad Request: can't parse InputRichBlock: type
         "…" is unsupported` or `Bad Request: can't parse InputRichBlock: media not found`; then,
         in the order of the blocks, TDLib's checks fail, such as `Bad Request: invalid section

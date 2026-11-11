@@ -28,7 +28,11 @@ import { readInputFileParameter, readThumbnailParameter } from './input_file_par
 import { clampedIntegerField } from './input_media_parameter.ts';
 import { readDateTimeFormat } from './message_entities_parameter.ts';
 import { buttonSchema } from './reply_markup_parameter.ts';
-import { type BotApiUploadedFiles, parseBotApiJsonParameter } from './request_parameters.ts';
+import {
+  type BotApiUploadedFiles,
+  isParsedJsonObject,
+  parseBotApiJsonParameter,
+} from './request_parameters.ts';
 import type { RequestedRichMessageFileTypes } from './web_file_parameter.ts';
 
 /** A rich message as a bot specified it, with the files it names. */
@@ -59,6 +63,33 @@ export type RichMessageParameterReading =
 export type RichMessageParameterParsing =
   | { readonly parsed: true; readonly checking: RichMessageParameterReading }
   | { readonly parsed: false; readonly description: string };
+
+/**
+ * A rich message object read in the two phases of `RichMessageParameterParsing`. Parsing fails
+ * with a fault that the official server's `get_input_rich_message` finds, which an enclosing array
+ * such as the results of `answerInlineQuery` prefixes, or with a refusal of the emulator's own,
+ * which nothing prefixes.
+ */
+export type RichMessageObjectParsing =
+  | { readonly parsed: true; readonly checking: RichMessageParameterReading }
+  | {
+    readonly parsed: false;
+    readonly failure: 'unparsable';
+    readonly error: RichMessageParsingError;
+  }
+  | { readonly parsed: false; readonly failure: 'refused'; readonly description: string };
+
+/**
+ * A fault that the official server's `get_input_rich_message` finds while it parses a rich message
+ * object:
+ * - `source_missing`: none of `blocks`, `markdown` and `html`;
+ * - `blocks_not_array`: `blocks` that is not an array;
+ * - `block_unparsable`: a fault of the server's block parsing.
+ */
+export type RichMessageParsingError =
+  | { readonly reason: 'source_missing' }
+  | { readonly reason: 'blocks_not_array' }
+  | { readonly reason: 'block_unparsable'; readonly blockError: RichBlockParsingError };
 
 /** The Bot API's documented limit on the buttons of a row of a rich message. */
 const MAX_BUTTON_ROW_LENGTH = 8;
@@ -157,9 +188,10 @@ type RichMediaBlockType = 'photo' | 'document' | 'video' | 'voice_note' | 'anima
 const FAILED_CHECK_BLOCK_STAND_IN: SpecifiedRichBlock = { kind: 'divider' };
 
 /**
- * A description with which parsing a `rich_message` fails at once, which no array of the blocks
- * prefixes: a fault outside the blocks, or JSON that the emulator reads more strictly than
- * Telegram. Only this module throws it.
+ * A description with which parsing a `rich_message` fails at once, which no array prefixes: a
+ * fault of the parameter's text, which a rich message object cannot have, a source the emulator
+ * does not support, or JSON that the emulator reads more strictly than Telegram. Only this module
+ * throws it.
  */
 class RichMessageParameterError extends Error {
   readonly description: string;
@@ -167,6 +199,19 @@ class RichMessageParameterError extends Error {
   constructor(description: string) {
     super(description);
     this.description = description;
+  }
+}
+
+/**
+ * A fault that the server finds in a rich message object outside its blocks; only this module
+ * throws it.
+ */
+class RichMessageParsingFailure extends Error {
+  readonly parsingError: RichMessageParsingError;
+
+  constructor(parsingError: RichMessageParsingError) {
+    super(parsingError.reason);
+    this.parsingError = parsingError;
   }
 }
 
@@ -233,7 +278,7 @@ export function readRichMessageParameter(
  *
  * The server parses every block before it passes the message to TDLib, so a fault it finds while
  * parsing, anywhere in the message, wins over every fault that the checks find, even in an earlier
- * block. It is described with the arrays it was found in, as `BOT_API_ERRORS.richBlockUnparsable`
+ * block. It is described with the arrays it was found in, as `BOT_API_ERRORS.richMessageUnparsable`
  * describes it. The checks report the first fault in the order the blocks are read; they include
  * the documented limits that Telegram's servers check and the blocks the emulator does not
  * support, which it refuses with descriptions of its own.
@@ -252,17 +297,59 @@ export function parseRichMessageParameter(
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
 ): RichMessageParameterParsing {
+  const parsing = parseWithRichMessageReader(
+    uploadedFiles,
+    invalidParametersDescription,
+    (reader) => reader.readRichMessage(richMessageParameter ?? ''),
+  );
+  if (parsing.parsed) {
+    return parsing;
+  }
+  return {
+    parsed: false,
+    description: parsing.failure === 'unparsable'
+      ? BOT_API_ERRORS.richMessageUnparsable.description(parsing.error)
+      : parsing.description,
+  };
+}
+
+/**
+ * Parses a rich message object, such as an inline query result's `rich_message`, as
+ * `parseRichMessageParameter` parses the object its parameter holds, keeping the faults that the
+ * server finds apart from the emulator's refusals so that the caller can prefix them.
+ */
+export function parseRichMessageObject(
+  richMessage: Readonly<Record<string, unknown>>,
+  uploadedFiles: BotApiUploadedFiles,
+  invalidParametersDescription: string,
+): RichMessageObjectParsing {
+  return parseWithRichMessageReader(
+    uploadedFiles,
+    invalidParametersDescription,
+    (reader) => reader.readRichMessageObject(richMessage),
+  );
+}
+
+function parseWithRichMessageReader(
+  uploadedFiles: BotApiUploadedFiles,
+  invalidParametersDescription: string,
+  read: (reader: RichMessageReader) => RichMessageParameterReading,
+): RichMessageObjectParsing {
   try {
     const reader = new RichMessageReader(uploadedFiles, invalidParametersDescription);
-    return { parsed: true, checking: reader.readRichMessage(richMessageParameter ?? '') };
+    return { parsed: true, checking: read(reader) };
   } catch (error) {
     if (error instanceof RichMessageParameterError) {
-      return { parsed: false, description: error.description };
+      return { parsed: false, failure: 'refused', description: error.description };
+    }
+    if (error instanceof RichMessageParsingFailure) {
+      return { parsed: false, failure: 'unparsable', error: error.parsingError };
     }
     if (error instanceof RichBlockParsingFailure) {
       return {
         parsed: false,
-        description: BOT_API_ERRORS.richBlockUnparsable.description(error.parsingError),
+        failure: 'unparsable',
+        error: { reason: 'block_unparsable', blockError: error.parsingError },
       };
     }
     throw error;
@@ -270,7 +357,8 @@ export function parseRichMessageParameter(
 }
 
 const richMessageSchema = z.strictObject({
-  blocks: z.array(z.unknown()).optional(),
+  // Read as an array once the source is known, as the server reads it.
+  blocks: z.unknown().optional(),
   html: z.string().optional(),
   markdown: z.string().optional(),
   media: z.array(z.unknown()).optional(),
@@ -540,11 +628,7 @@ class RichMessageReader {
     this.#invalidParametersDescription = invalidParametersDescription;
   }
 
-  /**
-   * Reads the JSON object of an `InputRichMessage`. Telegram reads the first of `blocks`,
-   * `markdown`, and `html` it finds; the emulator requires exactly one, as the Bot API documents.
-   * `blocks` may be empty, as neither the Bot API nor TDLib requires a message to have blocks.
-   */
+  /** Reads the JSON text of a `rich_message` parameter, which must hold an `InputRichMessage`. */
   readRichMessage(parameter: string): RichMessageParameterReading {
     if (parameter.length === 0) {
       throw new RichMessageParameterError(BOT_API_ERRORS.richMessageEmpty.description());
@@ -554,22 +638,37 @@ class RichMessageReader {
       throw new RichMessageParameterError(BOT_API_ERRORS.richMessageJsonInvalid.description());
     }
     const { value } = parsedParameter;
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw new RichMessageParameterError(BOT_API_ERRORS.richMessageNotObject.description());
     }
+    return this.readRichMessageObject(value);
+  }
+
+  /**
+   * Reads an `InputRichMessage` object as `get_input_rich_message` reads it. Telegram reads the
+   * first of `blocks`, `markdown`, and `html` it finds; the emulator requires exactly one, as the
+   * Bot API documents. `blocks` may be empty, as neither the Bot API nor TDLib requires a message
+   * to have blocks.
+   */
+  readRichMessageObject(value: Readonly<Record<string, unknown>>): RichMessageParameterReading {
     const { blocks, html, markdown, media, is_rtl, skip_entity_detection } = this.#parse(
       richMessageSchema,
       value,
     );
     if (blocks === undefined) {
+      if (html === undefined && markdown === undefined) {
+        throw new RichMessageParsingFailure({ reason: 'source_missing' });
+      }
       throw new RichMessageParameterError(
-        html === undefined && markdown === undefined
-          ? BOT_API_ERRORS.richMessageSourceMissing.description()
-          : BOT_API_ERRORS.richMessageMarkupUnsupported.description(),
+        BOT_API_ERRORS.richMessageMarkupUnsupported.description(),
       );
     }
-    if (html !== undefined || markdown !== undefined || media !== undefined) {
+    // Telegram reads `null` blocks as none; the emulator refuses them as malformed input.
+    if (blocks === null || html !== undefined || markdown !== undefined || media !== undefined) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
+    }
+    if (!Array.isArray(blocks)) {
+      throw new RichMessageParsingFailure({ reason: 'blocks_not_array' });
     }
     const readBlocks = this.#readBlocks(blocks);
     if (this.#firstCheckFailureDescription !== undefined) {
@@ -597,7 +696,7 @@ class RichMessageReader {
 
   /** Reads an `InputRichBlock` as the Bot API server's `get_input_page_block` reads it. */
   #readBlock(value: unknown): SpecifiedRichBlock {
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw RichBlockParsingFailure.of({ reason: 'block_not_object' });
     }
     const { type } = this.#parse(blockTypeSchema, value);
@@ -724,7 +823,7 @@ class RichMessageReader {
   }
 
   #readListItem(value: unknown): RichListItem<SpecifiedRichMessageFileTypes> {
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw RichBlockParsingFailure.of({ reason: 'list_item_not_object' });
     }
     const item = this.#parse(listItemSchema, value);
@@ -766,7 +865,7 @@ class RichMessageReader {
   }
 
   #readTableCell(value: unknown): RichTableCell {
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw RichBlockParsingFailure.of({ reason: 'table_cell_not_object' });
     }
     const cell = this.#parse(tableCellSchema, value);
@@ -864,7 +963,7 @@ class RichMessageReader {
    * may look like a link, and its text may hold only custom emoji and dates.
    */
   #readButton(value: unknown): RichMessageButton {
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw RichBlockParsingFailure.of({ reason: 'button_not_object' });
     }
     const { face, action } = this.#parse(richMessageButtonSchema, value);
@@ -984,7 +1083,7 @@ class RichMessageReader {
     if (value === undefined) {
       return {};
     }
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw RichBlockParsingFailure.of({ reason: 'caption_not_object' });
     }
     const caption = this.#parse(captionSchema, value);
@@ -1022,7 +1121,7 @@ class RichMessageReader {
     if (typeof value === 'number' || typeof value === 'boolean') {
       throw RichBlockParsingFailure.of({ reason: 'text_invalid' });
     }
-    if (!isJsonObject(value)) {
+    if (!isParsedJsonObject(value)) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
     }
     const { type } = this.#parse(blockTypeSchema, value);
@@ -1214,10 +1313,6 @@ function readVerticalAlignment(alignment: string): VerticalAlignment | undefined
   return alignment === 'top' || alignment === 'middle' || alignment === 'bottom'
     ? alignment
     : undefined;
-}
-
-function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isOneOf<Value extends string>(value: string, values: readonly Value[]): value is Value {

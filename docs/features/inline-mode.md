@@ -45,14 +45,19 @@ inline keyboards apply. A rich message, which the official server's
 message. As TDLib's [`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its
 photos, documents, videos and voice notes are files the bot knows by `file_id`, which Telegram
 already has: an upload or a file named by URL fails with
-`Bad Request: invalid inline message content specified`. The server prefixes its own descriptions of
-a rich message it cannot read with `can't parse InlineQueryResult:`, which the emulator words as for
-`sendRichMessage`. Answers allow up to 50 results, unique nonempty result IDs of at most 64 UTF-8
-bytes and a `next_offset` of at most 64 UTF-8 bytes. As TDLib's
-[`get_input_bot_inline_result`][results] does, the emulator cleans every result's title and
-description with `clean_input_string` before listing them, and refuses text that is not well-formed
-Unicode with `Bad Request: strings must be encoded in UTF-8`. The emulator checks button options,
-result count and message content before query state and result metadata, producing errors such as
+`Bad Request: invalid inline message content specified`. The server reads the results as an array,
+so a fault it finds while it parses a rich message is described as for `sendRichMessage` after
+`can't parse InlineQueryResult:`, such as
+`Bad Request: can't parse InlineQueryResult: Can't parse InputRichBlock: Object expected as InputRichMessageBlock`.
+A `rich_message` that is not an object fails with
+`Bad Request: can't parse InlineQueryResult: Field "rich_message" must be of type Object`. TDLib's
+checks of the blocks and the emulator's own refusals have no prefix, as Telegram answered in live
+probes. Answers allow up to 50 results, unique nonempty result IDs of at most 64 UTF-8 bytes and a
+`next_offset` of at most 64 UTF-8 bytes. As TDLib's [`get_input_bot_inline_result`][results] does,
+the emulator cleans every result's title and description with `clean_input_string` before listing
+them, and refuses text that is not well-formed Unicode with
+`Bad Request: strings must be encoded in UTF-8`. The emulator checks button options, result count
+and message content before query state and result metadata, producing errors such as
 `RESULT_ID_DUPLICATE` and the query-too-old error. As the official server's
 [`process_answer_inline_query_query`][answer-inline-query] does, the button is read before the
 results. Empty `button` text is no button, and a `button` that is not JSON the server can read is
