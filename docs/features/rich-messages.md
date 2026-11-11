@@ -20,9 +20,9 @@ and TDLib's [`RichMessage::get_rich_message`][rich-message], [`get_web_page_bloc
 and [`RichText::get_rich_text`][tdlib-rich-text] check them. The emulator refuses what they refuse,
 with their descriptions. The server reads blocks, list items, table cells and the buttons of a row
 as arrays, and prefixes a fault it finds in an element with `Can't parse <class name>:`, once for
-each array around it. Only the outermost prefix starts in lowercase. `blocks` that is not an array
-fails with `Bad Request: expected an Array of InputRichBlock`. A nested block that is not an object
-fails, for example, with
+each array around it. Only the outermost prefix starts in lowercase. `blocks` that is neither an
+array nor `null` fails with `Bad Request: expected an Array of InputRichBlock`. A nested block that
+is not an object fails, for example, with
 `Bad Request: can't parse InputRichBlock: Can't parse InputRichBlockListItem: Can't parse InputRichBlock: Object expected as InputRichMessageBlock`.
 TDLib checks the blocks once the server has read them, so its faults have no prefix. For example, a
 heading size must be from 1 to 6 (`Bad Request: invalid section heading size specified`), a list
