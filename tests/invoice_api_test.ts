@@ -2,6 +2,7 @@ import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { VALID_INVOICE } from './support/checkout_fixture.ts';
 import { createAccount, createBot } from './support/http_fixtures.ts';
 import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
@@ -35,15 +36,6 @@ interface BotApiAnswer {
   readonly error_code?: number;
   readonly description?: string;
 }
-
-/** The parameters of a valid invoice, which each test varies. */
-const VALID_INVOICE = {
-  title: 'Premium access',
-  description: 'Unlocks every premium chapter',
-  payload: 'order-42',
-  currency: 'XTR',
-  prices: [{ label: 'Access', amount: 50 }],
-} as const;
 
 /**
  * Creates a session where Ada has started a private chat with the shop bot and owns a supergroup

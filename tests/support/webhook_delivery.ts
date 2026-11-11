@@ -15,7 +15,7 @@ export const WEBHOOK_URL = 'https://bot.example/webhook';
 /** The time the tests' clocks tell, and the date of their messages. */
 export const NOW_UNIX_SECONDS = 1_700_000_000;
 /** The account that sends messages by default. */
-export const ADA_ID = 1;
+const ADA_ID = 1;
 
 /** A request that sets a webhook at `WEBHOOK_URL` with Telegram's defaults. */
 export function webhookRequest(): SetWebhookRequest {

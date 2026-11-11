@@ -13,10 +13,7 @@ import {
   parseWebhookUrl,
   type WebhookDeliveryError,
 } from '../../types/bot_webhook.ts';
-import type {
-  GetUpdatesRequest as PollRequest,
-  GetUpdatesResult as PollResult,
-} from '../update_polling/bot_update_polling.ts';
+import type { UpdatePollRequest, UpdatePollResult } from '../update_polling/bot_update_polling.ts';
 import type { WebhookGeneration } from '../webhook_delivery/webhook_delivery.ts';
 
 export interface SetWebhookRequest {
@@ -51,14 +48,14 @@ export interface DeleteWebhookRequest {
 
 export type DeleteWebhookOutcome = 'webhook_deleted' | 'webhook_already_deleted';
 
-export interface GetUpdatesRequest extends PollRequest {
+export interface GetUpdatesRequest extends UpdatePollRequest {
   /** Requested update type names; omitting them keeps the bot's current subscription. */
   readonly allowedUpdates?: readonly string[];
 }
 
 /** The result of `getUpdates`, which fails while the bot has a webhook. */
 export type GetUpdatesResult =
-  | PollResult
+  | UpdatePollResult
   | { readonly retrieved: false; readonly reason: 'webhook_active' };
 
 interface WebhookRegistration {
@@ -87,9 +84,9 @@ interface UpdatePolling {
   /** `changeOnArrival` runs in the transaction of the request's arrival. */
   getUpdates(
     botId: number,
-    request: PollRequest,
+    request: UpdatePollRequest,
     changeOnArrival: () => void,
-  ): Promise<PollResult>;
+  ): Promise<UpdatePollResult>;
   terminateLongPollForWebhook(botId: number): void;
 }
 

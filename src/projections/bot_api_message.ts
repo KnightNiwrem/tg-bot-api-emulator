@@ -1296,7 +1296,7 @@ export function projectPrivateChat(
 }
 
 /** Shows the private chat with another bot, as a bot at its other end sees it. */
-export function projectBotPrivateChat(
+function projectBotPrivateChat(
   { id, first_name, last_name, username }: VirtualBotProfile,
 ): BotApiPrivateChat {
   return {

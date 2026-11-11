@@ -11,6 +11,7 @@ import {
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import { refusePrivateChatRequest, refuseSupergroupRequest } from './chat_access_refusals.ts';
 import {
   viewPrivateChatMessageForBot,
   viewSupergroupChatMessageForAccount,
@@ -40,11 +41,7 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
         messageId,
       });
       if (!result.found) {
-        // Only a supergroup has members; a private chat never refuses an account as one.
-        if (result.reason === 'not_a_member') {
-          throw new Error(`A private chat refused a poll answer's lookup as ${result.reason}`);
-        }
-        return { status: 404, body: { reason: result.reason } };
+        return refusePrivateChatRequest(result.reason, "a poll answer's lookup");
       }
       return {
         status: 200,
@@ -93,9 +90,7 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
         messageId,
       });
       if (!result.found) {
-        return result.reason === 'not_a_member'
-          ? { status: 403, body: { reason: result.reason } }
-          : { status: 404, body: { reason: result.reason } };
+        return refuseSupergroupRequest(result.reason);
       }
       return {
         status: 200,

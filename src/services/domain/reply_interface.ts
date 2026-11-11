@@ -10,10 +10,11 @@
  *
  * @module
  */
-import type {
-  PrivateChatIdentityPolicy,
-  SupergroupAccessPredicates,
-  SupergroupIdentityPolicy,
+import {
+  type PrivateChatIdentityPolicy,
+  reachSupergroupAsMember,
+  type SupergroupAccessPredicates,
+  type SupergroupIdentityPolicy,
 } from '../../types/chat_policy.ts';
 import {
   isRequestedPollType,
@@ -329,17 +330,8 @@ export class ReplyInterfaceService {
     };
     this.#supergroupTargeting = {
       reachChat: (accountId, chat) => {
-        const identification = supergroups.identifyChatForAccount(accountId, chat);
-        if (!identification.identified) {
-          return { reached: false, reason: identification.reason };
-        }
-        const membership = supergroups.resolveAccountMembership(
-          accountId,
-          identification.supergroup,
-        );
-        return membership.member
-          ? { reached: true, key: identification.key }
-          : { reached: false, reason: membership.reason };
+        const reach = reachSupergroupAsMember(supergroups, accountId, chat);
+        return reach.reached ? { reached: true, key: reach.key } : reach;
       },
       findShownReplyInterface: ({ key }, accountId) => {
         // A deleted message leaves its ID behind, which then names no message.

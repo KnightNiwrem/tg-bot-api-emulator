@@ -8,6 +8,7 @@ import {
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import { refuseSupergroupRequest } from './chat_access_refusals.ts';
 import { viewSupergroupChatMessageForAccount } from './chat_message_view.ts';
 
 /** Where the account routes are mounted within the server, as a contract path template. */
@@ -30,9 +31,7 @@ export function createMessageReactionRoutes(): Hono<SessionRouteContextTypes> {
       const { messageReactions, botMessageViews } = context.get('emulationSession');
       const result = messageReactions.getAccountMessageReactions({ accountId, chatId, messageId });
       if (!result.found) {
-        return result.reason === 'not_a_member'
-          ? { status: 403, body: { reason: result.reason } }
-          : { status: 404, body: { reason: result.reason } };
+        return refuseSupergroupRequest(result.reason);
       }
       return {
         status: 200,

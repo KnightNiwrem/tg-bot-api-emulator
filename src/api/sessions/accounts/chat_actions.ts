@@ -9,6 +9,7 @@ import {
 import type { VisibleChatAction } from '../../../types/virtual_chat.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import { refusePrivateChatRequest, refuseSupergroupRequest } from './chat_access_refusals.ts';
 
 /** Where the account routes are mounted within the server, as a contract path template. */
 const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
@@ -36,11 +37,7 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
           body: { chat_actions: result.chatActions.map(presentChatActionForAccount) },
         };
       }
-      // Only a supergroup has members; a private chat never refuses an account as one.
-      if (result.reason === 'not_a_member') {
-        throw new Error(`A private chat refused its chat actions as ${result.reason}`);
-      }
-      return { status: 404, body: { reason: result.reason } };
+      return refusePrivateChatRequest(result.reason, 'its chat actions');
     },
   );
 
@@ -56,10 +53,7 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
       if (result.expired) {
         return { status: 204 };
       }
-      if (result.reason === 'not_a_member') {
-        throw new Error(`A private chat refused a chat action expiry as ${result.reason}`);
-      }
-      return { status: 404, body: { reason: result.reason } };
+      return refusePrivateChatRequest(result.reason, 'a chat action expiry');
     },
   );
 
@@ -80,9 +74,7 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
           body: { chat_actions: result.chatActions.map(presentChatActionForAccount) },
         };
       }
-      return result.reason === 'not_a_member'
-        ? { status: 403, body: { reason: result.reason } }
-        : { status: 404, body: { reason: result.reason } };
+      return refuseSupergroupRequest(result.reason);
     },
   );
 
@@ -99,9 +91,7 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
       if (result.expired) {
         return { status: 204 };
       }
-      return result.reason === 'not_a_member'
-        ? { status: 403, body: { reason: result.reason } }
-        : { status: 404, body: { reason: result.reason } };
+      return refuseSupergroupRequest(result.reason);
     },
   );
 

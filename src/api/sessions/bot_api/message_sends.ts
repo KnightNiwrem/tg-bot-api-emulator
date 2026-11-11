@@ -17,6 +17,7 @@ import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { missingAuthenticatedBotError } from './authenticated_bot_failures.ts';
 import type { SpecifiedFormattedText } from './formatted_text_reading.ts';
 import type { BotApiFamilyContext } from './method_call.ts';
+import type { SendRequestOptions } from './send_options.ts';
 
 type BotMessageSender = EmulationSession['botMessageSending']['sender'];
 type BotMediaResolver = EmulationSession['botMediaResolver'];
@@ -34,9 +35,6 @@ export type MessageSendContext = BotApiFamilyContext<
   | 'privateMessaging'
   | 'supergroupMessaging'
 >;
-
-/** Where and how every send method sends its message, and what it replies to. */
-export type SendRequestOptions = Parameters<BotMessageSender['send']>[2];
 
 /** A message a send method sent, as the bot sees it, or why it was not sent. */
 export type SendResult = ReturnType<BotMessageSender['send']>;

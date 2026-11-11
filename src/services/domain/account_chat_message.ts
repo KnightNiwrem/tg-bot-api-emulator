@@ -1,9 +1,10 @@
-import type {
-  ChatMessageLookup,
-  PrivateChatAccessPredicates,
-  PrivateChatIdentityPolicy,
-  SupergroupAccessPredicates,
-  SupergroupIdentityPolicy,
+import {
+  type ChatMessageLookup,
+  type PrivateChatAccessPredicates,
+  type PrivateChatIdentityPolicy,
+  reachSupergroupAsMember,
+  type SupergroupAccessPredicates,
+  type SupergroupIdentityPolicy,
 } from '../../types/chat_policy.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type {
@@ -133,20 +134,13 @@ function findSupergroupMessage(
   chatId: number,
   messageId: number,
 ): AccountChatMessageLookupResult {
-  const identification = supergroups.identifyChatForAccount(accountId, {
-    type: 'supergroup',
-    chatId,
-  });
-  if (!identification.identified) {
-    return { found: false, reason: identification.reason };
+  const reach = reachSupergroupAsMember(supergroups, accountId, { type: 'supergroup', chatId });
+  if (!reach.reached) {
+    return { found: false, reason: reach.reason };
   }
-  const membership = supergroups.resolveAccountMembership(accountId, identification.supergroup);
-  if (!membership.member) {
-    return { found: false, reason: membership.reason };
-  }
-  const message = supergroups.findMessageByChatMessageId(identification.key, messageId);
+  const message = supergroups.findMessageByChatMessageId(reach.key, messageId);
   if (message === undefined) {
     return { found: false, reason: 'message_not_found' };
   }
-  return { found: true, message, chat: identification.supergroup };
+  return { found: true, message, chat: reach.supergroup };
 }

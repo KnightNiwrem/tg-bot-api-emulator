@@ -94,7 +94,7 @@ export type BotApiMethodOutcome = BotApiMethodAnswer | typeof SESSION_ENDED;
  * Runs a method with a call's parameters and uploaded files, and answers the call, committing the
  * method's changes as it makes them.
  */
-export type BotApiMethodHandler = (
+type BotApiMethodHandler = (
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
@@ -139,7 +139,7 @@ export function answeredPreparationUnlessEnded(
  * stay here, in their order. A preparation that waits returns `SESSION_ENDED` once the session
  * ended during the wait.
  */
-export type BotApiCommandPreparer = (
+type BotApiCommandPreparer = (
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,

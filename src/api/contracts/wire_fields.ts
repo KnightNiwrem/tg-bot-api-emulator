@@ -18,7 +18,7 @@ const TELEGRAM_USERNAME_PATTERN = /^[A-Za-z](?:_?[A-Za-z0-9])*$/;
  * A URI reference, such as the path `/sessions/1`: text that resolves against a base URL, as WHATWG
  * URL parsing reads it.
  */
-export const uriReferenceSchema = z.stringFormat(
+const uriReferenceSchema = z.stringFormat(
   'uri-reference',
   (text) => URL.canParse(text, 'http://base.invalid/'),
 );

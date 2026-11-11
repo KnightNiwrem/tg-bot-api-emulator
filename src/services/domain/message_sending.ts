@@ -16,12 +16,13 @@ import {
   getEffectiveChatPermissions,
   type SupergroupBotAccessFailureReason,
 } from '../../types/chat_membership.ts';
-import type {
-  ChatMessageLookup,
-  PrivateChatAccessPredicates,
-  PrivateChatIdentityPolicy,
-  SupergroupAccessPredicates,
-  SupergroupIdentityPolicy,
+import {
+  type ChatMessageLookup,
+  type PrivateChatAccessPredicates,
+  type PrivateChatIdentityPolicy,
+  reachSupergroupAsMember,
+  type SupergroupAccessPredicates,
+  type SupergroupIdentityPolicy,
 } from '../../types/chat_policy.ts';
 import {
   type ChatPermissions,
@@ -811,17 +812,7 @@ export class MessageSendingService {
         }),
     };
     this.#accountSupergroupTargeting = {
-      reachChat: (accountId, chat) => {
-        const identification = supergroups.identifyChatForAccount(accountId, chat);
-        if (!identification.identified) {
-          return { reached: false, reason: identification.reason };
-        }
-        const { key, supergroup } = identification;
-        const membership = supergroups.resolveAccountMembership(accountId, supergroup);
-        return membership.member
-          ? { reached: true, key, supergroup, membership: membership.membership }
-          : { reached: false, reason: membership.reason };
-      },
+      reachChat: (accountId, chat) => reachSupergroupAsMember(supergroups, accountId, chat),
       findMessage: findSupergroupMessage,
       findContentRefusal: (reached, accountId, contents) =>
         findSupergroupContentRefusal(reached, { kind: 'account', accountId }, contents),
