@@ -250,6 +250,27 @@ export function sendVoice(
 }
 
 /**
+ * Sends a regular static sticker that the bot knows by its `file_id`, as `sendMedia` sends media.
+ * The sticker keeps the emoji it was stored with: TDLib applies `sendSticker`'s `emoji` only to a
+ * sticker just uploaded, which bots cannot do in the emulator, and Telegram was observed to keep a
+ * resent sticker's emoji whatever `emoji` it was given.
+ */
+export function sendSticker(
+  context: MessageSendContext,
+  { stickerFileId, ...options }: SendRequestOptions & { readonly stickerFileId: string },
+): SendResult {
+  const resolution = context.session.botMediaResolver.resolveSticker(context.bot.id, stickerFileId);
+  if (!resolution.resolved) {
+    return { sent: false, ...resolution.failure };
+  }
+  return context.session.botMessageSending.sender.send(
+    context.bot.id,
+    { kind: 'sticker', sticker: resolution.file },
+    options,
+  );
+}
+
+/**
  * Sends photos and videos, documents, or audio files to a private chat or a supergroup as an
  * album, as TDLib's `send_message_group` does: each message's file is resolved as `sendMedia`
  * resolves it, in order, and the album is then checked as `checkAlbumComposition` does. An upload

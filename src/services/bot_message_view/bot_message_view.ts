@@ -124,7 +124,7 @@ import {
   type ExternalReply,
   type FormattedText,
   getContentText,
-  isCaptionedMediaContent,
+  isFileMessageContent,
   isPrivateContentMessage,
   isSupergroupContentMessage,
   type MessageForwardInfo,
@@ -875,7 +875,7 @@ export class BotMessageViewService {
       }),
     };
     const { content } = message;
-    if (isCaptionedMediaContent(content)) {
+    if (isFileMessageContent(content)) {
       return {
         ...context,
         contentFile: this.#observeFile(content.fileId, observerId, message.id),
@@ -968,7 +968,8 @@ export class BotMessageViewService {
 
   /**
    * Resolves what an observer sees of the media of a reply to another chat: the file of replied
-   * media, or the replied poll; a contact, location, or invoice needs nothing resolved.
+   * media or a replied sticker, or the replied poll; a contact, location, or invoice needs nothing
+   * resolved.
    */
   #observeExternalReplyMedia(
     media: ExternalReply['media'],
@@ -988,6 +989,7 @@ export class BotMessageViewService {
       case 'video':
       case 'voice':
       case 'audio':
+      case 'sticker':
         return { mediaFile: this.#observeFile(media.fileId, observerId, message.id) };
       default: {
         const unhandledMedia: never = media;

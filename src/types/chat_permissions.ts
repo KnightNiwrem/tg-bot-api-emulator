@@ -75,6 +75,7 @@ export type PermissionGovernedContent =
       | 'video'
       | 'voice'
       | 'audio'
+      | 'sticker'
       | 'poll'
       | 'contact'
       | 'location';
@@ -83,7 +84,8 @@ export type PermissionGovernedContent =
 
 /**
  * The permissions a member needs to send content, as TDLib's `can_send_message_content` requires
- * them: one per media kind, `can_send_messages` for text, contacts, and locations, and, as
+ * them: one per media kind, `can_send_messages` for text, contacts, and locations,
+ * `can_send_other_messages` for stickers, which TDLib's `can_send_stickers` reads from it, and, as
  * `RichMessage::can_send` and each block's `can_send` require, `can_send_messages` and the
  * permission of every photo, document, video and voice note a rich message shows.
  */
@@ -107,6 +109,8 @@ export function getContentSendPermissions(
       return ['can_send_audios'];
     case 'poll':
       return ['can_send_polls'];
+    case 'sticker':
+      return ['can_send_other_messages'];
     case 'rich_message': {
       const permissions = new Set<ChatPermission>(['can_send_messages']);
       for (const file of listRichMessageFiles(content.richMessage)) {

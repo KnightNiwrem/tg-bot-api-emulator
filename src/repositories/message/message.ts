@@ -436,6 +436,7 @@ function copyContent(content: ChatMessageContent): ChatMessageContent {
       };
     case 'rich_message':
       return structuredClone(content);
+    case 'sticker':
     case 'poll':
       return { ...content };
     case 'contact':

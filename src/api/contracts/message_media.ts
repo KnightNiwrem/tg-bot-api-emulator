@@ -1,7 +1,8 @@
 /**
  * Wire facts of the media, contacts and locations messages show, as the Bot API shows them:
- * photos, documents, videos, voice notes, audio files, phone contacts, and points on Earth. Each type is declared beside
- * its schema; the schemas of the messages that hold them are annotated by the message types.
+ * photos, documents, videos, voice notes, audio files, stickers, phone contacts, and points on
+ * Earth. Each type is declared beside its schema; the schemas of the messages that hold them are
+ * annotated by the message types.
  */
 import { z } from 'zod';
 
@@ -11,7 +12,10 @@ import type { sharedLocationSchema } from './wire_fields.ts';
 /** A point on Earth, as Telegram shows it. */
 export type Location = ReadonlySnapshot<z.output<typeof sharedLocationSchema>>;
 
-/** A file of a message: a photo size, a document, a video, a voice note, or an audio file. */
+/**
+ * A file of a message: a photo size, a document, a video, a voice note, an audio file, or a
+ * sticker.
+ */
 interface MessageFile {
   /**
    * The identifier by which the message's observer knows the file. As on Telegram, each user
@@ -99,6 +103,20 @@ export interface Audio extends MessageFile {
   readonly thumb?: PhotoSize;
 }
 
+/**
+ * A regular static sticker, a WebP image whose dimensions are read from it. Animated and video
+ * stickers, sticker sets, thumbnails, masks, and custom emoji are not supported.
+ */
+export interface Sticker extends MessageFile {
+  readonly width: number;
+  readonly height: number;
+  /** The emoji the sticker is associated with; omitted for none. */
+  readonly emoji?: string;
+  readonly is_animated: false;
+  readonly is_video: false;
+  readonly type: 'regular';
+}
+
 const messageFileShape = {
   file_id: z.string().min(1),
   file_unique_id: z.string().min(1),
@@ -145,6 +163,16 @@ export const audioSchema = z.strictObject({
   performer: z.string().min(1).optional(),
   thumbnail: photoSizeSchema.optional(),
   thumb: photoSizeSchema.optional(),
+  ...messageFileShape,
+});
+
+export const stickerSchema = z.strictObject({
+  width: z.int().positive(),
+  height: z.int().positive(),
+  emoji: z.string().min(1).optional(),
+  is_animated: z.literal(false),
+  is_video: z.literal(false),
+  type: z.literal('regular'),
   ...messageFileShape,
 });
 

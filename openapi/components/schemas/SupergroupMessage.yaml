@@ -28,6 +28,8 @@ oneOf:
   - required:
       - audio
   - required:
+      - sticker
+  - required:
       - rich_message
   - required:
       - poll
@@ -136,6 +138,8 @@ properties:
     $ref: ./Voice.yaml
   audio:
     $ref: ./Audio.yaml
+  sticker:
+    $ref: ./Sticker.yaml
   caption:
     type: string
     minLength: 1

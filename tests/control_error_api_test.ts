@@ -136,7 +136,7 @@ Deno.test('A value meant as one form of a union reports that form’s issues', a
   });
   const unknownContent = await requestJson<ControlErrorBody>(api, 'POST', messagesPath, {
     to,
-    sticker: 'cat',
+    dice: '🎲',
   });
 
   for (const { status } of [wrongText, unknownChatType, unknownContent]) {

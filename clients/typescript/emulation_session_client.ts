@@ -165,6 +165,7 @@ import type {
   AccountSendMessageInput,
   AccountSendPhotoInput,
   AccountSendPollInput,
+  AccountSendStickerInput,
   AccountSendVideoInput,
   AccountSendVoiceInput,
   AccountShareOwnContactInput,
@@ -783,6 +784,18 @@ function createVirtualAccountClient(
           'audio',
           sendCall,
         ),
+      });
+    },
+    async sendSticker<Target extends MessageTarget>(
+      { sticker, emoji, ...message }: AccountSendStickerInput<Target>,
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
+        ...message,
+        sticker: {
+          content_base64: toBase64Content(sticker, 'sticker', sendCall),
+          ...(emoji === undefined ? {} : { emoji }),
+        },
       });
     },
     sendContact<Target extends MessageTarget>(

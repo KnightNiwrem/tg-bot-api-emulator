@@ -103,6 +103,7 @@ import {
   projectAudio,
   projectDocument,
   projectPhotoSize,
+  projectSticker,
   projectVideo,
   projectVoice,
 } from './bot_api_file.ts';
@@ -615,6 +616,8 @@ function projectExternalReplyMedia(
       return { voice: projectVoice(mediaFile) };
     case 'audio':
       return { audio: projectAudio(mediaFile) };
+    case 'sticker':
+      return { sticker: projectSticker(mediaFile) };
     case 'contact':
       return { contact: toBotApiContact(media.contact) };
     case 'location':
@@ -819,6 +822,8 @@ function projectMessageContent(
         audio: projectAudio(contentFile),
         ...projectCaption(content.caption, mentionedUsers),
       };
+    case 'sticker':
+      return { sticker: projectSticker(contentFile) };
     case 'rich_message':
       return {
         rich_message: projectRichMessage(content, {

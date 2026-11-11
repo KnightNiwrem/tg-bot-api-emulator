@@ -5,6 +5,7 @@ import {
   createBotApiCommandSession,
   FAILED_RECORDING_MESSAGE,
 } from './support/bot_api_command_session.ts';
+import { staticWebpSticker } from './support/media_samples.ts';
 import { createStagedSessionFixture, FAILED_VIEW_MESSAGE } from './support/staged_session.ts';
 
 const REPORT_URL = 'https://files.example/report.pdf';
@@ -221,6 +222,45 @@ Deno.test("an account's poll whose projection fails stores no poll", () => {
         : fixture.polls.getPoll(stagedPollId) !== undefined,
     },
     { state: stateBefore, stagedPollStored: false },
+  );
+});
+
+Deno.test("an account's sticker whose projection fails stores no file and grants no file_id", () => {
+  const fixture = createStagedSessionFixture({ privacyMode: false });
+  const { adaId, chatId, alpha, beta } = fixture;
+  const stateBefore = fixture.readState();
+  fixture.views.failingObserverId = beta;
+  const sticker = staticWebpSticker(64, 64);
+
+  // Alpha's view of the sticker, which grants Alpha its file_id, succeeds before Beta's fails.
+  assertThrows(
+    () =>
+      fixture.messageSending.sendAccountSupergroupMessage({
+        fromAccountId: adaId,
+        chat: { type: 'supergroup', chatId },
+        content: {
+          kind: 'sticker',
+          upload: { type: 'sticker', content: sticker, width: 64, height: 64 },
+        },
+      }),
+    Error,
+    FAILED_VIEW_MESSAGE,
+  );
+  const [alphaView] = fixture.views.messageViewsSeen;
+  const stagedSticker = alphaView !== undefined && 'sticker' in alphaView
+    ? alphaView.sticker
+    : undefined;
+
+  assertEquals(
+    {
+      state: fixture.readState(),
+      stagedStickerViewed: stagedSticker !== undefined,
+      fileStored: stagedSticker !== undefined &&
+        fixture.files.getFileByUniqueId(stagedSticker.file_unique_id) !== undefined,
+      fileIdGranted: stagedSticker !== undefined &&
+        fixture.files.findObserverFile(alpha, stagedSticker.file_id) !== undefined,
+    },
+    { state: stateBefore, stagedStickerViewed: true, fileStored: false, fileIdGranted: false },
   );
 });
 

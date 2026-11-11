@@ -1,0 +1,47 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: Identifier of the chat, as for `sendMessage`.
+  sticker:
+    type: string
+    description: >-
+      The `file_id` of a sticker the bot knows, such as one it received in a message. The emulator
+      does not support uploading a sticker or sending one by HTTP URL: `attach://<part name>`, a
+      URL, or an omitted parameter with a part named `sticker` is refused.
+  emoji:
+    type: string
+    description: >-
+      Read and ignored. TDLib applies it only to a sticker just uploaded; a sticker sent by
+      `file_id` keeps the emoji it was stored with, as Telegram was observed to do.
+  disable_notification:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  protect_content:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  message_effect_id:
+    type: string
+    pattern: '^-?\d+$'
+    description: As for `sendMessage`.
+  reply_parameters:
+    $ref: ./ReplyParameters.yaml
+  reply_to_message_id:
+    type: integer
+    description: As for `sendMessage`.
+  allow_sending_without_reply:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  reply_markup:
+    description: As for `sendMessage`.
+    oneOf:
+      - $ref: ./InlineKeyboardMarkup.yaml
+      - $ref: ./ReplyKeyboardMarkup.yaml
+      - $ref: ./ReplyKeyboardRemove.yaml
+      - $ref: ./ForceReply.yaml

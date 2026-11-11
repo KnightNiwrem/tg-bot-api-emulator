@@ -320,6 +320,7 @@ accounts and bots are refused what they may not send, as TDLib's
 | Video                                           | `can_send_videos`                                      | `not enough rights to send videos to the chat`           |
 | Voice note                                      | `can_send_voice_notes`                                 | `not enough rights to send voice notes to the chat`      |
 | Audio file                                      | `can_send_audios`                                      | `not enough rights to send music to the chat`            |
+| Sticker                                         | `can_send_other_messages`                              | `not enough rights to send stickers to the chat`         |
 | Poll                                            | `can_send_polls`                                       | `not enough rights to send polls to the chat`            |
 | Contact                                         | `can_send_messages`                                    | `not enough rights to send contacts to the chat`         |
 | Location                                        | `can_send_messages`                                    | `not enough rights to send locations to the chat`        |
@@ -342,8 +343,8 @@ them, so only the owner and administrators with the right pin there. `can_react_
 [reactions](reactions.md).
 
 The other permissions are stored and shown but enforce nothing, because the emulator lacks what they
-govern: `can_send_video_notes` (video notes), `can_send_other_messages` beyond inline results
-(stickers, GIFs, games), `can_add_web_page_previews` (link previews), `can_edit_tag` (member tags),
+govern: `can_send_video_notes` (video notes), `can_send_other_messages` beyond inline results and
+stickers (GIFs, games), `can_add_web_page_previews` (link previews), `can_edit_tag` (member tags),
 `can_invite_users` (invitations by members) and `can_manage_topics` (topics).
 
 ### Default permissions

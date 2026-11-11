@@ -61,6 +61,7 @@ const TDLIB_FILE_TYPE_NAMES = {
   video: 'Video',
   voice: 'VoiceNote',
   audio: 'Audio',
+  sticker: 'Sticker',
   thumbnail: 'Thumbnail',
 } as const satisfies Record<StoredFile['type'], string>;
 
@@ -75,6 +76,7 @@ const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
   video: 'Bad Request: not enough rights to send videos to the chat',
   voice: 'Bad Request: not enough rights to send voice notes to the chat',
   audio: 'Bad Request: not enough rights to send music to the chat',
+  sticker: 'Bad Request: not enough rights to send stickers to the chat',
   poll: 'Bad Request: not enough rights to send polls to the chat',
   rich_message: 'Bad Request: not enough rights to send the rich message to the chat',
   contact: 'Bad Request: not enough rights to send contacts to the chat',
@@ -110,7 +112,7 @@ const DOCUMENTED_LIMIT_INFERENCE =
 const LOCAL_FILE_CHECKS = tdlibSource('td/telegram/files/FileLoaderUtils.cpp#L273-L340');
 
 /** The files that send methods send from a parameter of their own name. */
-type SentFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio';
+type SentFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio' | 'sticker';
 
 /** Where each send method of the official server refuses a call without its file. */
 const INPUT_FILE_MISSING_LINES = {
@@ -119,6 +121,7 @@ const INPUT_FILE_MISSING_LINES = {
   video: 'L14120-L14124',
   voice: 'L14159-L14163',
   audio: 'L14033-L14037',
+  sticker: 'L14108-L14112',
 } as const satisfies Record<SentFileKind, string>;
 
 /** TDLib's `InputInvoice::process_input_message_invoice`, which cleans an invoice's texts. */
@@ -425,6 +428,16 @@ export const BOT_API_ERRORS = {
     provenance: ({ fileKind }: { readonly fileKind: SentFileKind }) =>
       botApiServerSource(`telegram-bot-api/Client.cpp#${INPUT_FILE_MISSING_LINES[fileKind]}`),
   },
+  /** A sticker that `sendSticker` uploads or names by URL, which the emulator does not support. */
+  stickerSourceUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: stickers can be sent only by a file_id the bot knows; uploads and URLs are not ' +
+      'supported',
+    emulatorInference(
+      'The emulator supports only regular static stickers that accounts send, which bots resend ' +
+        'by file_id',
+    ),
+  ),
   /** A static location's coordinates, which the official server's `get_location` requires. */
   latitudeEmpty: fixedBotApiError(
     400,

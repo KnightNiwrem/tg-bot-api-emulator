@@ -38,14 +38,17 @@ import {
 import type { NewPoll, Poll, SpecifiedAccountPoll, SpecifiedPoll } from '../../types/poll.ts';
 import type {
   AudioUpload,
+  CaptionedFileUpload,
   DocumentUpload,
   FileUpload,
   PhotoUpload,
+  StickerUpload,
   StoredAudioFile,
   StoredDocumentFile,
   StoredFile,
   StoredFileId,
   StoredPhotoFile,
+  StoredStickerFile,
   StoredVideoFile,
   StoredVoiceFile,
   VideoUpload,
@@ -111,13 +114,16 @@ export type OutgoingVoice = OutgoingFile<StoredVoiceFile, VoiceUpload>;
 
 export type OutgoingAudio = OutgoingFile<StoredAudioFile, AudioUpload>;
 
-/** A file that new captioned media carries. */
+export type OutgoingSticker = OutgoingFile<StoredStickerFile, StickerUpload>;
+
+/** A file that new captioned media or a new sticker carries. */
 type OutgoingMediaFile =
   | OutgoingPhoto
   | OutgoingDocument
   | OutgoingVideo
   | OutgoingVoice
-  | OutgoingAudio;
+  | OutgoingAudio
+  | OutgoingSticker;
 
 /** The files of a rich message being sent: each reused by its stored file, or a new upload. */
 export interface OutgoingRichMessageFileTypes {
@@ -172,6 +178,7 @@ export type OutgoingMessageContent =
     readonly kind: 'audio';
     readonly audio: OutgoingAudio;
   })
+  | OutgoingStickerContent
   | {
     readonly kind: 'rich_message';
     readonly richMessage: OutgoingRichMessage;
@@ -203,6 +210,12 @@ export type OutgoingMessageContent =
      */
     readonly captionReplacement?: CaptionReplacement;
   };
+
+/** A new sticker, which, having no caption or text, Telegram sends as it is. */
+export interface OutgoingStickerContent {
+  readonly kind: 'sticker';
+  readonly sticker: OutgoingSticker;
+}
 
 /**
  * A new caption of media, with where a photo or video shows it; other media ignores the placement.
@@ -244,6 +257,7 @@ export type NormalizedOutgoingContent =
     readonly audio: OutgoingAudio;
     readonly caption: FormattedText;
   }
+  | OutgoingStickerContent
   | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
   | { readonly kind: 'poll'; readonly poll: NewPoll }
   | ContactMessageContent
@@ -274,7 +288,7 @@ export type OutgoingContentOtherThanPoll = Exclude<
  * as Telegram does, which also marks bot commands; then checks that the result fits in a message.
  * A rich message is checked and has its entities marked as `normalizeRichMessage` does, a poll is
  * checked as `normalizeNewPoll` does, and a contact is cleaned as `normalizeContact` cleans it. A
- * location carries no text, so it passes as it is: every reader of a location, the Bot API handler
+ * sticker carries no text, so it passes as it is, as does a location: every reader of a location, the Bot API handler
  * and the account routes, checks it as `isPointOnEarth` requires before it becomes content.
  */
 export function normalizeOutgoingContent(
@@ -292,7 +306,7 @@ export function normalizeOutgoingContent(
   sender: MessageSenderKind,
   context: FormattedTextFixingContext,
 ): OutgoingContentNormalization {
-  if (content.kind === 'location') {
+  if (content.kind === 'location' || content.kind === 'sticker') {
     return { normalized: true, content };
   }
   if (content.kind === 'text' || content.kind === 'rich_message') {
@@ -684,9 +698,9 @@ export function normalizeCaption(
 
 /**
  * What an account sends: text; media with a caption, which is a photo, a document, a video, a voice
- * note, or an audio file as its upload says, each with the formatting the account specified; a contact the
- * account writes, whose Telegram user stays unknown; the account's own contact; a location; or a
- * new poll, which the account creates.
+ * note, or an audio file as its upload says, each with the formatting the account specified; a
+ * regular static sticker; a contact the account writes, whose Telegram user stays unknown; the
+ * account's own contact; a location; or a new poll, which the account creates.
  */
 export type AccountMessageContent =
   | {
@@ -696,22 +710,27 @@ export type AccountMessageContent =
     readonly entities?: readonly TextEntity[];
   }
   | AccountMediaContent
+  | { readonly kind: 'sticker'; readonly upload: StickerUpload }
   | { readonly kind: 'contact'; readonly contact: WrittenContact }
   | { readonly kind: 'own_contact' }
   | LocationMessageContent
   | { readonly kind: 'poll'; readonly poll: SpecifiedAccountPoll };
 
 /** Media an account sends, of the kind its upload says, with its caption. */
-export type AccountMediaContent<Upload extends FileUpload = FileUpload> = SpecifiedCaption & {
-  readonly kind: 'media';
-  readonly upload: Upload;
-};
+export type AccountMediaContent<Upload extends CaptionedFileUpload = CaptionedFileUpload> =
+  & SpecifiedCaption
+  & {
+    readonly kind: 'media';
+    readonly upload: Upload;
+  };
 
 /**
  * Media an account sends in an album: a photo, a document, a video, or an audio file, but no voice
  * note.
  */
-export type AccountAlbumMediaContent = AccountMediaContent<Exclude<FileUpload, VoiceUpload>>;
+export type AccountAlbumMediaContent = AccountMediaContent<
+  Exclude<CaptionedFileUpload, VoiceUpload>
+>;
 
 /**
  * Turns what an account sends into outgoing content, which its client normalizes as Telegram
@@ -735,6 +754,8 @@ export function toOutgoingAccountContent(
     }
     case 'media':
       return toOutgoingAccountMedia(content);
+    case 'sticker':
+      return { kind: 'sticker', sticker: { kind: 'upload', upload: content.upload } };
     case 'poll':
       // TDLib creates a poll a user sends open, whatever the client asks.
       return {
@@ -861,8 +882,8 @@ export function replaceMessageCaption(
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
  * may be a photo, a document, a video, or an audio file, whose media is replaced, or text or a rich
- * message, which becomes media; the media of a voice note, a poll, a contact, or a location cannot
- * be edited, which that method checks before it reads the new media. As that method checks once
+ * message, which becomes media; the media of a voice note, a sticker, a poll, a contact, or a
+ * location cannot be edited, which that method checks before it reads the new media. As that method checks once
  * the new caption is read, a message of an album changes its media only as
  * `canChangeAlbumMediaKind` allows; only media is sent in albums.
  */
@@ -875,6 +896,7 @@ export function replaceMessageMedia(
 > {
   switch (content.kind) {
     case 'voice':
+    case 'sticker':
       return { replaced: false, failure: { reason: 'message_media_not_editable' } };
     case 'text':
     case 'rich_message': {
@@ -1040,6 +1062,8 @@ export function storeOutgoingContent(
         fileId: storeOutgoingFile(content.audio, files),
         caption: content.caption,
       };
+    case 'sticker':
+      return { kind: 'sticker', fileId: storeOutgoingFile(content.sticker, files) };
     case 'rich_message':
       return {
         kind: 'rich_message',
@@ -1103,6 +1127,8 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
       return { kind: 'voice', fileId: getStoredFileId(content.voice), caption: content.caption };
     case 'audio':
       return { kind: 'audio', fileId: getStoredFileId(content.audio), caption: content.caption };
+    case 'sticker':
+      return { kind: 'sticker', fileId: getStoredFileId(content.sticker) };
     case 'rich_message':
       return {
         kind: 'rich_message',
@@ -1143,6 +1169,8 @@ function hasUnstoredContent(content: NormalizedOutgoingContent): boolean {
       return content.voice.kind === 'upload';
     case 'audio':
       return content.audio.kind === 'upload';
+    case 'sticker':
+      return content.sticker.kind === 'upload';
     case 'rich_message':
       return listRichMessageFiles(content.richMessage).some(({ file }) => file.kind === 'upload');
     case 'poll':
@@ -1274,6 +1302,8 @@ export function isSameMessageContent(first: MessageContent, second: MessageConte
     case 'audio':
       return second.kind === 'audio' && first.fileId === second.fileId &&
         isSameFormattedText(first.caption, second.caption);
+    case 'sticker':
+      return second.kind === 'sticker' && first.fileId === second.fileId;
     case 'rich_message':
       return second.kind === 'rich_message' && areRichMessagesEqual(first, second);
     case 'poll':

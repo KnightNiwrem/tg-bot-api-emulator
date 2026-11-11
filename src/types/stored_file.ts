@@ -194,10 +194,36 @@ export interface AudioUpload extends AudioAttributes {
 }
 
 /**
+ * A regular static sticker, before it is stored: a WebP image without animation, whose dimensions
+ * the emulator reads from it. Animated and video stickers, masks, custom emoji, sticker sets, and
+ * thumbnails are not supported.
+ */
+export interface StickerUpload {
+  readonly type: 'sticker';
+  readonly content: Uint8Array<ArrayBuffer>;
+  readonly width: number;
+  readonly height: number;
+  /** The emoji the sticker is associated with; omitted for none. */
+  readonly emoji?: string;
+}
+
+/** The MIME type of every sticker the emulator stores: a static WebP image. */
+export const STICKER_MIME_TYPE = 'image/webp';
+
+/**
  * A file a user sends as a message's media; a thumbnail is uploaded only with its document, video,
  * or audio file.
  */
-export type FileUpload = PhotoUpload | DocumentUpload | VideoUpload | VoiceUpload | AudioUpload;
+export type FileUpload =
+  | PhotoUpload
+  | DocumentUpload
+  | VideoUpload
+  | VoiceUpload
+  | AudioUpload
+  | StickerUpload;
+
+/** A file a user sends as media that may have a caption: any but a sticker. */
+export type CaptionedFileUpload = Exclude<FileUpload, StickerUpload>;
 
 interface StoredFileIdentity {
   readonly id: StoredFileId;
@@ -243,12 +269,15 @@ export type StoredAudioFile =
     readonly thumbnail?: StoredThumbnailFile;
   };
 
+export type StoredStickerFile = StoredFileIdentity & StickerUpload;
+
 export type StoredFile =
   | StoredPhotoFile
   | StoredDocumentFile
   | StoredVideoFile
   | StoredVoiceFile
   | StoredAudioFile
+  | StoredStickerFile
   | StoredThumbnailFile;
 
 /** The thumbnail a stored file carries; `undefined` for a file without one. */
@@ -260,6 +289,7 @@ export function getStoredFileThumbnail(file: StoredFile): StoredThumbnailFile | 
       return file.thumbnail;
     case 'photo':
     case 'voice':
+    case 'sticker':
     case 'thumbnail':
       return undefined;
     default: {

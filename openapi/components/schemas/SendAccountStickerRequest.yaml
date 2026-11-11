@@ -1,0 +1,15 @@
+type: object
+additionalProperties: false
+required:
+  - to
+  - sticker
+properties:
+  to:
+    $ref: ./MessageTarget.yaml
+  sticker:
+    $ref: ./AccountStickerUpload.yaml
+  reply_to_message_id:
+    $ref: ./AccountReplyToMessageId.yaml
+description: >-
+  A regular static sticker the account sends, which has no caption. Bots that see the message
+  know the sticker by a `file_id` of their own, which they can resend with `sendSticker`.

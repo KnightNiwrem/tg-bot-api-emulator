@@ -2,8 +2,8 @@
 
 [Guide index](README.md) · [Feature reference: Media and files](../../features/media-and-files.md)
 
-This page shows how an account sends photos, documents, videos, voice notes, audio files and albums
-to a bot, and how a test reads the files the bot sends back. The examples use the
+This page shows how an account sends photos, documents, videos, voice notes, audio files, stickers
+and albums to a bot, and how a test reads the files the bot sends back. The examples use the
 [shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 Accounts upload bytes, so examples inline their fixtures. The emulator reads the header of a photo
@@ -247,6 +247,81 @@ Deno.test('the bot sends a track back with the metadata the account gave it', as
     assertEquals(reply?.caption, 'Now playing: Ada – Engines');
     assertEquals(reply?.audio?.file_unique_id, track.audio?.file_unique_id);
     assertEquals(reply?.audio?.duration, 215);
+  });
+});
+```
+
+## Stickers
+
+`account.sendSticker` sends a regular static sticker: the bytes of a WebP image without animation,
+whose dimensions the emulator reads from it, and an optional emoji. Any positive size will do,
+including the 1×1 image below. The bot receives the sticker with a `file_id` of its own, which it
+can keep and later resend with `sendSticker`; bots cannot upload stickers or send them by URL. A
+resent sticker keeps its emoji, whatever `emoji` the bot passes. See
+[stickers](../../features/media-and-files.md#stickers) for the WebP forms the emulator reads.
+
+The bot below learns a sticker from the update it receives and resends it on `/sticker`. The test
+waits for the bot's acknowledgement before it sends the command, so the bot has learned the sticker
+by then.
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { withBotFixture } from './bot_fixture.ts';
+
+/** A 1×1 transparent lossless WebP image, as libwebp encodes it. */
+const TINY_STICKER = Uint8Array.fromBase64('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==');
+
+Deno.test('the bot resends the sticker it learned', async () => {
+  const learnedStickers = new Map<number, string>();
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.on('message:sticker', async (ctx) => {
+        learnedStickers.set(ctx.chat.id, ctx.msg.sticker.file_id);
+        await ctx.reply('Learned it', { reply_parameters: { message_id: ctx.msg.message_id } });
+      });
+      bot.command('sticker', async (ctx) => {
+        const fileId = learnedStickers.get(ctx.chat.id);
+        if (fileId !== undefined) {
+          await ctx.replyWithSticker(fileId, {
+            reply_parameters: { message_id: ctx.msg.message_id },
+          });
+        }
+      });
+    },
+  }, async ({ botProfile, account, privateChat, activity }) => {
+    const { result: sticker, receipt } = await account.sendSticker({
+      to: privateChat,
+      sticker: TINY_STICKER,
+      emoji: '🧪',
+    });
+    await activity.waitFor(
+      {
+        method: 'sendMessage',
+        ok: true,
+        parameters_json: { reply_parameters: { message_id: sticker.message_id } },
+      },
+      { after: receipt },
+    );
+
+    const { result: command, receipt: commandReceipt } = await account.sendMessage({
+      to: privateChat,
+      text: '/sticker',
+    });
+    await activity.waitFor(
+      {
+        method: 'sendSticker',
+        ok: true,
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
+      },
+      { after: commandReceipt },
+    );
+
+    const resent = (await account.getMessages({ chat: privateChat })).find(
+      ({ from, reply_to_message }) =>
+        from.id === botProfile.id && reply_to_message?.message_id === command.message_id,
+    );
+    assertEquals(resent?.sticker?.file_unique_id, sticker.sticker?.file_unique_id);
+    assertEquals(resent?.sticker?.emoji, '🧪');
   });
 });
 ```

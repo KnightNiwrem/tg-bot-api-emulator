@@ -545,6 +545,11 @@ Deno.test('the sending methods name the parameter that does not fit their schema
       { chat_id: 1, draft_id: 1, can_stop: 'secret' },
       'Bad Request: invalid sendMessageDraft parameters: can_stop',
     ],
+    [
+      'sendSticker',
+      { chat_id: 1, sticker: 'CAACAgIAAx', disable_notification: 'secret' },
+      'Bad Request: invalid sendSticker parameters: disable_notification',
+    ],
     // The step-level checks keep Telegram's descriptions.
     [
       'sendContact',
@@ -553,6 +558,7 @@ Deno.test('the sending methods name the parameter that does not fit their schema
     ],
     ['sendLocation', { chat_id: 1, longitude: 2 }, 'Bad Request: latitude is empty'],
     ['sendVoice', { chat_id: 1 }, 'Bad Request: there is no voice in the request'],
+    ['sendSticker', { chat_id: 1 }, 'Bad Request: there is no sticker in the request'],
   ];
 
   const answers = [];
