@@ -239,6 +239,15 @@ export interface AudioMessageContent {
   readonly caption: FormattedText;
 }
 
+/**
+ * A regular static sticker, which carries the one stored file it shows and, unlike captioned
+ * media, no caption.
+ */
+export interface StickerMessageContent {
+  readonly kind: 'sticker';
+  readonly fileId: StoredFileId;
+}
+
 /** A message laid out in blocks, which only bots send. It has no text or caption. */
 export interface RichMessageContent extends RichMessage {
   readonly kind: 'rich_message';
@@ -290,13 +299,17 @@ export interface InvoiceMessageContent {
   readonly invoice: StarsInvoice;
 }
 
+/** Content that shows one stored file of its own: captioned media, or a sticker. */
+export type FileMessageContent = CaptionedMediaContent | StickerMessageContent;
+
 /**
- * What a message of any chat shows that its sender wrote: text, captioned media, a rich message, a
- * poll, a contact, or a location.
+ * What a message of any chat shows that its sender wrote: text, captioned media, a sticker, a rich
+ * message, a poll, a contact, or a location.
  */
 export type MessageContent =
   | TextMessageContent
   | CaptionedMediaContent
+  | StickerMessageContent
   | RichMessageContent
   | PollMessageContent
   | ContactMessageContent
@@ -455,6 +468,7 @@ function isServiceContent(
     case 'video':
     case 'voice':
     case 'audio':
+    case 'sticker':
     case 'rich_message':
     case 'poll':
     case 'contact':
@@ -469,8 +483,8 @@ function isServiceContent(
 }
 
 /**
- * Whether a message's content is captioned media, rather than text, a rich message, a poll, a
- * contact, a location, an invoice, or a service message.
+ * Whether a message's content is captioned media, rather than text, a sticker, a rich message, a
+ * poll, a contact, a location, an invoice, or a service message.
  */
 export function isCaptionedMediaContent(
   content: ChatMessageContent,
@@ -483,6 +497,7 @@ export function isCaptionedMediaContent(
     case 'audio':
       return true;
     case 'text':
+    case 'sticker':
     case 'rich_message':
     case 'poll':
     case 'contact':
@@ -505,6 +520,14 @@ export function isCaptionedMediaContent(
 }
 
 /**
+ * Whether a message's content shows one stored file of its own: captioned media, or a sticker. A
+ * rich message's files belong to its blocks.
+ */
+export function isFileMessageContent(content: ChatMessageContent): content is FileMessageContent {
+  return content.kind === 'sticker' || isCaptionedMediaContent(content);
+}
+
+/**
  * The text a message's content carries: the text of a text message, or the caption of captioned
  * media, which is empty when it has none. As TDLib's `get_message_content_text` has none for
  * them, a rich message, a contact, a location, an invoice without paid media, and a service message
@@ -518,6 +541,7 @@ export function getContentText(content: ChatMessageContent): FormattedText {
   switch (content.kind) {
     case 'text':
       return content;
+    case 'sticker':
     case 'rich_message':
     case 'poll':
     case 'contact':
@@ -607,12 +631,13 @@ export interface ExternalReply {
 
 /**
  * What a reply to a message of another chat shows of the replied content besides its text: media
- * without its caption, a poll as it is now, a contact, a location, or an invoice. TDLib's
- * `is_supported_reply_message_content` lists them all, and the Bot API's `ExternalReplyInfo` has a
- * field for each.
+ * without its caption, a sticker, a poll as it is now, a contact, a location, or an invoice.
+ * TDLib's `is_supported_reply_message_content` lists them all, and the Bot API's
+ * `ExternalReplyInfo` has a field for each.
  */
 export type ExternalReplyMedia =
   | CaptionedMediaContent
+  | StickerMessageContent
   | PollMessageContent
   | ContactMessageContent
   | LocationMessageContent

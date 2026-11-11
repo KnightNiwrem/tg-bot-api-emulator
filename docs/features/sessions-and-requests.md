@@ -265,10 +265,10 @@ methods, and the default administrator rights methods), the query answer methods
 `setChatAdministratorCustomTitle`, `leaveChat`, `getChatMember`, `getChatAdministrators` and
 `getChatMemberCount`), the deletion methods (`deleteMessage` and `deleteMessages`),
 `setMessageReaction`, the sending methods (`sendMessage`, `sendRichMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendMediaGroup`, `sendContact`,
-`sendLocation`, `sendPoll`, `sendMessageDraft` and `sendChatAction`) and the pinning methods
-(`pinChatMessage`, `unpinChatMessage` and `unpinAllChatMessages`) name the first parameter their
-schema refuses after the description, as a path into the call's parameters:
+`sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendSticker`, `sendMediaGroup`,
+`sendContact`, `sendLocation`, `sendPoll`, `sendMessageDraft` and `sendChatAction`) and the pinning
+methods (`pinChatMessage`, `unpinChatMessage` and `unpinAllChatMessages`) name the first parameter
+their schema refuses after the description, as a path into the call's parameters:
 `Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]` for a
 button with no action, `Bad Request: invalid forwardMessages parameters: message_ids[1]` for an
 identifier that is not an integer, or `Bad Request: invalid stopPoll parameters: open_period` for a

@@ -3,7 +3,7 @@ type: object
 additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
-  voice note, an audio file, a rich message, a poll, a contact, a location, or the bot's invoice,
+  voice note, an audio file, a sticker, a rich message, a poll, a contact, a location, or the bot's invoice,
   each with the fields Telegram shows for it, or a service message recording that a participant pinned a message (`pinned_message`),
   or that the account shared users (`users_shared`) or a supergroup (`chat_shared`) in answer to a
   reply keyboard button's request, that the Web App of such a button sent data
@@ -26,6 +26,8 @@ oneOf:
       - voice
   - required:
       - audio
+  - required:
+      - sticker
   - required:
       - rich_message
   - required:
@@ -164,6 +166,8 @@ properties:
     $ref: ./Voice.yaml
   audio:
     $ref: ./Audio.yaml
+  sticker:
+    $ref: ./Sticker.yaml
   caption:
     type: string
     minLength: 1

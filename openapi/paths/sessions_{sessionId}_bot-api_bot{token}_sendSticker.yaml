@@ -1,0 +1,74 @@
+description: >-
+  Telegram Bot API method for sending a regular static sticker that the bot knows by its
+  `file_id`, such as one an account sent it, as `sendMessage` sends text. The sticker has no
+  caption and keeps the dimensions, emoji, and content it was stored with. Uploading a sticker,
+  sending one by URL, and animated or video stickers are not supported. As TDLib's
+  `can_send_message_content` decides, a supergroup member needs `can_send_other_messages` to send
+  a sticker.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendSticker
+  summary: Send a known sticker from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendStickerRequest.yaml
+        encoding:
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendStickerRequest.yaml
+  responses:
+    '200':
+      description: >-
+        The sticker was stored in the private conversation or supergroup. No bot receives an
+        update for a bot's message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters; it names no sticker (`Bad
+        Request: there is no sticker in the request`); it uploads a sticker or names one by URL,
+        which the emulator does not support; the `file_id` identifies no file the bot knows, such
+        as a `file_unique_id` or another bot's `file_id`, or a file of another type (`Bad Request:
+        can't use file of type Photo as Sticker`); or the bot lacks `can_send_other_messages` in
+        the supergroup (`Bad Request: not enough rights to send stickers to the chat`). TDLib
+        accepts the `file_id` of any file of the document class, such as a voice note, and leaves
+        Telegram's servers to decide what the message shows; the emulator refuses it instead, as
+        for `sendVideo`.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

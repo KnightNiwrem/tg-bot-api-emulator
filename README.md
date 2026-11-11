@@ -6,12 +6,13 @@ make them, and inspect the resulting conversations. Bots connect through their u
 using a session-specific API root.
 
 The emulator supports private chats and supergroups, polling and webhooks, text, photos, documents,
-videos, voice notes, audio files, albums of photos and videos, of documents or of audio files, rich
-messages, polls, contacts, static locations, invoices in Telegram Stars, pinned messages, emoji
-reactions in supergroups, invite links, keyboards, inline queries, and selected moderation methods.
-Accounts check out and pay bots' one-off invoices in Telegram Stars, and bots receive the payment.
-See the [feature documentation](docs/features/README.md) for the complete method inventory, missing
-features, and known differences from the official Bot API server and TDLib.
+videos, voice notes, audio files, static stickers that bots resend, albums of photos and videos, of
+documents or of audio files, rich messages, polls, contacts, static locations, invoices in Telegram
+Stars, pinned messages, emoji reactions in supergroups, invite links, keyboards, inline queries, and
+selected moderation methods. Accounts check out and pay bots' one-off invoices in Telegram Stars,
+and bots receive the payment. See the [feature documentation](docs/features/README.md) for the
+complete method inventory, missing features, and known differences from the official Bot API server
+and TDLib.
 
 ## Getting started
 

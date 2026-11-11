@@ -89,13 +89,22 @@ export interface AccountMediaDraft<Upload extends AccountUpload = AccountUpload>
   readonly captionEntities: readonly TextEntity[] | undefined;
 }
 
+/** A regular static sticker an account sends, read from its request but not yet prepared. */
+export interface AccountStickerDraft {
+  readonly kind: 'sticker';
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** Omitted for a sticker associated with no emoji. */
+  readonly emoji?: string;
+}
+
 /**
  * The content of an account's message as its request gives it: the domain's content, except that
- * an uploaded file is not yet prepared.
+ * an uploaded file or sticker is not yet prepared.
  */
 export type AccountMessageDraft =
-  | Exclude<AccountMessageContent, { readonly kind: 'media' }>
-  | AccountMediaDraft;
+  | Exclude<AccountMessageContent, { readonly kind: 'media' | 'sticker' }>
+  | AccountMediaDraft
+  | AccountStickerDraft;
 
 /** A decoded value, or every issue of the rules its wire schema cannot state. */
 export type AccountInputReading<Value> =
@@ -215,6 +224,14 @@ function readMessageDraft(body: SentContentBody, issues: AccountInputIssues): Ac
     return {
       kind: 'contact',
       contact: { phoneNumber: phone_number, firstName: first_name, lastName: last_name, vcard },
+    };
+  }
+  if ('sticker' in body) {
+    const { content_base64, emoji } = body.sticker;
+    return {
+      kind: 'sticker',
+      content: issues.readContent(content_base64, ['sticker', 'content_base64']),
+      ...(emoji === undefined ? {} : { emoji }),
     };
   }
   if ('voice' in body) {
@@ -352,19 +369,46 @@ type AccountUploadFailureReason = Extract<
   { readonly prepared: false }
 >['reason'];
 
-/** The content of an account's message as its client prepares it, or why Telegram refuses it. */
-export type AccountContentPreparation<Content> =
-  | { readonly prepared: true; readonly content: Content }
-  | { readonly prepared: false; readonly reason: AccountUploadFailureReason };
+/** Why a sticker an account sends is not one the emulator supports. */
+type AccountStickerFailureReason = Extract<
+  ReturnType<MediaFiles['prepareAccountStickerUpload']>,
+  { readonly prepared: false }
+>['reason'];
 
-/** Prepares the content of an account's message, checking an uploaded file as Telegram does. */
+/**
+ * The content of an account's message as its client prepares it, or why it is refused: as
+ * Telegram refuses an upload, or, for a sticker, as the emulator refuses an unsupported one.
+ */
+export type AccountContentPreparation<
+  Content,
+  FailureReason extends string = AccountUploadFailureReason,
+> =
+  | { readonly prepared: true; readonly content: Content }
+  | { readonly prepared: false; readonly reason: FailureReason };
+
+/**
+ * Prepares the content of an account's message, checking an uploaded file as Telegram does and a
+ * sticker as `prepareAccountStickerUpload` reads it.
+ */
 export function prepareAccountMessageContent(
   draft: AccountMessageDraft,
   mediaFiles: MediaFiles,
-): AccountContentPreparation<AccountMessageContent> {
-  return draft.kind === 'media'
-    ? prepareAccountMediaContent(draft, mediaFiles)
-    : { prepared: true, content: draft };
+): AccountContentPreparation<
+  AccountMessageContent,
+  AccountUploadFailureReason | AccountStickerFailureReason
+> {
+  switch (draft.kind) {
+    case 'media':
+      return prepareAccountMediaContent(draft, mediaFiles);
+    case 'sticker': {
+      const preparation = mediaFiles.prepareAccountStickerUpload(draft);
+      return preparation.prepared
+        ? { prepared: true, content: { kind: 'sticker', upload: preparation.upload } }
+        : { prepared: false, reason: preparation.reason };
+    }
+    default:
+      return { prepared: true, content: draft };
+  }
 }
 
 /** Prepares a photo, document, video, or audio file of an account's album as its client does. */

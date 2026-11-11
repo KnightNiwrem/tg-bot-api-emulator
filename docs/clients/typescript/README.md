@@ -28,21 +28,21 @@ reliably.
 
 Each topic page stands on its own once you know the core path.
 
-| Page                                                        | Covers                                                                       |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [Buttons and menus](buttons-and-menus.md)                   | Inline keyboards, callback queries, reply keyboards, command menus           |
-| [Rich messages](rich-messages.md)                           | Reading rich messages as text and pressing their buttons                     |
-| [Media and files](media-and-files.md)                       | Photos, documents, videos, voice notes, audio, albums, captions, downloads   |
-| [Polls](polls.md)                                           | Voting, retracting votes, poll updates and closing polls                     |
-| [Reactions](reactions.md)                                   | Reacting to supergroup messages, reaction updates and bots' reactions        |
-| [Contacts and locations](contacts-and-locations.md)         | Sharing contacts and locations, and the buttons that request them            |
-| [Inline mode](inline-mode.md)                               | Inline queries, their answers, chosen results and inline messages            |
-| [Payments](payments.md)                                     | Checking out and paying bots' invoices, and reading the bots' answers        |
-| [Supergroups](supergroups.md)                               | Creating groups, membership, privacy mode, bot-to-bot messages and settings  |
-| [Permissions and moderation](permissions-and-moderation.md) | Administrators, rights, restrictions and default permissions                 |
-| [Invite links](invite-links.md)                             | Links bots create, joining through them and join requests                    |
-| [Test controls](test-controls.md)                           | Rate limits, server errors, webhook retries, expiries, emulated web, uploads |
-| [In-process emulator](in-process-emulator.md)               | Running the emulator inside the test process, next to the bot under test     |
+| Page                                                        | Covers                                                                               |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [Buttons and menus](buttons-and-menus.md)                   | Inline keyboards, callback queries, reply keyboards, command menus                   |
+| [Rich messages](rich-messages.md)                           | Reading rich messages as text and pressing their buttons                             |
+| [Media and files](media-and-files.md)                       | Photos, documents, videos, voice notes, audio, stickers, albums, captions, downloads |
+| [Polls](polls.md)                                           | Voting, retracting votes, poll updates and closing polls                             |
+| [Reactions](reactions.md)                                   | Reacting to supergroup messages, reaction updates and bots' reactions                |
+| [Contacts and locations](contacts-and-locations.md)         | Sharing contacts and locations, and the buttons that request them                    |
+| [Inline mode](inline-mode.md)                               | Inline queries, their answers, chosen results and inline messages                    |
+| [Payments](payments.md)                                     | Checking out and paying bots' invoices, and reading the bots' answers                |
+| [Supergroups](supergroups.md)                               | Creating groups, membership, privacy mode, bot-to-bot messages and settings          |
+| [Permissions and moderation](permissions-and-moderation.md) | Administrators, rights, restrictions and default permissions                         |
+| [Invite links](invite-links.md)                             | Links bots create, joining through them and join requests                            |
+| [Test controls](test-controls.md)                           | Rate limits, server errors, webhook retries, expiries, emulated web, uploads         |
+| [In-process emulator](in-process-emulator.md)               | Running the emulator inside the test process, next to the bot under test             |
 
 ## Reference
 

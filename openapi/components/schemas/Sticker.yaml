@@ -1,0 +1,50 @@
+x-telegram-type: Sticker
+type: object
+additionalProperties: false
+description: >-
+  A regular static sticker, in the field order of the official Bot API server's `JsonSticker`: a
+  WebP image whose dimensions the emulator reads from it. Animated and video stickers, sticker
+  sets, thumbnails, premium animations, masks, and custom emoji are not supported, so `set_name`,
+  `thumbnail`, `premium_animation`, `mask_position`, `custom_emoji_id`, and `needs_repainting`
+  never appear.
+required:
+  - width
+  - height
+  - is_animated
+  - is_video
+  - type
+  - file_id
+  - file_unique_id
+  - file_size
+properties:
+  width:
+    type: integer
+    minimum: 1
+    description: Width in pixels, read from the image.
+  height:
+    type: integer
+    minimum: 1
+    description: Height in pixels, read from the image.
+  emoji:
+    type: string
+    minLength: 1
+    description: >-
+      The emoji the sticker's sender associated with it, omitted for none. A bot resending the
+      sticker by `file_id` keeps it, whatever `emoji` it specifies.
+  is_animated:
+    type: boolean
+    const: false
+  is_video:
+    type: boolean
+    const: false
+  type:
+    type: string
+    const: regular
+  file_id:
+    $ref: ./FileId.yaml
+  file_unique_id:
+    $ref: ./FileUniqueId.yaml
+  file_size:
+    type: integer
+    minimum: 1
+    description: Size of the file in bytes.

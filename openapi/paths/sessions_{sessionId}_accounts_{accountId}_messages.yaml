@@ -6,8 +6,9 @@ post:
   operationId: sendAccountMessage
   summary: Send a message as a virtual account
   description: >-
-    Sends text, a photo, a document, a video, a voice note, an audio file, a contact, a static
-    location, or a new poll to the account's private chat with a bot, or to a supergroup the account is a member of;
+    Sends text, a photo, a document, a video, a voice note, an audio file, a regular static
+    sticker, a contact, a static location, or a new poll to the account's private chat with a bot,
+    or to a supergroup the account is a member of;
     or forwards a message of such a chat there, as the account's message that shows who first sent
     it. A contact the account writes shows no Telegram user, while its own contact shows the
     account as its user. A poll is the account's own, which only it stops, and about which no bot
@@ -49,9 +50,11 @@ post:
     '400':
       description: >-
         The request, message text, caption, or poll is invalid, the photo is not an image
-        Telegram accepts, the file is empty, the replied message is not a message of the chat, or
-        the forwarded message cannot be forwarded, or is an invoice, which the emulator does not
-        forward (`invoice_forwarding_unsupported`).
+        Telegram accepts, the file is empty, the sticker is not a well-formed WebP image
+        (`sticker_invalid`) or is animated (`sticker_animation_unsupported`), which the emulator
+        does not support, the replied message is not a message of the chat, or the forwarded
+        message cannot be forwarded, or is an invoice, which the emulator does not forward
+        (`invoice_forwarding_unsupported`).
       content:
         application/json:
           schema:
@@ -82,6 +85,8 @@ post:
                           - quiz_explanation_has_too_many_line_feeds
                           - quiz_explanation_too_long
                           - reply_message_not_found
+                          - sticker_animation_unsupported
+                          - sticker_invalid
                           - text_invalid
     '403':
       description: >-

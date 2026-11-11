@@ -1,0 +1,26 @@
+type: object
+additionalProperties: false
+description: >-
+  A regular static sticker a test defines as a fixture: a WebP image without animation and the
+  emoji it is associated with. The emulator reads the RIFF container and the image bitstream's
+  header, not the compressed pixels. Any dimensions and size the WebP format allows are accepted:
+  Telegram's sticker-set preparation rules, such as a 512-pixel side or a 512 KB limit, are not applied,
+  since Telegram documents none for sending a sticker.
+required:
+  - content_base64
+properties:
+  content_base64:
+    type: string
+    contentEncoding: base64
+    description: >-
+      The WebP image, which must not be empty. A simple lossy (`VP8 `) or lossless (`VP8L`)
+      image, or an extended (`VP8X`) image without the animation flag that holds a `VP8 ` or
+      `VP8L` image, whose canvas gives its dimensions. The RIFF size and every chunk's size and
+      padding must fit the content, a `VP8X` payload is 10 bytes with a canvas of at most
+      4294967295 pixels, and a `VP8L` header is of version 0; data after the RIFF size and unknown chunks are ignored, as
+      are `ANIM` and `ANMF` chunks when the animation flag is unset. An account uploads through
+      its own client, so the session's upload profile, which limits bot uploads, does not apply.
+  emoji:
+    type: string
+    minLength: 1
+    description: The emoji the sticker is associated with; omitted for none.

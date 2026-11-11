@@ -298,6 +298,22 @@ export interface BotApiAudio extends BotApiFile {
   readonly thumb?: BotApiPhotoSize;
 }
 
+/**
+ * A regular static sticker as the official Bot API server's `JsonSticker` shows it. Sticker sets,
+ * thumbnails, premium animations, masks, and custom emoji are not supported, so a sticker never
+ * shows `set_name`, `thumbnail`, `premium_animation`, `mask_position`, `custom_emoji_id`, or
+ * `needs_repainting`.
+ */
+export interface BotApiSticker extends BotApiFile {
+  readonly width: number;
+  readonly height: number;
+  /** Omitted for a sticker associated with no emoji. */
+  readonly emoji?: string;
+  readonly is_animated: false;
+  readonly is_video: false;
+  readonly type: 'regular';
+}
+
 /** A caption's fields, which Telegram omits for a media message without a caption. */
 interface BotApiCaption {
   readonly caption?: string;
@@ -343,6 +359,7 @@ export interface BotApiMessageText {
 export type BotApiMessageContent =
   | BotApiMessageText
   | BotApiCaptionedMediaContent
+  | { readonly sticker: BotApiSticker }
   | { readonly rich_message: BotApiRichMessage }
   | { readonly poll: BotApiPoll }
   | { readonly contact: BotApiContact }
@@ -554,7 +571,7 @@ export type BotApiMessageOrigin = BotApiMessageOriginUser | BotApiMessageOriginH
 
 /**
  * The media of a message of another chat that a message replies to, whose caption shows as the
- * reply's quote instead, or its poll, contact, location, or invoice: nothing for text.
+ * reply's quote instead, or its sticker, poll, contact, location, or invoice: nothing for text.
  */
 export type BotApiExternalReplyMedia =
   | Record<never, never>
@@ -572,6 +589,7 @@ export type BotApiExternalReplyMedia =
   }
   | { readonly voice: BotApiVoice }
   | { readonly audio: BotApiAudio }
+  | { readonly sticker: BotApiSticker }
   | { readonly contact: BotApiContact }
   | { readonly location: BotApiLocation }
   | BotApiInvoiceContent;

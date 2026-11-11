@@ -47,6 +47,7 @@ import type {
   PollAnswer,
   PreCheckoutQuery,
   RichBlockMap,
+  Sticker,
   SuccessfulPayment,
   Update,
   User,
@@ -95,6 +96,7 @@ import type {
   BotApiPrivateMessage,
   BotApiRepliedPrivateMessage,
   BotApiRepliedSupergroupMessage,
+  BotApiSticker,
   BotApiStoppedMessageGenerationUpdate,
   BotApiSuccessfulPayment,
   BotApiSupergroupChat,
@@ -307,6 +309,7 @@ type GrammyPrivateMessage =
     | Message.VideoMessage
     | Message.VoiceMessage
     | Message.AudioMessage
+    | Message.StickerMessage
     | Message.RichMessageMessage
     | Message.PollMessage
     | Message.ContactMessage
@@ -331,6 +334,7 @@ type GrammySupergroupMessage =
     | Message.VideoMessage
     | Message.VoiceMessage
     | Message.AudioMessage
+    | Message.StickerMessage
     | Message.RichMessageMessage
     | Message.PollMessage
     | Message.ContactMessage
@@ -409,6 +413,7 @@ interface BotApiWireTypeConformance {
     >
   >;
   invoice: ExpectTrue<ConformsToGrammy<BotApiInvoice, Invoice>>;
+  sticker: ExpectTrue<ConformsToGrammy<BotApiSticker, Sticker>>;
   successfulPayment: ExpectTrue<ConformsToGrammy<BotApiSuccessfulPayment, SuccessfulPayment>>;
   richMessage: ExpectTrue<
     ConformsToGrammy<BotApiRichMessage, NonNullable<Message['rich_message']>>

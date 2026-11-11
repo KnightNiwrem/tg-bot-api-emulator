@@ -35,6 +35,8 @@ import {
   type Location,
   type PhotoSize,
   photoSizeSchema,
+  type Sticker,
+  stickerSchema,
   type Video,
   videoSchema,
   type Voice,
@@ -125,6 +127,10 @@ interface MessageContentFields {
     readonly caption?: string;
     readonly caption_entities?: readonly MessageEntity[];
   };
+  readonly sticker: {
+    /** A regular static sticker, which has no caption. */
+    readonly sticker: Sticker;
+  };
   readonly rich_message: {
     /** A message a bot laid out in blocks, which only bots send. */
     readonly rich_message: RichMessage;
@@ -142,8 +148,8 @@ interface MessageContentFields {
 
 /**
  * The fields that show what a message is: text, a photo, a document, a video, a voice note, an audio
- * file, a rich message, a poll, a contact, or a location. Each kind declares the others' fields absent, so that
- * any of them can be read from a message of unknown kind.
+ * file, a sticker, a rich message, a poll, a contact, or a location. Each kind declares the others'
+ * fields absent, so that any of them can be read from a message of unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
@@ -419,6 +425,7 @@ interface ExternalReplyMediaFields {
   };
   readonly voice: { readonly voice: Voice };
   readonly audio: { readonly audio: Audio };
+  readonly sticker: { readonly sticker: Sticker };
   readonly contact: { readonly contact: Contact };
   readonly location: { readonly location: Location };
   readonly invoice: { readonly invoice: Invoice };
@@ -427,7 +434,7 @@ interface ExternalReplyMediaFields {
 /**
  * A message of another chat that a message replies to: who first wrote it and when, the
  * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead,
- * its poll as it is now, or its contact, location, or invoice.
+ * its sticker, its poll as it is now, or its contact, location, or invoice.
  */
 export type ExternalReplyInfo =
   & {
@@ -649,7 +656,7 @@ const externalReplyShape = {
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
   // The replied message's media, which only a photo, document, video, voice, or audio message has,
-  // or its poll, contact, location, or invoice.
+  // or its sticker, poll, contact, location, or invoice.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
     z.strictObject({ ...externalReplyShape, poll: pollSchema }),
@@ -666,6 +673,7 @@ const messageReplyInfoShape = {
     }),
     z.strictObject({ ...externalReplyShape, voice: voiceSchema }),
     z.strictObject({ ...externalReplyShape, audio: audioSchema }),
+    z.strictObject({ ...externalReplyShape, sticker: stickerSchema }),
     z.strictObject({ ...externalReplyShape, contact: contactSchema }),
     z.strictObject({ ...externalReplyShape, location: sharedLocationSchema }),
     z.strictObject({ ...externalReplyShape, invoice: invoiceSchema }),
@@ -715,6 +723,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, ...videoContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...voiceContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...audioContentShape, ...messageTrailerShape }),
+    z.strictObject({ ...header, sticker: stickerSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, poll: pollSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, contact: contactSchema, ...messageTrailerShape }),

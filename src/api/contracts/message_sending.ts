@@ -124,6 +124,17 @@ const accountAudioShape = {
   ...captionShape,
 };
 
+/**
+ * A regular static sticker the account sends, which a test defines as a fixture: a WebP image
+ * without animation, whose dimensions are read from it, and the emoji it is associated with, if
+ * any. It has no caption. Animated and video stickers, sticker sets, and thumbnails are not
+ * supported, and no Telegram sticker-set preparation rule, such as a 512-pixel side, applies.
+ */
+const accountStickerSchema = z.strictObject({
+  content_base64: uploadContentSchema,
+  emoji: z.string().min(1).optional(),
+});
+
 /** A poll option's text, with the formatting the account specifies, of which custom emoji stay. */
 const accountPollOptionSchema = z.strictObject({
   text: z.string(),
@@ -166,9 +177,9 @@ const accountContactSchema = z.strictObject({
 
 /**
  * A text message, a photo, a document, a video, a voice note, or an audio file, each with an
- * optional caption; a contact the account writes, or its own contact, which Telegram shows as the
- * account's user; a static location; a new poll; or a forward of a message of one of the
- * account's chats, which, as in Telegram's clients, replies to none.
+ * optional caption; a regular static sticker; a contact the account writes, or its own contact,
+ * which Telegram shows as the account's user; a static location; a new poll; or a forward of a
+ * message of one of the account's chats, which, as in Telegram's clients, replies to none.
  */
 const sendAccountMessageRequestSchema = z.union([
   z.strictObject({
@@ -181,6 +192,7 @@ const sendAccountMessageRequestSchema = z.union([
   z.strictObject({ ...sentMessageTargetShape, ...accountVideoShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountVoiceShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountAudioShape }),
+  z.strictObject({ ...sentMessageTargetShape, sticker: accountStickerSchema }),
   z.strictObject({ ...sentMessageTargetShape, contact: accountContactSchema }),
   z.strictObject({ ...sentMessageTargetShape, own_contact: z.literal(true) }),
   z.strictObject({ ...sentMessageTargetShape, location: accountLocationInputSchema }),
@@ -265,6 +277,8 @@ export const sendAccountMessageContract = defineControlOperation({
         'quiz_explanation_has_too_many_line_feeds',
         'quiz_explanation_too_long',
         'reply_message_not_found',
+        'sticker_animation_unsupported',
+        'sticker_invalid',
         'text_invalid',
       ]),
     ]),

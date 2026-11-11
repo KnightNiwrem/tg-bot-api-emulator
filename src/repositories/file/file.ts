@@ -5,11 +5,13 @@ import type {
   DocumentUpload,
   FileUpload,
   PhotoUpload,
+  StickerUpload,
   StoredAudioFile,
   StoredDocumentFile,
   StoredFile,
   StoredFileId,
   StoredPhotoFile,
+  StoredStickerFile,
   StoredVideoFile,
   StoredVoiceFile,
   ThumbnailUpload,
@@ -60,9 +62,10 @@ export class FileRepository {
   addFile(upload: VideoUpload): StoredVideoFile;
   addFile(upload: VoiceUpload): StoredVoiceFile;
   addFile(upload: AudioUpload): StoredAudioFile;
+  addFile(upload: StickerUpload): StoredStickerFile;
   addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }>;
   addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }> {
-    if (upload.type === 'photo' || upload.type === 'voice') {
+    if (upload.type === 'photo' || upload.type === 'voice' || upload.type === 'sticker') {
       return this.#store(upload);
     }
     const { thumbnail, ...file } = upload;
@@ -79,6 +82,7 @@ export class FileRepository {
       | Omit<VideoUpload, 'thumbnail'>
       | VoiceUpload
       | Omit<AudioUpload, 'thumbnail'>
+      | StickerUpload
       | ThumbnailUpload,
   >(
     upload: Upload,

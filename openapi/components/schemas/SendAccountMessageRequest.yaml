@@ -1,6 +1,7 @@
 description: >-
-  Text, a photo, a document, a video, a voice note, an audio file, a written contact, the
-  account's own contact, a static location, or a new poll to send, or a message to forward.
+  Text, a photo, a document, a video, a voice note, an audio file, a regular static sticker, a
+  written contact, the account's own contact, a static location, or a new poll to send, or a
+  message to forward.
 oneOf:
   - $ref: ./SendAccountTextRequest.yaml
   - $ref: ./SendAccountPhotoRequest.yaml
@@ -8,6 +9,7 @@ oneOf:
   - $ref: ./SendAccountVideoRequest.yaml
   - $ref: ./SendAccountVoiceRequest.yaml
   - $ref: ./SendAccountAudioRequest.yaml
+  - $ref: ./SendAccountStickerRequest.yaml
   - $ref: ./SendAccountContactRequest.yaml
   - $ref: ./ShareAccountOwnContactRequest.yaml
   - $ref: ./SendAccountLocationRequest.yaml

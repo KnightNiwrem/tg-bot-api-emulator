@@ -131,6 +131,7 @@ import type {
   Document,
   Location,
   PhotoSize,
+  Sticker,
   Video,
   Voice,
 } from '../../src/api/contracts/message_media.ts';
@@ -198,6 +199,7 @@ export type {
   RichText,
   RichTextObject,
   SharedUser,
+  Sticker,
   SuccessfulPayment,
   SuccessfulPaymentContent,
   SupergroupChat,
@@ -511,6 +513,24 @@ export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTar
   readonly caption?: string;
   /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
   readonly caption_entities?: readonly MessageEntityInput[];
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
+/**
+ * A regular static sticker an account sends, which a test defines as a fixture. It has no
+ * caption.
+ */
+export interface AccountSendStickerInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  /**
+   * A WebP image without animation, whose dimensions the emulator reads from it. Any dimensions
+   * and size the WebP format allows are accepted: Telegram's sticker-set rules, such as a 512-pixel side, do
+   * not apply.
+   */
+  readonly sticker: Uint8Array;
+  /** The emoji the sticker is associated with; omitted for none. */
+  readonly emoji?: string;
   /** The ID of the chat's message to reply to, as message history shows it. */
   readonly reply_to_message_id?: number;
 }
@@ -1209,6 +1229,15 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendAudio<Target extends MessageTarget>(
     input: AccountSendAudioInput<Target>,
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
+  /**
+   * Sends a regular static sticker, as `sendMessage` sends text, which bots receive with a
+   * `file_id` of their own and can resend with `sendSticker`. Fails with `sticker_invalid` for
+   * content that is not a well-formed WebP image, and with `sticker_animation_unsupported` for an
+   * animated one.
+   */
+  sendSticker<Target extends MessageTarget>(
+    input: AccountSendStickerInput<Target>,
   ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a contact the account writes, as `sendMessage` sends text. Telegram cleans its texts,

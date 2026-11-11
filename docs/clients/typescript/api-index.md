@@ -87,6 +87,7 @@ Reads, such as `getMessages`, resolve to what they read, and ending a session re
 | `sendVideo`       | Sends a video with the duration and size it states | [Media and files](media-and-files.md)               |
 | `sendVoice`       | Sends a voice note with the duration it states     | [Media and files](media-and-files.md)               |
 | `sendAudio`       | Sends an audio file with the metadata it states    | [Media and files](media-and-files.md)               |
+| `sendSticker`     | Sends a static WebP sticker fixture                | [Media and files](media-and-files.md)               |
 | `sendMediaGroup`  | Sends an album                                     | [Media and files](media-and-files.md)               |
 | `sendContact`     | Shares a contact the account writes                | [Contacts and locations](contacts-and-locations.md) |
 | `shareOwnContact` | Shares the account's own phone number              | [Contacts and locations](contacts-and-locations.md) |

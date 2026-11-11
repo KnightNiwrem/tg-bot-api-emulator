@@ -57,6 +57,7 @@ import {
   sendMessageDraft,
   sendPoll,
   sendRichMessage,
+  sendSticker,
   sendVoice,
 } from '../message_sends.ts';
 import {
@@ -260,6 +261,15 @@ const sendAudioParametersSchema = z.strictObject({
   title: z.string().default(''),
   thumbnail: z.string().optional(),
   thumb: z.string().optional(),
+});
+
+// As for sendMessage, topics, business connections, paid broadcasts, suggested posts, and
+// ephemeral messages are not supported.
+const sendStickerParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  sticker: z.string().optional(),
+  emoji: z.string().optional(),
 });
 
 // As for sendMessage, topics, business connections, paid broadcasts, and suggested posts are not
@@ -543,6 +553,21 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
         ...resolvedRichMessage,
       })),
   }),
+  // As the official server's `process_send_sticker_query` reads it: the sticker, then the send
+  // options. The emulator supports only a sticker the bot knows by `file_id`, and refuses an upload
+  // or a URL before the send options. `emoji` is read and ignored: TDLib applies it only to a
+  // sticker just uploaded, and a sticker resent by `file_id` keeps its own.
+  commandMethodOfSteps({
+    name: 'sendSticker',
+    recordsActivity: true,
+    parameters: sendStickerParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readStickerFileId(call, parameters))
+        .andThen((send) => readSendOptions(call, send)),
+    execute: (context: MessageSendContext, { stickerFileId, options }) =>
+      sendMethodAnswer(sendSticker(context, { ...options, stickerFileId })),
+  }),
   waitingCommandMethodOfSteps({
     name: 'sendVideo',
     recordsActivity: true,
@@ -712,6 +737,25 @@ function readMediaSend<
         : answerWith(captionReading.errorAnswer);
     })
     .andThen((send) => readSendOptions(call, send));
+}
+
+/**
+ * The step that reads the sticker of `sendSticker`, as the official server's `get_input_file`
+ * reads it, which must name a `file_id`: the emulator does not support an uploaded sticker or one
+ * sent by URL.
+ */
+function readStickerFileId<Parameters extends z.output<typeof sendStickerParametersSchema>>(
+  { uploadedFiles }: BotApiStepCall<unknown>,
+  parameters: Parameters,
+): BotApiStepResult<{ readonly parameters: Parameters; readonly stickerFileId: string }> {
+  const fileReading = readInputFileParameter('sticker', parameters.sticker, uploadedFiles);
+  if (!fileReading.read) {
+    return answerWith(presentBotApiError(BOT_API_ERRORS.inputFileMissing, { fileKind: 'sticker' }));
+  }
+  const { inputFile } = fileReading;
+  return inputFile.kind === 'file_id'
+    ? proceedWith({ parameters, stickerFileId: inputFile.fileId })
+    : answerWith(presentFixedBotApiError(BOT_API_ERRORS.stickerSourceUnsupported));
 }
 
 /** The step that reads the thumbnail a document, video, or audio file is sent with, if any. */

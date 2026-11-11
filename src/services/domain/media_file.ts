@@ -5,6 +5,10 @@ import {
   getFileNameExtension,
 } from '../../media/document_file.ts';
 import { readImageDimensions } from '../../media/image_dimensions.ts';
+import {
+  readStaticWebpSticker,
+  type StaticWebpStickerFailureReason,
+} from '../../media/sticker_file.ts';
 import { getVideoMimeType } from '../../media/video_file.ts';
 import { getVoiceFileExtension, getVoiceMimeType } from '../../media/voice_file.ts';
 import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../../types/http_url.ts';
@@ -20,6 +24,7 @@ import {
   MAX_WEB_FILE_BYTES,
   type PhotoImageFormat,
   type PhotoUpload,
+  type StickerUpload,
   type StoredFile,
   type StoredFileId,
   type ThumbnailUpload,
@@ -57,6 +62,7 @@ const BOT_FILE_DIRECTORIES: Readonly<Record<StoredFile['type'], string>> = {
   video: 'videos',
   voice: 'voice',
   audio: 'music',
+  sticker: 'stickers',
   thumbnail: 'thumbnails',
 };
 
@@ -244,6 +250,20 @@ export interface AudioUploadRequest {
   /** The content of the thumbnail uploaded with the audio file; omitted for none. */
   readonly thumbnailContent?: Uint8Array<ArrayBuffer>;
   readonly source: UploadSource;
+}
+
+export type StickerUploadPreparation =
+  | { readonly prepared: true; readonly upload: StickerUpload }
+  | { readonly prepared: false; readonly reason: 'file_empty' | StaticWebpStickerFailureReason };
+
+/**
+ * A regular static sticker an account sends, as a test defines it: the bytes of a WebP image and
+ * the emoji it is associated with.
+ */
+export interface AccountStickerUploadRequest {
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** Omitted for a sticker associated with no emoji. */
+  readonly emoji?: string;
 }
 
 /** A file a bot can download, with the path it downloads the file from. */
@@ -586,6 +606,33 @@ export class MediaFileService {
   }
 
   /**
+   * Prepares a regular static sticker an account sends, which an account's request defines as a
+   * test fixture: a static WebP image, as `readStaticWebpSticker` reads it, whose dimensions come
+   * from the image. As for an account's other uploads, no size limit applies.
+   */
+  prepareAccountStickerUpload(
+    { content, emoji }: AccountStickerUploadRequest,
+  ): StickerUploadPreparation {
+    if (content.length === 0) {
+      return { prepared: false, reason: 'file_empty' };
+    }
+    const reading = readStaticWebpSticker(content);
+    if (!reading.read) {
+      return { prepared: false, reason: reading.reason };
+    }
+    return {
+      prepared: true,
+      upload: {
+        type: 'sticker',
+        content,
+        width: reading.width,
+        height: reading.height,
+        ...(emoji === undefined ? {} : { emoji }),
+      },
+    };
+  }
+
+  /**
    * Finds the file a user knows by a `file_id`. As on Telegram, a `file_id` belongs to the user
    * that saw the file, so another user's `file_id` finds nothing.
    */
@@ -688,8 +735,8 @@ export class MediaFileService {
 
 /**
  * The extension of the file a bot downloads: that of an image's format, of the name a document or
- * video was sent under, of a voice note's type, or the one `getAudioFileExtension` gives an audio
- * file; `undefined` for a file without one.
+ * video was sent under, of a voice note's type, the one `getAudioFileExtension` gives an audio
+ * file, or `webp` for a sticker; `undefined` for a file without one.
  */
 function getBotFileExtension(file: StoredFile): string | undefined {
   switch (file.type) {
@@ -704,6 +751,8 @@ function getBotFileExtension(file: StoredFile): string | undefined {
       return getVoiceFileExtension(file.mimeType);
     case 'audio':
       return getAudioFileExtension(file.fileName);
+    case 'sticker':
+      return 'webp';
     default: {
       const unhandledFile: never = file;
       throw new Error(`Unhandled stored file: ${JSON.stringify(unhandledFile)}`);

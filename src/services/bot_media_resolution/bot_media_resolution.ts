@@ -36,6 +36,7 @@ import type {
   OutgoingFile,
   OutgoingPhoto,
   OutgoingRichMessage,
+  OutgoingSticker,
   OutgoingVideo,
   OutgoingVoice,
   SpecifiedFormattedText,
@@ -351,6 +352,18 @@ export class BotMediaResolver {
     return resolution.resolved
       ? { resolved: true, file: { kind: 'voice', voice: resolution.file, ...specifiedCaption } }
       : resolution;
+  }
+
+  /**
+   * Resolves the sticker `sendSticker` sends by the `file_id` the bot knows it by, which must be a
+   * sticker, as `#findFileOfType` finds it. Bots cannot upload stickers or send them by URL in the
+   * emulator, so a sticker always keeps the metadata it was stored with, including its emoji.
+   */
+  resolveSticker(botId: number, fileId: string): FileResolution<OutgoingSticker> {
+    const lookup = this.#findFileOfType(botId, fileId, 'sticker');
+    return lookup.found
+      ? { resolved: true, file: { kind: 'stored', file: lookup.file } }
+      : { resolved: false, failure: lookup.failure };
   }
 
   /**

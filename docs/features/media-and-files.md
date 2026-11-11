@@ -7,13 +7,14 @@
 
 Bots send photos and documents with `sendPhoto` and `sendDocument`, [videos](#videos) with
 `sendVideo`, [voice notes](#voice-notes) with `sendVoice`, [audio files](#audio-files) with
-`sendAudio`, photos and videos, documents, or audio files as [albums](#albums) with
-`sendMediaGroup`, and photos, documents, videos and voice notes in the blocks of
-[rich messages](rich-messages.md). Files can be multipart uploads, either in the part named for the
-parameter or referenced with `attach://<part-name>`, an existing `file_id` known to that bot, or an
-HTTP URL that Telegram downloads, as described in [files sent by URL](#files-sent-by-url). Accounts
-upload base64 content through the emulation API; the TypeScript client accepts bytes and performs
-the encoding. Both sides can supply captions and caption entities.
+`sendAudio`, [stickers](#stickers) they know by `file_id` with `sendSticker`, photos and videos,
+documents, or audio files as [albums](#albums) with `sendMediaGroup`, and photos, documents, videos
+and voice notes in the blocks of [rich messages](rich-messages.md). Files can be multipart uploads,
+either in the part named for the parameter or referenced with `attach://<part-name>`, an existing
+`file_id` known to that bot, or an HTTP URL that Telegram downloads, as described in
+[files sent by URL](#files-sent-by-url). Accounts upload base64 content through the emulation API;
+the TypeScript client accepts bytes and performs the encoding. Both sides can supply captions and
+caption entities.
 
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
@@ -195,6 +196,52 @@ Unlike a voice note, an audio file has media that `editMessageMedia` replaces an
 [`can_send_audios`](supergroups.md#member-restrictions) permission. Inline query results send audio
 files [by `file_id` or by URL](inline-mode.md#media-named-by-url).
 
+### Stickers
+
+Accounts send regular static stickers with a `sticker` in
+`POST /sessions/{sessionId}/accounts/{accountId}/messages` or the TypeScript client's `sendSticker`,
+and bots resend a sticker they know by its `file_id` with `sendSticker`. The account's sticker is a
+test fixture: base64 WebP content and an optional `emoji`, which is how a test hands a bot a sticker
+to learn. Each bot that sees the message, including through a reply to it from another chat,
+receives a `file_id` of its own, which works for `sendSticker`, and for `getFile` while the sticker
+is within the 20 MB bots download; bots download a sticker from `stickers/` with the extension
+`webp`, served as `image/webp`.
+
+As the official server's [`JsonSticker`][sticker-json] shows it, a sticker has its width, height,
+`emoji` when it has one, `is_animated: false`, `is_video: false`, `type: "regular"`, and its file
+fields. It has no caption, so `editMessageCaption` and the account client's caption edit fail as for
+text. As TDLib decides, a sticker never forms [albums](#albums) and its media cannot be replaced
+([`is_allowed_media_group_content`][album-content], [`can_edit_message_media`][voice-media-edit]),
+and a reply to it from another chat shows it in `external_reply`
+([`is_supported_reply_message_content`][reply-content]). Forwards and copies keep the sticker, as
+they keep other media. In a supergroup, sending one needs `can_send_other_messages`, which
+[`can_send_message_content`][sticker-permission] checks for stickers, failing for bots with
+`Bad Request: not enough rights to send stickers to the chat`.
+
+The account's content must be a WebP image without animation, read as the
+[WebP container specification][webp-container] lays it out: a simple lossy (`VP8`) or lossless
+(`VP8L`) image, whose bitstream header gives its dimensions, or an extended (`VP8X`) image without
+the animation flag that holds a `VP8` or `VP8L` image, whose canvas gives them. The RIFF size and
+every chunk's size and padding must fit the content, and, as the specifications require, a `VP8X`
+payload is 10 bytes with a canvas of at most 2^32 - 1 pixels, and a `VP8L` header is of version 0.
+Data after the RIFF size and unknown chunks are ignored, as the specification allows and requires;
+without the animation flag, so are `ANIM`, which the specification requires, and `ANMF`, which it
+says should not be present. Other content fails with `sticker_invalid`, and content with the
+animation flag with `sticker_animation_unsupported`. Compressed pixels are not decoded. Beyond what
+the WebP format allows, no dimension or size limit applies: the
+[`sendSticker`][send-sticker-reference] contract states none, and the 512-pixel side and 512 KB of
+Telegram's [sticker import rules][import-stickers] govern sticker sets, not sending.
+
+`sendSticker` reads its `sticker` as the official server's
+[`process_send_sticker_query`][send-sticker] does, failing without one with
+`Bad Request: there is no sticker in the request`. A `file_id` the bot does not know, such as a
+`file_unique_id`, another bot's or another session's `file_id`, fails with
+`Bad Request: wrong file identifier/HTTP URL specified`, and a `file_id` of another kind of file as
+[file IDs of other kinds](#file-ids-of-other-kinds) describes. A resent sticker keeps its
+dimensions, content and emoji: as the Bot API documents, `emoji` applies only to a sticker just
+uploaded, and Telegram was observed to keep a resent sticker's emoji whatever `emoji` it was given,
+so the emulator reads `emoji` and ignores it.
+
 ### Albums
 
 Bots send photos, videos, documents or audio files as an album with `sendMediaGroup`, whose `media`
@@ -334,15 +381,15 @@ sees.
 ### File IDs of other kinds
 
 Each `file_id` sends only a file of its own kind: a photo's only a photo, a document's only a
-document, a video's only a video, a voice note's only a voice note, and an audio file's only an
-audio file, failing with TDLib's wording, such as
+document, a video's only a video, a voice note's only a voice note, an audio file's only an audio
+file, and a sticker's only a sticker, failing with TDLib's wording, such as
 `Bad Request: can't use file of type Video as Document`,
 `Bad Request: can't use file of type VoiceNote as Document` or
 `Bad Request: can't use file of type Document as Audio`. TDLib's
 [`check_input_file_id`][file-type-check] refuses a photo's `file_id` for other media, but treats
-documents, videos, voice notes, audio files and other document-class files as one class and leaves
-Telegram's servers to decide what the message shows, which is not in the source. Refusing them keeps
-a bot's mix-up of media kinds visible in tests.
+documents, videos, voice notes, audio files, stickers and other document-class files as one class
+and leaves Telegram's servers to decide what the message shows, which is not in the source. Refusing
+them keeps a bot's mix-up of media kinds visible in tests.
 
 ### No generated document previews
 
@@ -437,6 +484,18 @@ Classifying documents needs the animation media the emulator lacks, and rules fo
 observed rather than documented server behavior. Tests need media classification, through which the
 flag would take effect.
 
+### Sticker uploads and other kinds of stickers
+
+`sendSticker` sends only a sticker the bot knows by `file_id`: an upload or a URL fails with
+`Bad Request: stickers can be sent only by a file_id the bot knows; uploads and URLs are not
+supported`.
+Telegram accepts both, and was observed to accept static WebP uploads of any dimensions and of more
+than 512 KB, and an animated WebP upload, which it showed as a regular static sticker. Animated
+(TGS) and video (WebM) stickers, masks, custom emoji, sticker sets and the methods that manage them,
+thumbnails, premium animations, and inline sticker results are missing too; so are PNG conversion
+and transcoding. Tests need these to cover bots that create or upload stickers rather than resend
+those they receive.
+
 ### Video covers
 
 `sendVideo` rejects a `cover` as an unsupported parameter, so messages never show a video's cover, a
@@ -446,10 +505,10 @@ photo that Telegram shows in its place; `start_timestamp` is supported. `InputMe
 
 ### Additional media types and methods
 
-Media types other than photos, documents, videos, voice notes and audio files, stickers and sticker
-sets are missing, so `editMessageMedia` replaces media only with photos, documents, videos and audio
-files, and albums hold only photos and videos, documents, or audio files. Rich message blocks hold
-no audio files. Voice notes keep no waveform and are never transcribed.
+Media types other than photos, documents, videos, voice notes, audio files and regular static
+stickers are missing, so `editMessageMedia` replaces media only with photos, documents, videos and
+audio files, and albums hold only photos and videos, documents, or audio files. Rich message blocks
+hold no audio files. Voice notes keep no waveform and are never transcribed.
 
 ## Local evidence
 
@@ -459,6 +518,7 @@ no audio files. Voice notes keep no waveform and are never transcribed.
 [video MIME types](../../src/media/video_file.ts),
 [voice note MIME types](../../src/media/voice_file.ts),
 [audio MIME types and extensions](../../src/media/audio_file.ts),
+[static WebP sticker reader](../../src/media/sticker_file.ts),
 [file repository](../../src/repositories/file/file.ts),
 [URL downloads](../../src/services/domain/web_file_download.ts),
 [web resources](../../src/services/domain/web_resource.ts),
@@ -503,4 +563,11 @@ no audio files. Voice notes keep no waveform and are never transcribed.
 [audio-metadata]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L4849-L4865
 [audio-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/AudiosManager.cpp#L256-L299
 [audio-file-name]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/files/FileManager.cpp#L1386-L1391
+[sticker-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L1057-L1117
+[send-sticker]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14108-L14118
+[send-sticker-reference]: https://core.telegram.org/bots/api#sendsticker
+[sticker-permission]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6343-L6350
+[reply-content]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContentType.cpp#L848-L885
+[import-stickers]: https://core.telegram.org/import-stickers#static-stickers
+[webp-container]: https://developers.google.com/speed/webp/docs/riff_container
 [album-homogeneous]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContentType.cpp#L330-L332

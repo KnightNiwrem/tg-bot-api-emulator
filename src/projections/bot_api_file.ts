@@ -2,6 +2,7 @@ import type {
   BotApiAudio,
   BotApiDocument,
   BotApiPhotoSize,
+  BotApiSticker,
   BotApiVideo,
   BotApiVoice,
 } from '../types/bot_api.ts';
@@ -110,6 +111,29 @@ export function projectAudio(contentFile: ObservedFile | undefined): BotApiAudio
     ...(file.title === undefined ? {} : { title: file.title }),
     ...(file.performer === undefined ? {} : { performer: file.performer }),
     ...projectThumbnail(file.thumbnail, contentFile.observerThumbnailFileId),
+    file_id: contentFile.observerFileId,
+    file_unique_id: file.uniqueId,
+    file_size: file.content.length,
+  };
+}
+
+/**
+ * Shows a regular static sticker as the official Bot API server's `JsonSticker` does: its
+ * dimensions and emoji, which kind of sticker it is, then its file fields. The observed file must
+ * be the message's sticker.
+ */
+export function projectSticker(contentFile: ObservedFile | undefined): BotApiSticker {
+  const file = contentFile?.file;
+  if (contentFile === undefined || file?.type !== 'sticker') {
+    throw new Error('Expected the sticker of the message to be provided');
+  }
+  return {
+    width: file.width,
+    height: file.height,
+    ...(file.emoji === undefined ? {} : { emoji: file.emoji }),
+    is_animated: false,
+    is_video: false,
+    type: 'regular',
     file_id: contentFile.observerFileId,
     file_unique_id: file.uniqueId,
     file_size: file.content.length,

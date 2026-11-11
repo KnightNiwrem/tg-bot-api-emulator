@@ -42,7 +42,7 @@ export interface ExternalReplyTarget {
 /**
  * Creates what a reply to a message of another chat shows of it, as TDLib's `RepliedMessageInfo`
  * does for a reply being sent: the replied message's origin, its supergroup message ID, and its
- * media, poll, contact, location, or invoice, as `getExternalReplyMedia` keeps them. As the Bot API's `ExternalReplyInfo` has no
+ * media, sticker, poll, contact, location, or invoice, as `getExternalReplyMedia` keeps them. As the Bot API's `ExternalReplyInfo` has no
  * field for one, a replied rich message shows no content, like replied text. `messageIdInChat` is
  * the replied message's ID in its chat, which Telegram shows only for a supergroup message.
  */
@@ -67,7 +67,7 @@ export function createExternalReply(
 
 /**
  * What a reply shows of replied content: media without its caption, which the reply's quote shows
- * instead, or a poll, a contact, a location, or an invoice as it is, as TDLib's
+ * instead, or a sticker, a poll, a contact, a location, or an invoice as it is, as TDLib's
  * `RepliedMessageInfo` keeps them; nothing for text or a rich message.
  */
 function getExternalReplyMedia(content: PrivateWrittenContent): Pick<ExternalReply, 'media'> {
@@ -78,6 +78,7 @@ function getExternalReplyMedia(content: PrivateWrittenContent): Pick<ExternalRep
     case 'voice':
     case 'audio':
       return { media: { ...content, caption: { text: '', entities: [] } } };
+    case 'sticker':
     case 'poll':
     case 'contact':
     case 'location':
