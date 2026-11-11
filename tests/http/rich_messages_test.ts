@@ -465,6 +465,8 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [{}, 'Bad Request: rich message must be non-empty'],
     [{ blocks: null }, 'Bad Request: invalid sendRichMessage parameters'],
+    [{ blocks: 1 }, 'Bad Request: expected an Array of InputRichBlock'],
+    [{ blocks: {} }, 'Bad Request: expected an Array of InputRichBlock'],
     [
       { blocks: [{ type: 'map', location: { latitude: 52, longitude: 13 }, caption: 1 }] },
       "Bad Request: can't parse InputRichBlock: RichBlockCaption must be an object",
@@ -919,8 +921,8 @@ Deno.test('a parsing fault anywhere in a rich message wins over the checks', asy
       chat_id: createdAccount.account.id,
       rich_message: richMessage,
     });
-    // An inline query result's rich message is parsed and checked alike; the ID of the query is
-    // checked only afterwards.
+    // An inline query result's rich message is parsed and checked alike, and the fault is prefixed
+    // as the result's; the ID of the query is checked only afterwards.
     const answered = await callBotApi(api, `${botApiPath}/answerInlineQuery`, {
       inline_query_id: '0',
       results: [{
@@ -934,7 +936,12 @@ Deno.test('a parsing fault anywhere in a rich message wins over the checks', asy
       [sent.body, answered.body].map((body) =>
         isBadRequestResponse(body) ? body.description : body
       ),
-      [`Bad Request: ${description}`, `Bad Request: ${description}`],
+      [
+        `Bad Request: ${description}`,
+        `Bad Request: can't parse InlineQueryResult: ${description.charAt(0).toUpperCase()}${
+          description.slice(1)
+        }`,
+      ],
       `Expected the parsing fault to win for ${name}`,
     );
   }
@@ -962,7 +969,8 @@ Deno.test('answerInlineQuery parses every rich message before it checks any', as
   });
   assertEquals(
     isBadRequestResponse(body) ? body.description : body,
-    "Bad Request: can't parse InputRichBlock: Object expected as InputRichMessageBlock",
+    "Bad Request: can't parse InlineQueryResult: Can't parse InputRichBlock: " +
+      'Object expected as InputRichMessageBlock',
   );
 });
 

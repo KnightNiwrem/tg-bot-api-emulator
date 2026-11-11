@@ -43,10 +43,11 @@ import {
   booleanParameter,
   type BotApiUploadedFiles,
   integerParameter,
+  isParsedJsonObject,
   jsonParameter,
 } from '../request_parameters.ts';
 import {
-  parseRichMessageParameter,
+  parseRichMessageObject,
   type RichMessageParameterReading,
 } from '../rich_message_parameter.ts';
 import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
@@ -277,11 +278,10 @@ function parseInlineQueryResult(
 /**
  * Parses what a result's `input_message_content` sends, as the official server's
  * `get_input_message_content` does: text with its parse mode or entities, or a rich message,
- * parsed as `parseRichMessageParameter` parses the `rich_message` of `sendRichMessage`, with its
- * uploads, so that TDLib's check can refuse them. TDLib's checks of a rich message run only when
- * the result is checked. The server prefixes its own descriptions of a rich message it cannot read
- * with `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`. A
- * contact and a location need no parsing.
+ * which must be an object, parsed as `parseRichMessageObject` parses it, with its uploads, so that
+ * TDLib's check can refuse them. TDLib's checks of a rich message run only when the result is
+ * checked. The faults the server finds are described as a result it cannot parse; the emulator's
+ * own refusals keep their descriptions. A contact and a location need no parsing.
  */
 function parseInlineResultMessageContent(
   content: UnreadInputMessageContent,
@@ -302,14 +302,36 @@ function parseInlineResultMessageContent(
         : textReading;
     }
     case 'rich_message': {
-      const richMessageParsing = parseRichMessageParameter(
-        JSON.stringify(content.richMessage),
+      if (!isParsedJsonObject(content.richMessage)) {
+        return {
+          read: false,
+          description: BOT_API_ERRORS.inlineQueryResultInvalid.description({
+            reason: 'field_type_invalid',
+            fieldName: 'rich_message',
+            expectedType: 'Object',
+          }),
+        };
+      }
+      const richMessageParsing = parseRichMessageObject(
+        content.richMessage,
         uploadedFiles,
         invalidParametersDescription,
       );
-      return richMessageParsing.parsed
-        ? { read: true, content: { kind: 'rich_message', checking: richMessageParsing.checking } }
-        : { read: false, description: richMessageParsing.description };
+      if (richMessageParsing.parsed) {
+        return {
+          read: true,
+          content: { kind: 'rich_message', checking: richMessageParsing.checking },
+        };
+      }
+      return {
+        read: false,
+        description: richMessageParsing.failure === 'unparsable'
+          ? BOT_API_ERRORS.inlineQueryResultInvalid.description({
+            reason: 'rich_message_unparsable',
+            parsingError: richMessageParsing.error,
+          })
+          : richMessageParsing.description,
+      };
     }
     case 'contact':
     case 'location':

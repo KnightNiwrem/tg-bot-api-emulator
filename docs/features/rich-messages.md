@@ -20,8 +20,9 @@ and TDLib's [`RichMessage::get_rich_message`][rich-message], [`get_web_page_bloc
 and [`RichText::get_rich_text`][tdlib-rich-text] check them. The emulator refuses what they refuse,
 with their descriptions. The server reads blocks, list items, table cells and the buttons of a row
 as arrays, and prefixes a fault it finds in an element with `Can't parse <class name>:`, once for
-each array around it. Only the outermost prefix starts in lowercase. A nested block that is not an
-object fails, for example, with
+each array around it. Only the outermost prefix starts in lowercase. `blocks` that is neither an
+array nor `null` fails with `Bad Request: expected an Array of InputRichBlock`. A nested block that
+is not an object fails, for example, with
 `Bad Request: can't parse InputRichBlock: Can't parse InputRichBlockListItem: Can't parse InputRichBlock: Object expected as InputRichMessageBlock`.
 TDLib checks the blocks once the server has read them, so its faults have no prefix. For example, a
 heading size must be from 1 to 6 (`Bad Request: invalid section heading size specified`), a list
@@ -151,12 +152,12 @@ unless the result's `input_message_content` replaces them.
   open-source code does not contain the rules. A guessed parser would let tests pass against the
   emulator and fail in production. The emulator refuses such messages:
   `Bad Request: rich messages written in HTML or Markdown are not supported`.
-- **Strict input.** Telegram reads a missing text as empty text, ignores unknown fields, and uses
-  the first of `blocks`, `markdown` and `html` it finds. The emulator requires the fields the Bot
-  API documents and exactly one source, and rejects other JSON as invalid parameters, to surface the
-  bot's mistake in tests. Such a refusal ends the reading where it is found, so it hides a fault
-  that Telegram would report in a later block, and a message with more than one source fails before
-  its blocks are read.
+- **Strict input.** Telegram reads a missing text as empty text and `null` blocks as none, ignores
+  unknown fields, and uses the first of `blocks`, `markdown` and `html` it finds. The emulator
+  requires the fields the Bot API documents and exactly one source, and rejects other JSON as
+  invalid parameters, to surface the bot's mistake in tests. Such a refusal ends the reading where
+  it is found, so it hides a fault that Telegram would report in a later block, and a message with
+  more than one source fails before its blocks are read.
 - **Documented button rules.** The Bot API documents that only a callback button has the `link`
   style and that a button's text holds only custom emoji and dates, but Telegram accepted a URL
   button with the `link` style and a button with bold text in live probes. The emulator refuses such
