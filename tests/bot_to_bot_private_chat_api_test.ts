@@ -1,7 +1,7 @@
 /**
  * Private messages between bots through the Bot API, as Telegram showed them on 2026-11-11 to two
- * bots that both turned on Bot-to-Bot Communication Mode, and as Telegram documents the mode for
- * private chats.
+ * bots with Bot-to-Bot Communication Mode on and off on either side, and as Telegram documents the
+ * mode for private chats.
  */
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';

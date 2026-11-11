@@ -89,8 +89,12 @@ describe, a bot sends another bot a private message by passing its `@username`, 
 letter case, as `chat_id`; neither bot needs to start the chat first. As Telegram documents for
 private chats, the message is sent only when both bots turned the mode on. Otherwise the send fails
 with `Bad Request: USER_BOT_TO_BOT_DISABLED`, the error
-[`messages.sendMessage`][user-bot-to-bot-disabled] lists, and stores nothing. Telegram's servers
-make that check once everything else about the request passed, as they check an account's block.
+[`messages.sendMessage`][user-bot-to-bot-disabled] lists, and stores nothing. Telegram
+[answered so on 2026-11-11][mode-off-capture] to every send, by username, by ID and as a reply, in
+both directions, whether the sender, the recipient or neither bot had the mode on, delivered none of
+them and numbered none in the sender's message box. Telegram's servers make that check once
+everything else about the request passed, as they check an account's block: a reply to a message
+that does not exist, an empty text and an unknown username kept their own errors with the mode off.
 
 Each bot sees the chat from its own side, as Telegram showed it on 2026-11-11: `chat` is the other
 bot, as a private chat, and `from` is the sending bot. The recipient receives a `message` update,
@@ -106,11 +110,14 @@ it. Before that, the ID names no chat, `Bad Request: chat not found`, as Telegra
 of a pair before it had resolved the other's username or received its message. Knowing is one-way,
 per bot and per session, and the emulator learns it from nothing else, an
 [intentional deviation](#intentional-deviations). `getChat` shows a known bot's private chat with
-its active username and, as Telegram showed it, no gift a bot could receive.
+its active username and, as Telegram showed it, no gift a bot could receive. Telegram
+[showed bots that already knew each other][mode-off-capture] that chat whether or not either had the
+mode on.
 
 A bot that addresses itself, by ID or by username, fails with
 `Forbidden: the bot can't send messages to the bot`, as Telegram answered and as TDLib words the
-servers' [`USER_IS_BOT` refusal][user-is-bot], after every other check of the request.
+servers' [`USER_IS_BOT` refusal][user-is-bot], after every other check of the request. Telegram
+[answered so][mode-off-capture] whether or not the bot had the mode on.
 
 Every method that sends a message to a private chat sends one to another bot, except `sendInvoice`,
 whose chat must be an account's. What else bots can do in their private chat is a
@@ -414,6 +421,7 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [bot-to-bot-private]: https://core.telegram.org/api/bots/bot-to-bot#communication-in-private-chats
 [bot-to-bot-features]: https://core.telegram.org/bots/features#bot-to-bot-communication
 [user-bot-to-bot-disabled]: https://core.telegram.org/method/messages.sendMessage
+[mode-off-capture]: https://github.com/KnightNiwrem/tg-bot-api-emulator/issues/155#issuecomment-6793695525
 [user-is-bot]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L28111-L28115
 [check-reply]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9144-L9207
 [forward-video-start]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14365-L14455

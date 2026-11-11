@@ -398,7 +398,7 @@ export const BOT_API_ERRORS = {
   /**
    * A private message between bots of which either has not turned on Bot-to-Bot Communication
    * Mode, as Telegram documents the error; TDLib passes it on unchanged, and the official server
-   * prefixes it. Telegram's answer has not been observed.
+   * prefixes it. Telegram answered each of a pair of bots so, whichever of them had the mode off.
    */
   botToBotCommunicationDisabled: fixedBotApiError(
     400,
