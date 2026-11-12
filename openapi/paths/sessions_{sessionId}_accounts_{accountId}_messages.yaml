@@ -50,7 +50,7 @@ post:
     '400':
       description: >-
         The request, message text, caption, or poll is invalid, the photo is not an image
-        Telegram accepts, the file is empty, the sticker is not a well-formed WebP image
+        the emulator reads, the file is empty, the sticker is not a well-formed WebP image
         (`sticker_invalid`) or is animated (`sticker_animation_unsupported`), which the emulator
         does not support, the replied message is not a message of the chat, or the forwarded
         message cannot be forwarded, or is an invoice, which the emulator does not forward
@@ -73,8 +73,6 @@ post:
                           - message_not_forwardable
                           - message_text_empty
                           - message_text_too_long
-                          - photo_dimensions_invalid
-                          - photo_too_big
                           - poll_has_too_many_options
                           - poll_option_too_long
                           - poll_options_missing

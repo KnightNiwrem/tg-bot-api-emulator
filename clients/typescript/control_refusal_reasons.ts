@@ -97,8 +97,6 @@ export const CONTROL_REFUSAL_REASONS = [
   'not_enough_rights_to_promote',
   'not_the_owner',
   'owner_cannot_leave',
-  'photo_dimensions_invalid',
-  'photo_too_big',
   'pinner_not_found',
   'poll_already_closed',
   'poll_closed',

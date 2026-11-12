@@ -7,8 +7,9 @@ and albums to a bot, and how a test reads the files the bot sends back. The exam
 [shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 Accounts upload bytes, so examples inline their fixtures. The emulator reads the header of a photo
-to find its dimensions and keeps the bytes unchanged, so a 13-byte GIF is a valid photo. It never
-reads the content of videos, voice notes and audio files, so any non-empty bytes do for those.
+to find its dimensions and keeps the bytes unchanged, so a 13-byte GIF is a valid photo, and
+Telegram's limits on uploading a photo's size and dimensions do not apply. It never reads the
+content of videos, voice notes and audio files, so any non-empty bytes do for those.
 
 ## Replying to a photo with a document
 

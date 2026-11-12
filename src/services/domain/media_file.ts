@@ -189,8 +189,16 @@ export type AudioUploadPreparation =
 
 export interface PhotoUploadRequest {
   readonly content: Uint8Array<ArrayBuffer>;
-  readonly source: UploadSource;
+  /**
+   * A bot's upload or a download it asks for; an account's photo is a test fixture, which
+   * `prepareAccountPhotoUpload` reads instead.
+   */
+  readonly source: Exclude<UploadSource, 'account_upload'>;
 }
+
+export type AccountPhotoUploadPreparation =
+  | { readonly prepared: true; readonly upload: PhotoUpload }
+  | { readonly prepared: false; readonly reason: 'file_empty' | 'image_invalid' };
 
 export interface DocumentUploadRequest {
   readonly content: Uint8Array<ArrayBuffer>;
@@ -438,12 +446,12 @@ export class MediaFileService {
   }
 
   /**
-   * Reads an uploaded image, which must be a JPEG, PNG, GIF, WebP, or BMP image, and checks its
-   * dimensions as Telegram does for photos. Telegram also accepts other image formats, such as
-   * TIFF, which the emulator does not read. As TDLib's `check_full_local_location` does for bots
-   * and accounts alike, the photo's size is checked before Telegram's server reads the image. A
-   * bot's upload must also fit its session's upload profile, which the cloud server checks first
-   * and Telegram checks for a local server after TDLib's checks.
+   * Reads a photo a bot uploads or sends by URL, which must be a JPEG, PNG, GIF, WebP, or BMP
+   * image, and checks its size and dimensions as Telegram does for photos. Telegram also accepts
+   * other image formats, such as TIFF, which the emulator does not read. As TDLib's
+   * `check_full_local_location` does, the photo's size is checked before Telegram's server reads
+   * the image. A bot's upload must also fit its session's upload profile, which the cloud server
+   * checks first and Telegram checks for a local server after TDLib's checks.
    */
   preparePhotoUpload({ content, source }: PhotoUploadRequest): PhotoUploadPreparation {
     if (content.length === 0) {
@@ -474,6 +482,22 @@ export class MediaFileService {
       return { prepared: false, reason: 'photo_dimensions_invalid' };
     }
     return { prepared: true, upload: { type: 'photo', content, ...dimensions } };
+  }
+
+  /**
+   * Prepares a photo an account sends, which an account's request defines as a test fixture: a
+   * JPEG, PNG, GIF, WebP, or BMP image whose header gives the dimensions the photo shows. The
+   * limits Telegram sets on uploading a photo bind its uploader, and the Bot API promises bots no
+   * bounds on the photos they receive, so none applies to a fixture.
+   */
+  prepareAccountPhotoUpload(content: Uint8Array<ArrayBuffer>): AccountPhotoUploadPreparation {
+    if (content.length === 0) {
+      return { prepared: false, reason: 'file_empty' };
+    }
+    const dimensions = readImageDimensions(content);
+    return dimensions === undefined
+      ? { prepared: false, reason: 'image_invalid' }
+      : { prepared: true, upload: { type: 'photo', content, ...dimensions } };
   }
 
   /**

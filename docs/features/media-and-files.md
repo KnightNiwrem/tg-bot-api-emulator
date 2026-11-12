@@ -19,13 +19,15 @@ caption entities.
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
 extension, falling back to `application/octet-stream` for unknown extensions. Empty uploads fail.
-Photo uploads larger than 10 × 1024 × 1024 bytes fail before the image is read, from bots and
-accounts alike, as TDLib's [`check_full_local_location`][photo-size-limit] refuses them; bots
-receive
+Photos that bots upload or send by URL fail when larger than 10 × 1024 × 1024 bytes, before the
+image is read, as TDLib's [`check_full_local_location`][photo-size-limit] refuses them, with
 `Bad Request: file of size <size> bytes is too big for a photo; the maximum size is 10485760 bytes`.
-Bot uploads must also fit the session's [upload profile](#upload-profiles). Captions can be edited
-with `editMessageCaption` or the account client, and bots replace a message's media with a photo,
-document, video or audio file with [`editMessageMedia`](messages.md#editing-and-deleting).
+Bot uploads must also fit the session's [upload profile](#upload-profiles). An account's photo is a
+test fixture, which the emulator only reads, as
+[lightweight photo validation](#lightweight-photo-validation-and-unchanged-fixture-bytes) describes.
+Captions can be edited with `editMessageCaption` or the account client, and bots replace a message's
+media with a photo, document, video or audio file with
+[`editMessageMedia`](messages.md#editing-and-deleting).
 
 A bot can upload a thumbnail with `sendDocument`: the part that `thumbnail` names with
 `attach://<part-name>`, or else the part named `thumbnail`, and failing both, likewise for the
@@ -351,9 +353,16 @@ The profile changes nothing else; see
 
 ### Lightweight photo validation and unchanged fixture bytes
 
-The emulator reads image headers for JPEG, PNG, GIF, WebP and BMP. It checks that width plus height
-does not exceed 10,000 and that the aspect ratio does not exceed 20. Unrecognized image content
-produces `IMAGE_PROCESS_FAILED`; rejected dimensions produce `PHOTO_INVALID_DIMENSIONS`.
+The emulator reads image headers for JPEG, PNG, GIF, WebP and BMP. For a photo a bot sends, it
+checks that width plus height does not exceed 10,000 and that the aspect ratio does not exceed 20.
+Unrecognized image content produces `IMAGE_PROCESS_FAILED`; rejected dimensions produce
+`PHOTO_INVALID_DIMENSIONS`.
+
+An account's photo needs only an image header the emulator reads, with positive dimensions, and
+fails with `file_empty` or `image_invalid` otherwise. Telegram's limits on uploading a photo, its
+size, dimensions and aspect ratio, bind the uploader, and the Bot API states no bounds on the photos
+bots receive, so none applies to a fixture. A bot receives such a photo and resends it by `file_id`
+as any other; `getFile` serves it within the 20 MB bots download.
 
 It keeps the original bytes, format and one photo size. It does not fully decode the image,
 recompress it to JPEG, generate thumbnails or produce multiple sizes. A header-valid but damaged
