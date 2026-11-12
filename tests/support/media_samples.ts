@@ -47,15 +47,32 @@ function vp8lBitstream(width: number, height: number): Uint8Array<ArrayBuffer> {
 /** The animation flag of a `VP8X` header's flags byte. */
 const VP8X_ANIMATION_FLAG = 0x02;
 
+/** Writes a 24-bit little-endian value, as the `VP8X` and `ANMF` headers hold their fields. */
+function writeUint24(bytes: Uint8Array, offset: number, value: number): void {
+  bytes.set([value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff], offset);
+}
+
 /** The payload of an extended (`VP8X`) header of the given canvas, with the animation flag set. */
 function animatedVp8xHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
   const header = new Uint8Array(10);
   header[0] = VP8X_ANIMATION_FLAG;
-  const writeUint24 = (offset: number, value: number) =>
-    header.set([value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff], offset);
-  writeUint24(4, width - 1);
-  writeUint24(7, height - 1);
+  writeUint24(header, 4, width - 1);
+  writeUint24(header, 7, height - 1);
   return header;
+}
+
+/**
+ * The payload of an `ANMF` frame covering the given canvas from its origin, shown for 100
+ * milliseconds: the frame's header, then its lossless image as a `VP8L` chunk.
+ */
+function animationFrame(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const image = webpChunk('VP8L', vp8lBitstream(width, height));
+  const frame = new Uint8Array(16 + image.length);
+  writeUint24(frame, 6, width - 1);
+  writeUint24(frame, 9, height - 1);
+  writeUint24(frame, 12, 100);
+  frame.set(image, 16);
+  return frame;
 }
 
 /** A simple lossless static WebP image of the given dimensions, as a sticker fixture. */
@@ -64,12 +81,15 @@ export function staticWebpSticker(width: number, height: number): Uint8Array<Arr
 }
 
 /**
- * An extended WebP image of the given canvas with the animation flag set, holding a lossless
- * frame of the canvas, as a sticker fixture.
+ * An animated WebP image of the given canvas, as the container specification lays one out: an
+ * extended header with the animation flag, the `ANIM` parameters, which loop forever on a
+ * transparent background, and two lossless `ANMF` frames covering the canvas.
  */
 export function animatedWebpSticker(width: number, height: number): Uint8Array<ArrayBuffer> {
   return webpFile([
     webpChunk('VP8X', animatedVp8xHeader(width, height)),
-    webpChunk('VP8L', vp8lBitstream(width, height)),
+    webpChunk('ANIM', new Uint8Array(6)),
+    webpChunk('ANMF', animationFrame(width, height)),
+    webpChunk('ANMF', animationFrame(width, height)),
   ]);
 }
