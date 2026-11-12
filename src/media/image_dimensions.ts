@@ -1,8 +1,8 @@
 import type { PhotoImageFormat } from '../types/stored_file.ts';
 import {
   readVp8FrameDimensions,
-  readVp8lHeader,
-  readVp8xHeader,
+  readVp8lDimensions,
+  readVp8xCanvasDimensions,
   RIFF_CHUNK_HEADER_BYTES,
   WEBP_FIRST_CHUNK_OFFSET,
 } from './webp_headers.ts';
@@ -125,9 +125,9 @@ function readWebpDimensions(bytes: DataView): ImageDimensions | undefined {
   const dimensions = startsWithText(bytes, 12, 'VP8 ')
     ? readVp8FrameDimensions(payload)
     : startsWithText(bytes, 12, 'VP8L')
-    ? readVp8lHeader(payload)
+    ? readVp8lDimensions(payload)
     : startsWithText(bytes, 12, 'VP8X')
-    ? readVp8xHeader(payload)
+    ? readVp8xCanvasDimensions(payload)
     : undefined;
   return dimensions === undefined
     ? undefined

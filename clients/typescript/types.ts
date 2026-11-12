@@ -1237,8 +1237,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   /**
    * Sends a regular static sticker, as `sendMessage` sends text, which bots receive with a
    * `file_id` of their own and can resend with `sendSticker`. Fails with `sticker_invalid` for
-   * content that is not a well-formed WebP image, and with `sticker_animation_unsupported` for an
-   * animated one.
+   * content that is not a WebP image whose dimensions the emulator reads.
    */
   sendSticker<Target extends MessageTarget>(
     input: AccountSendStickerInput<Target>,
