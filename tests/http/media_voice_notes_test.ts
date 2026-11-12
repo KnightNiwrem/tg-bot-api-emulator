@@ -102,6 +102,115 @@ Deno.test('a grammY bot answers an account voice note with one it downloads and 
   );
 });
 
+Deno.test('a grammY bot receives, downloads and resends account voice notes of each MIME type', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
+  const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
+  const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
+  const fixtures = [
+    { mimeType: 'audio/ogg', extension: 'oga', recording: 'opus bytes' },
+    { mimeType: 'audio/mpeg', extension: 'mp3', recording: 'mp3 bytes' },
+    { mimeType: 'audio/mp4', extension: 'm4a', recording: 'm4a bytes' },
+  ].map((voiceFixture) => ({
+    ...voiceFixture,
+    recording: new TextEncoder().encode(voiceFixture.recording),
+  }));
+
+  const apiRoot = `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`;
+  const fetch = api.fetch;
+  const grammyBot = new Bot(createdBot.token, { client: { apiRoot, fetch } });
+  const received: Array<{ voice: Record<string, unknown>; filePath?: string; bytes: string }> = [];
+  let resent = Promise.withResolvers<void>();
+  grammyBot.on('message:voice', async (context) => {
+    const file = await context.getFile();
+    const download = await fetch(`${apiRoot}/file/bot${createdBot.token}/${file.file_path}`);
+    received.push({
+      voice: { ...context.msg.voice },
+      filePath: file.file_path,
+      bytes: new Uint8Array(await download.arrayBuffer()).toBase64(),
+    });
+    await context.replyWithVoice(context.msg.voice.file_id);
+    resent.resolve();
+  });
+  const polling = grammyBot.start();
+
+  for (const { mimeType, recording } of fixtures) {
+    resent = Promise.withResolvers<void>();
+    const sent = await api.request(
+      `${accountPath}/messages`,
+      jsonRequest('POST', {
+        to: { type: 'private', botId: createdBot.bot.id },
+        voice: { content_base64: recording.toBase64(), duration: 3, mime_type: mimeType },
+      }),
+    );
+    if (sent.status !== 201) {
+      throw new Error(`Expected the ${mimeType} voice note to be sent, received ${sent.status}`);
+    }
+    await Promise.race([resent.promise, polling]);
+  }
+  await grammyBot.stop();
+  await polling;
+
+  const history = await (await api.request(historyPath)).json() as {
+    messages: Array<{ voice?: Record<string, unknown> }>;
+  };
+  fixtures.forEach(({ mimeType, extension, recording }, index) => {
+    const { voice, filePath, bytes } = received[index] ?? {};
+    assertEqualsInFieldOrder(
+      {
+        duration: voice?.duration,
+        mime_type: voice?.mime_type,
+        file_size: voice?.file_size,
+        filePath,
+        bytes,
+      },
+      {
+        duration: 3,
+        mime_type: mimeType,
+        file_size: recording.length,
+        filePath: `voice/file_${index}.${extension}`,
+        bytes: recording.toBase64(),
+      },
+      `Expected the bot to receive and download the ${mimeType} voice note`,
+    );
+    // History shows the account's voice note and the bot's resent one with the same metadata.
+    const [accountVoice, botVoice] = history.messages.slice(index * 2, index * 2 + 2).map((
+      message,
+    ) => message.voice);
+    assertEqualsInFieldOrder(
+      [accountVoice?.mime_type, botVoice?.mime_type, botVoice?.file_unique_id],
+      [mimeType, mimeType, voice?.file_unique_id],
+      `Expected history to keep the ${mimeType} voice note and its resending`,
+    );
+  });
+});
+
+Deno.test('an account voice note of an unsupported MIME type sends nothing', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
+  const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
+  const sent = await api.request(
+    `${accountPath}/messages`,
+    jsonRequest('POST', {
+      to: { type: 'private', botId: createdBot.bot.id },
+      voice: {
+        content_base64: new TextEncoder().encode('wav bytes').toBase64(),
+        mime_type: 'audio/wav',
+      },
+    }),
+  );
+  const refusal = await sent.json() as { reason?: string };
+  const history = await (await api.request(
+    `${accountPath}/conversations/private/${createdBot.bot.id}/messages`,
+  )).json() as { messages: unknown[] };
+  const updates = botApiResult((await callBotApi(api, `${botApiPath}/getUpdates`, {})).body);
+  assertEquals(
+    { status: sent.status, reason: refusal.reason, messages: history.messages, updates },
+    { status: 400, reason: 'invalid_request', messages: [], updates: [] },
+    'Expected the voice note to be refused before anything is sent',
+  );
+});
+
 Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL as files', async () => {
   await using fixture = await createPrivateConversationFixture();
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;

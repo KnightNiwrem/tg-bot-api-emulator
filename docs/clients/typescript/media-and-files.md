@@ -129,7 +129,9 @@ Deno.test('the bot sees the name and type of a document', async () => {
 video's width and height, are what the input says: the emulator never reads the content, so the bot
 sees exactly those values, as
 [sender-defined media attributes](../../features/media-and-files.md#sender-defined-media-attributes)
-explains. The placeholder bytes below are not a real video or recording. See
+explains. A voice note is `audio/ogg` unless its `mime_type` is `audio/mpeg` (MP3) or `audio/mp4`
+(M4A), so a test can hand a bot a voice note of each format Telegram's clients play. The placeholder
+bytes below are not a real video or recording. See
 [videos](../../features/media-and-files.md#videos) and
 [voice notes](../../features/media-and-files.md#voice-notes) for ranges, defaults and MIME types.
 

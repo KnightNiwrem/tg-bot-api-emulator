@@ -141,10 +141,11 @@ that it may send other formats as audio or documents; see
 A voice note shows its duration and MIME type, but no file name. As TDLib's
 [`VoiceNotesManager::get_input_media`][voice-upload] uploads a voice note, a bot's upload is
 `audio/ogg`, `audio/mpeg` or `audio/mp4` when its file name's extension decides that type, and
-`audio/ogg` otherwise; an account's voice note is `audio/ogg`, as Telegram's clients record
-OGG/Opus. A voice note sent by [URL](#files-sent-by-url) is `audio/ogg`, keeps the duration the bot
-specified, and becomes a document when it is larger than 1 MB. A voice note sent again by `file_id`
-keeps its duration and type. Voice notes are limited only by the session's
+`audio/ogg` otherwise. An account's voice note is a test fixture of the type its `mime_type` names,
+`audio/ogg`, `audio/mpeg` or `audio/mp4`, and `audio/ogg` without one; another type fails the
+request's validation. A voice note sent by [URL](#files-sent-by-url) is `audio/ogg`, keeps the
+duration the bot specified, and becomes a document when it is larger than 1 MB. A voice note sent
+again by `file_id` keeps its duration and type. Voice notes are limited only by the session's
 [upload profile](#upload-profiles), and bots download them with `getFile` from `voice/`, under the
 extension `oga`, `mp3` or `m4a` of their type, the extensions TDLib's
 [`FileManager::get_file_name`][voice-file-name] keeps for voice notes.

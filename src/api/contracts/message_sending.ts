@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { MAX_MESSAGE_TEXT_LENGTH, messageEntityInputSchema } from './account_messages.ts';
 import { accountPathSchema } from './accounts.ts';
 import { privateMessageSchema, supergroupMessageSchema } from './chat_messages.ts';
+import { voiceMimeTypeSchema } from './message_media.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import {
@@ -96,13 +97,14 @@ const accountVideoShape = {
 };
 
 /**
- * A voice note the account records, with an optional caption. Its client defines its duration,
- * and records it as `audio/ogg`, as Telegram's clients record OGG/Opus.
+ * A voice note the account sends, with an optional caption, which the test defines as a fixture:
+ * its duration and its MIME type, `audio/ogg` unless it names another a voice note has.
  */
 const accountVoiceShape = {
   voice: z.strictObject({
     content_base64: uploadContentSchema,
     duration: mediaDurationSchema,
+    mime_type: voiceMimeTypeSchema.default('audio/ogg'),
   }),
   ...captionShape,
 };

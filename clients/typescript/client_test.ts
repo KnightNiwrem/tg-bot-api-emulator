@@ -1391,6 +1391,16 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
     file_unique_id: voice.voice.file_unique_id,
     file_size: 9,
   }, 'Expected the client to send a voice note');
+  const { result: m4aVoice } = await account.sendVoice({
+    to,
+    voice: new TextEncoder().encode('m4a recording'),
+    mime_type: 'audio/mp4',
+  });
+  assertEquals(
+    m4aVoice.voice?.mime_type,
+    'audio/mp4',
+    'Expected the client to send a voice note of the MIME type it names',
+  );
   const botVoiceReply = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/sendVoice`,
     {

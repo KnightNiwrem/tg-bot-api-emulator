@@ -1,7 +1,6 @@
 description: >-
-  A voice note an account records, whose duration its client defines. It is sent as
-  `audio/ogg`, as Telegram's clients record voice notes; the emulator neither reads nor
-  transcodes the content.
+  A voice note an account sends, which a test defines as a fixture: its duration and MIME type are
+  those given here; the emulator neither reads nor transcodes the content.
 type: object
 additionalProperties: false
 required:
@@ -19,3 +18,13 @@ properties:
     maximum: 86400
     default: 0
     description: Duration in seconds.
+  mime_type:
+    type: string
+    enum:
+      - audio/ogg
+      - audio/mpeg
+      - audio/mp4
+    default: audio/ogg
+    description: >-
+      The voice note's MIME type: OGG/Opus, MP3 or M4A, the formats Telegram's clients play as
+      voice notes. Bots download the file under the extension `oga`, `mp3` or `m4a` of its type.
