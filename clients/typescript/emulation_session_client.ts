@@ -765,12 +765,12 @@ function createVirtualAccountClient(
       });
     },
     async sendVoice<Target extends MessageTarget>(
-      { voice, duration, ...message }: AccountSendVoiceInput<Target>,
+      { voice, duration, mime_type, ...message }: AccountSendVoiceInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       // Awaited, so that an upload the façade cannot convert rejects the returned promise.
       return await sendMessageTo(message.to, {
         ...message,
-        voice: { content_base64: toBase64Content(voice, 'voice', sendCall), duration },
+        voice: { content_base64: toBase64Content(voice, 'voice', sendCall), duration, mime_type },
       });
     },
     async sendAudio<Target extends MessageTarget>(

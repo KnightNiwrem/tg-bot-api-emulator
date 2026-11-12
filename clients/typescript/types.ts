@@ -502,13 +502,16 @@ export interface AccountSendVideoInput<Target extends MessageTarget = MessageTar
 
 export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
-  /**
-   * The recording, which the emulator neither inspects nor transcodes and sends as `audio/ogg`,
-   * as Telegram's clients record voice notes.
-   */
+  /** The recording, which the emulator neither inspects nor transcodes. */
   readonly voice: Uint8Array;
   /** In seconds, from 0, the default, to 86400. */
   readonly duration?: number;
+  /**
+   * The voice note's MIME type: `audio/ogg`, the default, `audio/mpeg` for MP3, or `audio/mp4` for
+   * M4A, the formats Telegram's clients play as voice notes. The bot downloads the file under the
+   * extension of its type.
+   */
+  readonly mime_type?: 'audio/ogg' | 'audio/mpeg' | 'audio/mp4';
   /** Omitted or empty for no caption. */
   readonly caption?: string;
   /** Formatting of the caption; entity types Telegram detects by itself are ignored. */

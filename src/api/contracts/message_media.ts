@@ -149,9 +149,12 @@ export const videoSchema = z.strictObject({
   ...messageFileShape,
 });
 
+/** The MIME types a voice note has: OGG/Opus, MP3 and M4A, which Telegram's clients play. */
+export const voiceMimeTypeSchema = z.enum(['audio/ogg', 'audio/mpeg', 'audio/mp4']);
+
 export const voiceSchema = z.strictObject({
   duration: z.int().nonnegative(),
-  mime_type: z.enum(['audio/ogg', 'audio/mpeg', 'audio/mp4']),
+  mime_type: voiceMimeTypeSchema,
   ...messageFileShape,
 });
 

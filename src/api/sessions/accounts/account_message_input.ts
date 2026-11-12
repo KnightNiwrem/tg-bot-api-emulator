@@ -76,6 +76,7 @@ export type AccountUpload =
     readonly kind: 'voice';
     readonly content: Uint8Array<ArrayBuffer>;
     readonly durationSeconds: number;
+    readonly mimeType: string;
   };
 
 /** A file an account uploads that can join an album: any but a voice note. */
@@ -235,12 +236,13 @@ function readMessageDraft(body: SentContentBody, issues: AccountInputIssues): Ac
     };
   }
   if ('voice' in body) {
-    const { content_base64, duration } = body.voice;
+    const { content_base64, duration, mime_type } = body.voice;
     return readMediaDraft(
       {
         kind: 'voice',
         content: issues.readContent(content_base64, ['voice', 'content_base64']),
         durationSeconds: duration,
+        mimeType: mime_type,
       },
       body,
       [],
@@ -448,6 +450,7 @@ function prepareAccountMediaContent(
   }
   const preparation = mediaFiles.prepareVoiceUpload({
     content: upload.content,
+    mimeType: upload.mimeType,
     durationSeconds: upload.durationSeconds,
     source: 'account_upload',
   });
