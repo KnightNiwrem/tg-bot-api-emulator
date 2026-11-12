@@ -1199,7 +1199,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a photo, with an optional caption, as this account, as `sendMessage` sends text. The
-   * emulator reads the image's dimensions and rejects content that is not an image.
+   * photo is a test fixture: the emulator reads the image's dimensions and rejects content that is
+   * not an image, but applies none of Telegram's photo upload limits.
    */
   sendPhoto<Target extends MessageTarget>(
     input: AccountSendPhotoInput<Target>,

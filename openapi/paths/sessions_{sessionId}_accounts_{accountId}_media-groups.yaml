@@ -39,7 +39,7 @@ post:
               - $ref: ../components/schemas/SentSupergroupMediaGroup.yaml
     '400':
       description: >-
-        The request or a caption is invalid, a photo is not an image Telegram accepts, a file is
+        The request or a caption is invalid, a photo is not an image the emulator reads, a file is
         empty, the album holds no item or more than 10, mixes documents or audio files with other
         media, or the
         replied message is not a message of the chat.
@@ -63,8 +63,6 @@ post:
                           - file_empty
                           - image_invalid
                           - message_text_too_long
-                          - photo_dimensions_invalid
-                          - photo_too_big
                           - reply_message_not_found
                           - text_invalid
     '403':

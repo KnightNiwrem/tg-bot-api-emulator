@@ -359,9 +359,12 @@ function readPoll(
   };
 }
 
-/** Why Telegram refuses a file an account uploads. */
+/**
+ * Why a file an account uploads is refused: as Telegram refuses an empty one, or, for a photo, as
+ * the emulator refuses a fixture whose image it cannot read.
+ */
 type AccountUploadFailureReason = Extract<
-  | ReturnType<MediaFiles['preparePhotoUpload']>
+  | ReturnType<MediaFiles['prepareAccountPhotoUpload']>
   | ReturnType<MediaFiles['prepareDocumentUpload']>
   | ReturnType<MediaFiles['prepareVideoUpload']>
   | ReturnType<MediaFiles['prepareAudioUpload']>
@@ -377,7 +380,8 @@ type AccountStickerFailureReason = Extract<
 
 /**
  * The content of an account's message as its client prepares it, or why it is refused: as
- * Telegram refuses an upload, or, for a sticker, as the emulator refuses an unsupported one.
+ * Telegram refuses an empty upload, or, for a photo or sticker, as the emulator refuses an
+ * unsupported fixture.
  */
 export type AccountContentPreparation<
   Content,
@@ -387,8 +391,8 @@ export type AccountContentPreparation<
   | { readonly prepared: false; readonly reason: FailureReason };
 
 /**
- * Prepares the content of an account's message, checking an uploaded file as Telegram does and a
- * sticker as `prepareAccountStickerUpload` reads it.
+ * Prepares the content of an account's message, reading a photo as `prepareAccountPhotoUpload`
+ * does and a sticker as `prepareAccountStickerUpload` does.
  */
 export function prepareAccountMessageContent(
   draft: AccountMessageDraft,
@@ -464,7 +468,7 @@ function prepareAccountMediaContent(
 function prepareAlbumUpload(upload: AccountAlbumUpload, mediaFiles: MediaFiles) {
   switch (upload.kind) {
     case 'photo':
-      return mediaFiles.preparePhotoUpload({ content: upload.content, source: 'account_upload' });
+      return mediaFiles.prepareAccountPhotoUpload(upload.content);
     case 'document':
       return mediaFiles.prepareDocumentUpload({
         content: upload.content,

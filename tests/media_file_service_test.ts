@@ -63,8 +63,8 @@ Deno.test('MediaFileService refuses photos larger than 10 MB before reading them
     return content;
   };
 
-  // TDLib checks the photo limit for bots and accounts alike.
-  for (const source of ['bot_upload', 'account_upload'] as const) {
+  // TDLib checks the photo limit for whatever a bot sends as a photo.
+  for (const source of ['bot_upload', 'web_download'] as const) {
     if (
       !mediaFiles.preparePhotoUpload({ content: imageOfSize(MAX_PHOTO_UPLOAD_BYTES), source })
         .prepared
@@ -113,12 +113,39 @@ Deno.test('MediaFileService refuses bot uploads larger than the cloud profile al
   if (!prepareDocument(overLimit, 'account_upload').prepared) {
     throw new Error('Expected an account document over 50 MB to be accepted');
   }
-  const accountPhoto = mediaFiles.preparePhotoUpload({
-    content: overLimit,
-    source: 'account_upload',
+});
+
+Deno.test('MediaFileService reads account photo fixtures without Telegram upload limits', () => {
+  const { mediaFiles } = createMediaFileFixture('cloud');
+  const imageOfSize = (sizeBytes: number) => {
+    const content = new Uint8Array(sizeBytes);
+    content.set(gifImage(1280, 720));
+    return content;
+  };
+
+  // Limits on uploading a photo bind its uploader, not the photos a bot receives.
+  const fixtures = [
+    { content: imageOfSize(MAX_BOT_UPLOAD_BYTES.cloud + 1), width: 1280, height: 720 },
+    { content: gifImage(5_001, 5_000), width: 5_001, height: 5_000 },
+    { content: gifImage(2_100, 100), width: 2_100, height: 100 },
+  ];
+  for (const { content, width, height } of fixtures) {
+    assertEquals(mediaFiles.prepareAccountPhotoUpload(content), {
+      prepared: true,
+      upload: { type: 'photo', content, imageFormat: 'gif', width, height },
+    });
+  }
+
+  // A fixture must still be an image whose dimensions the emulator reads.
+  assertEquals(mediaFiles.prepareAccountPhotoUpload(new Uint8Array()), {
+    prepared: false,
+    reason: 'file_empty',
   });
-  if (accountPhoto.prepared || accountPhoto.reason !== 'photo_too_big') {
-    throw new Error(`Expected photo_too_big, received ${JSON.stringify(accountPhoto)}`);
+  for (const content of [new TextEncoder().encode('%PDF-1.7'), gifImage(0, 720)]) {
+    assertEquals(mediaFiles.prepareAccountPhotoUpload(content), {
+      prepared: false,
+      reason: 'image_invalid',
+    });
   }
 });
 

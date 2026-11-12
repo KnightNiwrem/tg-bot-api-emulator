@@ -1007,6 +1007,71 @@ Deno.test('editMessageMedia replaces the media of a supergroup message', async (
   }
 });
 
+Deno.test('a bot receives, downloads and reuses an account photo beyond Telegram upload limits', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
+  // Larger than 10 MB, wider than 10,000 pixels with its height, and 200 times as wide as tall:
+  // limits on uploading a photo, which bind its uploader but not the photos a bot receives.
+  const image = new Uint8Array(10 * 1024 * 1024 + 1);
+  image.set(gifImage(20_000, 100));
+  const sentResponse = await api.request(
+    `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
+    jsonRequest('POST', {
+      to: { type: 'private', botId: createdBot.bot.id },
+      photo: { content_base64: image.toBase64() },
+    }),
+  );
+  if (sentResponse.status !== 201) {
+    throw new Error(`Expected the account photo to be sent, received ${sentResponse.status}`);
+  }
+
+  const updates = await callBotApi(api, `${botApiPath}/getUpdates`, {});
+  const receivedPhoto = updateMessages(updates.body)[0]?.photo;
+  if (!Array.isArray(receivedPhoto) || receivedPhoto.length !== 1) {
+    throw new Error(
+      `Expected the bot to receive a photo, received ${JSON.stringify(updates.body)}`,
+    );
+  }
+  const [{ file_id: fileId, file_unique_id: fileUniqueId, ...photoMetadata }] = receivedPhoto;
+  assertEqualsInFieldOrder(
+    photoMetadata,
+    { file_size: image.length, width: 20_000, height: 100 },
+    'Expected the photo with the size and dimensions of its fixture',
+  );
+
+  const file = botApiResult(
+    (await callBotApi(api, `${botApiPath}/getFile`, { file_id: fileId }))
+      .body,
+  );
+  assertEqualsInFieldOrder(file, {
+    file_id: fileId,
+    file_unique_id: fileUniqueId,
+    file_size: image.length,
+    file_path: 'photos/file_0.gif',
+  }, 'Expected the bot to download the photo within its 20 MB download limit');
+  const download = await api.request(
+    `${sessionPath}/bot-api/file/bot${createdBot.token}/photos/file_0.gif`,
+  );
+  if (
+    download.status !== 200 ||
+    new Uint8Array(await download.arrayBuffer()).toBase64() !== image.toBase64()
+  ) {
+    throw new Error('Expected the bot to download the bytes the account sent');
+  }
+
+  // Sending the photo again by file_id uploads nothing, so no upload limit applies.
+  const resent = await callBotApi(api, `${botApiPath}/sendPhoto`, {
+    chat_id: createdAccount.account.id,
+    photo: fileId,
+  });
+  const resentPhoto = photoSizeOf(botApiResult(resent.body));
+  if (resent.status !== 200 || resentPhoto?.file_unique_id !== fileUniqueId) {
+    throw new Error(
+      `Expected the bot to resend the photo, received ${JSON.stringify(resent.body)}`,
+    );
+  }
+});
+
 Deno.test('account message routes send and edit photos and documents', async () => {
   await using fixture = await createPrivateConversationFixture();
   const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;

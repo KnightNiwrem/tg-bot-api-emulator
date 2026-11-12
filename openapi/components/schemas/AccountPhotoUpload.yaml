@@ -1,4 +1,6 @@
-description: A photo an account uploads.
+description: >-
+  A photo an account sends, which a test defines as a fixture. The emulator reads its dimensions
+  from the image header and keeps the bytes unchanged.
 type: object
 additionalProperties: false
 required:
@@ -8,7 +10,7 @@ properties:
     type: string
     contentEncoding: base64
     description: >-
-      A JPEG, PNG, GIF, WebP, or BMP image of at most 10485760 bytes, which Telegram
-      accepts as a photo when its width and height add up to at most 10000 and neither
-      is more than 20 times the other. Telegram also accepts other image formats, such as TIFF, which the emulator
-      rejects.
+      A JPEG, PNG, GIF, WebP, or BMP image whose header gives positive dimensions. No size,
+      dimension or aspect-ratio limit applies: Telegram's photo upload limits bind the uploader,
+      and the Bot API states no bounds on the photos bots receive. Telegram also accepts other
+      image formats, such as TIFF, which the emulator rejects.
