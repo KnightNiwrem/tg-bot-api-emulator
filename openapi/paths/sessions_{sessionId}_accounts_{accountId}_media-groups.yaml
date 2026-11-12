@@ -54,11 +54,9 @@ post:
                       reason:
                         enum:
                           - album_audio_mixed
-                          - album_caption_placement_mixed
                           - album_documents_mixed
                           - album_empty
                           - album_too_large
-                          - bot_upload_too_big
                           - caption_too_long
                           - file_empty
                           - image_invalid

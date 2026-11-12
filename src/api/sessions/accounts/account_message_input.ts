@@ -361,11 +361,8 @@ function readPoll(
   };
 }
 
-/**
- * Why a file an account uploads is refused: as Telegram refuses an empty one, or, for a photo, as
- * the emulator refuses a fixture whose image it cannot read.
- */
-type AccountUploadFailureReason = Extract<
+/** Why `MediaFiles` refuses a file an account uploads, including a bot's upload limit. */
+type MediaFileFailureReason = Extract<
   | ReturnType<MediaFiles['prepareAccountPhotoUpload']>
   | ReturnType<MediaFiles['prepareDocumentUpload']>
   | ReturnType<MediaFiles['prepareVideoUpload']>
@@ -373,6 +370,23 @@ type AccountUploadFailureReason = Extract<
   | ReturnType<MediaFiles['prepareVoiceUpload']>,
   { readonly prepared: false }
 >['reason'];
+
+/**
+ * Why a file an account uploads is refused: as Telegram refuses an empty one, or, for a photo, as
+ * the emulator refuses a fixture whose image it cannot read. A bot's upload limit never applies.
+ */
+type AccountUploadFailureReason = Exclude<MediaFileFailureReason, 'bot_upload_too_big'>;
+
+/**
+ * Narrows why `MediaFiles` refused an account's upload to the reasons an account meets, throwing
+ * for a bot's upload limit, which `MediaFiles` checks only for uploads whose source is a bot.
+ */
+function toAccountUploadFailureReason(reason: MediaFileFailureReason): AccountUploadFailureReason {
+  if (reason === 'bot_upload_too_big') {
+    throw new Error("An account's upload met a bot's upload limit, which only bots' uploads meet");
+  }
+  return reason;
+}
 
 /** Why a sticker an account sends is not one the emulator supports. */
 type AccountStickerFailureReason = Extract<
@@ -433,7 +447,7 @@ export function prepareAccountAlbumMediaContent(
         captionEntities: draft.captionEntities,
       },
     }
-    : { prepared: false, reason: preparation.reason };
+    : { prepared: false, reason: toAccountUploadFailureReason(preparation.reason) };
 }
 
 /**
@@ -464,7 +478,7 @@ function prepareAccountMediaContent(
         captionEntities: draft.captionEntities,
       },
     }
-    : { prepared: false, reason: preparation.reason };
+    : { prepared: false, reason: toAccountUploadFailureReason(preparation.reason) };
 }
 
 /** Prepares the file of an account's photo, document, video, or audio file as its client does. */

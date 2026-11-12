@@ -21,18 +21,15 @@ properties:
   duration:
     type: integer
     minimum: 0
-    maximum: 86400
     default: 0
     description: Duration in seconds.
   width:
     type: integer
     minimum: 0
-    maximum: 10000
     default: 0
     description: Width in pixels.
   height:
     type: integer
     minimum: 0
-    maximum: 10000
     default: 0
     description: Height in pixels.

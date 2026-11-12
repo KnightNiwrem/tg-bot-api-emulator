@@ -486,11 +486,11 @@ export interface AccountSendVideoInput<Target extends MessageTarget = MessageTar
    * otherwise, and without a name, the video is `video/mp4`.
    */
   readonly file_name?: string;
-  /** In seconds, from 0, the default, to 86400. */
+  /** In seconds, from 0, the default. */
   readonly duration?: number;
-  /** In pixels, from 0, the default, to 10000. */
+  /** In pixels, from 0, the default. */
   readonly width?: number;
-  /** In pixels, from 0, the default, to 10000. */
+  /** In pixels, from 0, the default. */
   readonly height?: number;
   /** Omitted or empty for no caption. */
   readonly caption?: string;
@@ -504,7 +504,7 @@ export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTar
   readonly to: Target;
   /** The recording, which the emulator neither inspects nor transcodes. */
   readonly voice: Uint8Array;
-  /** In seconds, from 0, the default, to 86400. */
+  /** In seconds, from 0, the default. */
   readonly duration?: number;
   /**
    * The voice note's MIME type: `audio/ogg`, the default, `audio/mpeg` for MP3, or `audio/mp4` for
@@ -550,7 +550,7 @@ export interface AccountSendAudioInput<Target extends MessageTarget = MessageTar
    * type; otherwise, and without a name, the audio file is `audio/mpeg`.
    */
   readonly file_name?: string;
-  /** In seconds, from 0, the default, to 86400. */
+  /** In seconds, from 0, the default. */
   readonly duration?: number;
   /** Omitted or empty for none. */
   readonly performer?: string;
