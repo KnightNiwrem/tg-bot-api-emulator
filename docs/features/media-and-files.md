@@ -341,10 +341,11 @@ before the chat, so a failed upload sends and stores nothing; `api.telegram.org`
 oversized request before reading any parameter, so a request with another fault fails differently
 there. Sending a file again by `file_id`, forwarding and copying are not uploads and meet no size
 limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described above.
-Accounts upload through their own client, so no profile limits them: their photos meet the photo
-limit, and their documents, videos, voice notes and audio files no limit, since a user's client
-uploads files of up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in JSON
-requests are not meant to reach.
+Accounts upload through their own client, so no profile limits them. Their photos are
+[fixtures](#lightweight-photo-validation-and-unchanged-fixture-bytes) without Telegram's photo
+limits, and their documents, videos, voice notes and audio files meet no limit, since a user's
+client uploads files of up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in
+JSON requests are not meant to reach.
 
 The profile changes nothing else; see
 [the cloud server's other file handling](#the-cloud-servers-other-file-handling).
