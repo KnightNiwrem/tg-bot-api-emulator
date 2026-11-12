@@ -1,11 +1,13 @@
 /**
  * The input of what an account sends: limits by code point, base64 content, poll rules, and the
- * answer of a reply keyboard press, each reported at its body field; and the album and file rules
- * the server, not the wire schema, refuses with their own reasons.
+ * answer of a reply keyboard press, each reported at its body field; the album and file rules the
+ * server, not the wire schema, refuses with their own reasons; and the media attributes an account
+ * defines, which no bot-side clamp bounds.
  */
 import { assertEquals } from '@std/assert';
 
 import type { ControlErrorBody } from '../../clients/typescript/mod.ts';
+import { callBotApi, updateMessages } from '../support/bot_api_requests.ts';
 import { requestJson } from '../support/emulation_api.ts';
 import { createPrivateConversationFixture } from '../support/http_fixtures.ts';
 
@@ -78,6 +80,43 @@ Deno.test('What an account sends is refused at the body field that breaks a rule
       refusal('album_empty'),
     ],
     'Expected each refusal at its field, or with the reason Telegram gives',
+  );
+});
+
+Deno.test('An account media fixture keeps attributes beyond what the Bot API server clamps a bot to', async () => {
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
+  const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
+  const to = { type: 'private', botId: createdBot.bot.id };
+  const content_base64 = new TextEncoder().encode('bytes the emulator never decodes').toBase64();
+  // The official server clamps a bot's durations to 86,400 seconds and video sides to 10,000.
+  const sent = [
+    { video: { content_base64, duration: 172_800, width: 12_000, height: 16_000 } },
+    { voice: { content_base64, duration: 90_000 } },
+    { audio: { content_base64, duration: 100_000 } },
+  ];
+
+  const statuses = [];
+  for (const body of sent) {
+    statuses.push(
+      (await requestJson(api, 'POST', `${accountPath}/messages`, { to, ...body })).status,
+    );
+  }
+  const received = updateMessages((await callBotApi(api, `${botApiPath}/getUpdates`, {})).body)
+    .map(({ video, voice, audio }) => {
+      const media = (video ?? voice ?? audio) as Record<string, unknown>;
+      return { duration: media.duration, width: media.width, height: media.height };
+    });
+
+  assertEquals(statuses, [201, 201, 201], 'Expected each fixture to be sent');
+  assertEquals(
+    received,
+    [
+      { duration: 172_800, width: 12_000, height: 16_000 },
+      { duration: 90_000, width: undefined, height: undefined },
+      { duration: 100_000, width: undefined, height: undefined },
+    ],
+    'Expected the bot to receive each attribute as the account defined it',
   );
 });
 

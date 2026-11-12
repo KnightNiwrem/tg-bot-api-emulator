@@ -17,12 +17,6 @@ import {
   messageTargetSchema,
 } from './wire_fields.ts';
 
-/** The longest duration of a video, voice note, or audio file, in seconds: a day. */
-export const MAX_MEDIA_DURATION_SECONDS = 86_400;
-
-/** The widest or tallest a video may be, in pixels. */
-export const MAX_VIDEO_SIDE_LENGTH = 10_000;
-
 /** The most messages of an album. */
 export const MAX_ALBUM_MESSAGE_COUNT = 10;
 
@@ -59,11 +53,18 @@ const captionShape = {
  */
 const uploadContentSchema = base64TextSchema;
 
-/** The duration of a recording its client defines, in seconds; 0 when omitted. */
-const mediaDurationSchema = z.int().min(0).max(MAX_MEDIA_DURATION_SECONDS).default(0);
+/**
+ * The duration of a recording its client defines, in seconds; 0 when omitted. The official Bot API
+ * server clamps the duration a bot specifies, but that binds bots as senders: the Bot API promises
+ * bots no bound on the durations they receive, so none applies to a fixture.
+ */
+const mediaDurationSchema = z.int().min(0).default(0);
 
-/** A side of a video its client defines, in pixels; 0 when omitted. */
-const videoSideSchema = z.int().min(0).max(MAX_VIDEO_SIDE_LENGTH).default(0);
+/**
+ * A side of a video its client defines, in pixels; 0 when omitted. As with a duration, the clamp
+ * the official server applies to a bot's video binds only bots as senders.
+ */
+const videoSideSchema = z.int().min(0).default(0);
 
 /** A photo the account uploads, with an optional caption. */
 const accountPhotoShape = {
@@ -260,7 +261,6 @@ export const sendAccountMessageContract = defineControlOperation({
     400: z.union([
       controlValidationErrorSchema,
       controlRefusalSchema([
-        'bot_upload_too_big',
         'caption_too_long',
         'file_empty',
         'image_invalid',
@@ -325,11 +325,9 @@ export const sendAccountMediaGroupContract = defineControlOperation({
       controlValidationErrorSchema,
       controlRefusalSchema([
         'album_audio_mixed',
-        'album_caption_placement_mixed',
         'album_documents_mixed',
         'album_empty',
         'album_too_large',
-        'bot_upload_too_big',
         'caption_too_long',
         'file_empty',
         'image_invalid',

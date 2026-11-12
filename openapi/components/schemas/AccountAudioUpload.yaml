@@ -22,7 +22,6 @@ properties:
   duration:
     type: integer
     minimum: 0
-    maximum: 86400
     default: 0
     description: Duration in seconds.
   performer:

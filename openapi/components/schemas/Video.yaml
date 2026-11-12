@@ -16,17 +16,14 @@ properties:
   duration:
     type: integer
     minimum: 0
-    maximum: 86400
     description: Duration in seconds as the sender defined it; 0 when it specified none.
   width:
     type: integer
     minimum: 0
-    maximum: 10000
     description: Width as the sender defined it; 0 when it specified none.
   height:
     type: integer
     minimum: 0
-    maximum: 10000
     description: Height as the sender defined it; 0 when it specified none.
   file_name:
     type: string

@@ -64,7 +64,6 @@ post:
                   - properties:
                       reason:
                         enum:
-                          - bot_upload_too_big
                           - caption_too_long
                           - file_empty
                           - image_invalid

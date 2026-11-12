@@ -404,6 +404,17 @@ function refuseSupergroupSending(
   }
 }
 
+/**
+ * Throws for an account's album refused for placing its captions differently, which cannot happen:
+ * an account's media never shows its caption above the media, so `sendAccountMediaGroupContract`
+ * does not list the refusal.
+ */
+function throwMixedAccountCaptionPlacement(): never {
+  throw new Error(
+    "An account's album placed its captions differently, though none shows one above",
+  );
+}
+
 /** Refuses an album to a private chat as `refusePrivateSending` refuses a message. */
 function refusePrivateAlbum(
   reason: Extract<
@@ -417,6 +428,8 @@ function refusePrivateAlbum(
       return { status: 404, body: { reason } };
     case 'bot_blocked':
       return { status: 409, body: { reason } };
+    case 'album_caption_placement_mixed':
+      return throwMixedAccountCaptionPlacement();
     default:
       return { status: 400, body: { reason } };
   }
@@ -436,6 +449,8 @@ function refuseSupergroupAlbum(
     case 'not_a_member':
     case 'send_permission_missing':
       return { status: 403, body: { reason } };
+    case 'album_caption_placement_mixed':
+      return throwMixedAccountCaptionPlacement();
     default:
       return { status: 400, body: { reason } };
   }

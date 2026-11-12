@@ -13,7 +13,6 @@ properties:
   duration:
     type: integer
     minimum: 0
-    maximum: 86400
     description: Duration in seconds as the sender defined it; 0 when it specified none.
   mime_type:
     type: string
