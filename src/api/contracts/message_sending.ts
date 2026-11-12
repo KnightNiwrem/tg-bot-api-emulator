@@ -98,7 +98,8 @@ const accountVideoShape = {
 
 /**
  * A voice note the account sends, with an optional caption, which the test defines as a fixture:
- * its duration and its MIME type, `audio/ogg` unless it names another a voice note has.
+ * its duration, and its MIME type, which is `audio/ogg` unless the test names `audio/mpeg` or
+ * `audio/mp4`.
  */
 const accountVoiceShape = {
   voice: z.strictObject({
