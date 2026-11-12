@@ -128,9 +128,9 @@ const accountAudioShape = {
 };
 
 /**
- * A regular static sticker the account sends, which a test defines as a fixture: a WebP image
- * without animation, whose dimensions are read from it, and the emoji it is associated with, if
- * any. It has no caption. Animated and video stickers, sticker sets, and thumbnails are not
+ * A regular static sticker the account sends, which a test defines as a fixture: a WebP image,
+ * whose dimensions are read from it, and the emoji it is associated with, if any. It has no
+ * caption. Animated (TGS) and video (WebM) stickers, sticker sets, and thumbnails are not
  * supported, and no Telegram sticker-set preparation rule, such as a 512-pixel side, applies.
  */
 const accountStickerSchema = z.strictObject({
@@ -278,7 +278,6 @@ export const sendAccountMessageContract = defineControlOperation({
         'quiz_explanation_has_too_many_line_feeds',
         'quiz_explanation_too_long',
         'reply_message_not_found',
-        'sticker_animation_unsupported',
         'sticker_invalid',
         'text_invalid',
       ]),

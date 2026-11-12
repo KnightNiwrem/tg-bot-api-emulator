@@ -50,9 +50,8 @@ post:
     '400':
       description: >-
         The request, message text, caption, or poll is invalid, the photo is not an image
-        the emulator reads, the file is empty, the sticker is not a well-formed WebP image
-        (`sticker_invalid`) or is animated (`sticker_animation_unsupported`), which the emulator
-        does not support, the replied message is not a message of the chat, or the forwarded
+        the emulator reads, the file is empty, the sticker is not a WebP image the emulator reads
+        (`sticker_invalid`), the replied message is not a message of the chat, or the forwarded
         message cannot be forwarded, or is an invoice, which the emulator does not forward
         (`invoice_forwarding_unsupported`).
       content:
@@ -83,7 +82,6 @@ post:
                           - quiz_explanation_has_too_many_line_feeds
                           - quiz_explanation_too_long
                           - reply_message_not_found
-                          - sticker_animation_unsupported
                           - sticker_invalid
                           - text_invalid
     '403':

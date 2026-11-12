@@ -5,10 +5,6 @@ import {
   getFileNameExtension,
 } from '../../media/document_file.ts';
 import { readImageDimensions } from '../../media/image_dimensions.ts';
-import {
-  readStaticWebpSticker,
-  type StaticWebpStickerFailureReason,
-} from '../../media/sticker_file.ts';
 import { getVideoMimeType } from '../../media/video_file.ts';
 import { getVoiceFileExtension, getVoiceMimeType } from '../../media/voice_file.ts';
 import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../../types/http_url.ts';
@@ -263,7 +259,7 @@ export interface AudioUploadRequest {
 
 export type StickerUploadPreparation =
   | { readonly prepared: true; readonly upload: StickerUpload }
-  | { readonly prepared: false; readonly reason: 'file_empty' | StaticWebpStickerFailureReason };
+  | { readonly prepared: false; readonly reason: 'file_empty' | 'sticker_invalid' };
 
 /**
  * A regular static sticker an account sends, as a test defines it: the bytes of a WebP image and
@@ -632,8 +628,11 @@ export class MediaFileService {
 
   /**
    * Prepares a regular static sticker an account sends, which an account's request defines as a
-   * test fixture: a static WebP image, as `readStaticWebpSticker` reads it, whose dimensions come
-   * from the image. As for an account's other uploads, no size limit applies.
+   * test fixture: a WebP image whose header gives the dimensions the sticker shows, read as an
+   * account's photo is. Static stickers are WebP images, and TGS and WebM content would be animated
+   * and video stickers, which the emulator does not support. An animated WebP image is sent as a
+   * regular static sticker of its canvas, as Telegram was observed to send one. As for an account's
+   * other uploads, no size limit applies.
    */
   prepareAccountStickerUpload(
     { content, emoji }: AccountStickerUploadRequest,
@@ -641,17 +640,17 @@ export class MediaFileService {
     if (content.length === 0) {
       return { prepared: false, reason: 'file_empty' };
     }
-    const reading = readStaticWebpSticker(content);
-    if (!reading.read) {
-      return { prepared: false, reason: reading.reason };
+    const dimensions = readImageDimensions(content);
+    if (dimensions?.imageFormat !== 'webp') {
+      return { prepared: false, reason: 'sticker_invalid' };
     }
     return {
       prepared: true,
       upload: {
         type: 'sticker',
         content,
-        width: reading.width,
-        height: reading.height,
+        width: dimensions.width,
+        height: dimensions.height,
         ...(emoji === undefined ? {} : { emoji }),
       },
     };

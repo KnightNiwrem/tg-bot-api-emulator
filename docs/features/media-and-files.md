@@ -221,19 +221,17 @@ they keep other media. In a supergroup, sending one needs `can_send_other_messag
 [`can_send_message_content`][sticker-permission] checks for stickers, failing for bots with
 `Bad Request: not enough rights to send stickers to the chat`.
 
-The account's content must be a WebP image without animation, read as the
-[WebP container specification][webp-container] lays it out: a simple lossy (`VP8`) or lossless
-(`VP8L`) image, whose bitstream header gives its dimensions, or an extended (`VP8X`) image without
-the animation flag that holds a `VP8` or `VP8L` image, whose canvas gives them. The RIFF size and
-every chunk's size and padding must fit the content, and, as the specifications require, a `VP8X`
-payload is 10 bytes with a canvas of at most 2^32 - 1 pixels, and a `VP8L` header is of version 0.
-Data after the RIFF size and unknown chunks are ignored, as the specification allows and requires;
-without the animation flag, so are `ANIM`, which the specification requires, and `ANMF`, which it
-says should not be present. Other content fails with `sticker_invalid`, and content with the
-animation flag with `sticker_animation_unsupported`. Compressed pixels are not decoded. Beyond what
-the WebP format allows, no dimension or size limit applies: the
-[`sendSticker`][send-sticker-reference] contract states none, and the 512-pixel side and 512 KB of
-Telegram's [sticker import rules][import-stickers] govern sticker sets, not sending.
+The account's content must be a WebP image whose header gives positive dimensions, read as an
+account's [photo](#lightweight-photo-validation-and-unchanged-fixture-bytes) is: the first chunk of
+a simple lossy (`VP8`) or lossless (`VP8L`) image gives them from its bitstream header, and that of
+an extended (`VP8X`) image from its canvas, as the [WebP container specification][webp-container]
+lays them out. Other content fails with `sticker_invalid`, and empty content with `file_empty`.
+Static stickers are WebP images; TGS and WebM content would be
+[animated and video stickers](#sticker-uploads-and-other-kinds-of-stickers), which the emulator does
+not support. An animated WebP image is a regular static sticker of its canvas, as Telegram was
+observed to show one. Nothing after the header is read or decoded. No dimension or size limit
+applies: the [`sendSticker`][send-sticker-reference] contract states none, and the 512-pixel side
+and 512 KB of Telegram's [sticker import rules][import-stickers] govern sticker sets, not sending.
 
 `sendSticker` reads its `sticker` as the official server's
 [`process_send_sticker_query`][send-sticker] does, failing without one with
@@ -525,11 +523,10 @@ hold no audio files. Voice notes keep no waveform and are never transcribed.
 
 [Media service](../../src/services/domain/media_file.ts),
 [Bot API media resolution](../../src/services/bot_media_resolution/bot_media_resolution.ts),
-[image header reader](../../src/media/image_dimensions.ts),
-[video MIME types](../../src/media/video_file.ts),
+[image header reader](../../src/media/image_dimensions.ts) and its
+[WebP headers](../../src/media/webp_headers.ts), [video MIME types](../../src/media/video_file.ts),
 [voice note MIME types](../../src/media/voice_file.ts),
 [audio MIME types and extensions](../../src/media/audio_file.ts),
-[static WebP sticker reader](../../src/media/sticker_file.ts),
 [file repository](../../src/repositories/file/file.ts),
 [URL downloads](../../src/services/domain/web_file_download.ts),
 [web resources](../../src/services/domain/web_resource.ts),

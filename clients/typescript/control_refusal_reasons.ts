@@ -141,7 +141,6 @@ export const CONTROL_REFUSAL_REASONS = [
   'shared_users_too_few',
   'shared_users_too_many',
   'status_invalid',
-  'sticker_animation_unsupported',
   'sticker_invalid',
   'text_encoding_invalid',
   'text_invalid',

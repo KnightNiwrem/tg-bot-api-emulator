@@ -9,23 +9,10 @@ import {
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
 import { createTestInProcessEmulator } from './support/emulation_api.ts';
-import {
-  gifImage,
-  staticWebpSticker,
-  vp8lBitstream,
-  VP8X_ANIMATION_FLAG,
-  vp8xHeader,
-  webpChunk,
-  webpFile,
-} from './support/media_samples.ts';
+import { animatedWebpSticker, gifImage, staticWebpSticker } from './support/media_samples.ts';
 
 /** A sticker smaller than Telegram's sticker sets allow, which the emulator accepts as it is. */
 const STICKER = staticWebpSticker(96, 64);
-
-const ANIMATED_STICKER = webpFile([
-  webpChunk('VP8X', vp8xHeader(64, 64, { flags: VP8X_ANIMATION_FLAG })),
-  webpChunk('VP8L', vp8lBitstream(64, 64)),
-]);
 
 interface BotApiAnswer {
   readonly ok: boolean;
@@ -281,7 +268,7 @@ Deno.test('sending a sticker to a supergroup needs can_send_other_messages', asy
   assertEquals(graceSticker.sticker?.height, 64, 'Expected the permission to allow stickers');
 });
 
-Deno.test('an account sticker that is not a static WebP image is refused without a trace', async () => {
+Deno.test('an account sticker that is not a WebP image is refused without a trace', async () => {
   await using fixture = await createStickerSupergroupFixture();
   const { ada, group, keeper, reader, readUpdates } = fixture;
   const historyBefore = await ada.getMessages({ chat: group });
@@ -291,14 +278,14 @@ Deno.test('an account sticker that is not a static WebP image is refused without
   const refusals = [
     await refusalOf(ada.sendSticker({ to: group, sticker: gifImage(64, 64) })),
     await refusalOf(ada.sendSticker({ to: group, sticker: STICKER.slice(0, 20) })),
-    await refusalOf(ada.sendSticker({ to: group, sticker: ANIMATED_STICKER })),
+    await refusalOf(ada.sendSticker({ to: group, sticker: new TextEncoder().encode('TGS') })),
     await refusalOf(ada.sendSticker({ to: group, sticker: new Uint8Array() })),
   ];
 
   assertEquals(refusals, [
     { status: 400, reason: 'sticker_invalid' },
     { status: 400, reason: 'sticker_invalid' },
-    { status: 400, reason: 'sticker_animation_unsupported' },
+    { status: 400, reason: 'sticker_invalid' },
     { status: 400, reason: 'file_empty' },
   ]);
   assertEquals(await ada.getMessages({ chat: group }), historyBefore, 'Expected no message');
@@ -307,6 +294,36 @@ Deno.test('an account sticker that is not a static WebP image is refused without
     [],
     'Expected no update for a refused sticker',
   );
+});
+
+Deno.test('an account sends an animated WebP image as a regular static sticker', async () => {
+  await using fixture = await createStickerSupergroupFixture();
+  const { ada, group, keeper, readStickerUpdate } = fixture;
+  const animated = animatedWebpSticker(80, 48);
+
+  const { result } = await ada.sendSticker({ to: group, sticker: animated });
+  const keeperSticker = await readStickerUpdate(keeper);
+
+  for (const sticker of [result.sticker, keeperSticker]) {
+    assertEquals(
+      sticker && {
+        width: sticker.width,
+        height: sticker.height,
+        is_animated: sticker.is_animated,
+        is_video: sticker.is_video,
+        type: sticker.type,
+        file_size: sticker.file_size,
+      },
+      {
+        width: 80,
+        height: 48,
+        is_animated: false,
+        is_video: false,
+        type: 'regular',
+        file_size: animated.length,
+      },
+    );
+  }
 });
 
 Deno.test('a sticker has no caption or replaceable media, and copies keep it', async () => {

@@ -256,12 +256,13 @@ Deno.test('the bot sends a track back with the metadata the account gave it', as
 
 ## Stickers
 
-`account.sendSticker` sends a regular static sticker: the bytes of a WebP image without animation,
-whose dimensions the emulator reads from it, and an optional emoji. Any size the WebP format allows
-will do, including the 1×1 image below. The bot receives the sticker with a `file_id` of its own,
-which it can keep and later resend with `sendSticker`; bots cannot upload stickers or send them by
-URL. A resent sticker keeps its emoji, whatever `emoji` the bot passes. See
-[stickers](../../features/media-and-files.md#stickers) for the WebP forms the emulator reads.
+`account.sendSticker` sends a regular static sticker: the bytes of a WebP image, whose dimensions
+the emulator reads from its header, and an optional emoji. An animated WebP image is sent as a
+regular static sticker of its canvas. Any size will do, including the 1×1 image below. The bot
+receives the sticker with a `file_id` of its own, which it can keep and later resend with
+`sendSticker`; bots cannot upload stickers or send them by URL. A resent sticker keeps its emoji,
+whatever `emoji` the bot passes. See [stickers](../../features/media-and-files.md#stickers) for the
+WebP forms the emulator reads.
 
 The bot below learns a sticker from the update it receives and resends it on `/sticker`. The test
 waits for the bot's acknowledgement before it sends the command, so the bot has learned the sticker

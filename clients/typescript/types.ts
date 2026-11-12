@@ -527,9 +527,9 @@ export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTar
 export interface AccountSendStickerInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /**
-   * A WebP image without animation, whose dimensions the emulator reads from it. Any dimensions
-   * and size the WebP format allows are accepted: Telegram's sticker-set rules, such as a 512-pixel side, do
-   * not apply.
+   * A WebP image, whose dimensions the emulator reads from its header. An animated WebP image is
+   * sent as a regular static sticker of its canvas. Any dimensions and size are accepted:
+   * Telegram's sticker-set rules, such as a 512-pixel side, do not apply.
    */
   readonly sticker: Uint8Array;
   /** The emoji the sticker is associated with; omitted for none. */
@@ -1236,9 +1236,9 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a regular static sticker, as `sendMessage` sends text, which bots receive with a
-   * `file_id` of their own and can resend with `sendSticker`. Fails with `sticker_invalid` for
-   * content that is not a well-formed WebP image, and with `sticker_animation_unsupported` for an
-   * animated one.
+   * `file_id` of their own and can resend with `sendSticker`. Fails with `file_empty` for empty
+   * content, and with `sticker_invalid` for content that is not a WebP image whose dimensions the
+   * emulator reads.
    */
   sendSticker<Target extends MessageTarget>(
     input: AccountSendStickerInput<Target>,
