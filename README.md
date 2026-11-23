@@ -101,6 +101,10 @@ domain, such as the user ID range.
 - `deno task architecture:check` — check that imports respect the layer boundaries set in
   `.fallowrc.json`
 
+Deno requires dependencies to be at least one day old, except for `grammy` and `@grammyjs/types`.
+These exceptions let the compatibility checks and client examples use newly published grammY
+releases.
+
 ## Environment
 
 - `DOMAIN` — domain advertised to clients; defaults to `localhost`

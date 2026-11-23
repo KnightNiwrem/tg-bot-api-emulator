@@ -1,5 +1,9 @@
 {
   "lock": false,
+  "minimumDependencyAge": {
+    "age": "P1D",
+    "exclude": ["npm:grammy", "npm:@grammyjs/types"]
+  },
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-env=DOMAIN,PORT --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/main.ts",
     "start": "deno run --allow-net --allow-env=DOMAIN,PORT --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/main.ts",
