@@ -34,7 +34,7 @@ A session holds as many bots and accounts as a scenario needs. Each account has 
 with a bot, and `getMessages` returns only the chats the account takes part in:
 
 ```ts
-import { Bot } from 'npm:grammy@^1.46.0';
+import { Bot } from 'npm:grammy@^1.48.0';
 import { assertEquals } from 'jsr:@std/assert@^1';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 
@@ -105,7 +105,7 @@ this page.
  * session with one grammY bot and one account, and the fixture stops the bot and ends the session
  * however the test finishes.
  */
-import { Bot, type PollingOptions } from 'npm:grammy@^1.46.0';
+import { Bot, type PollingOptions } from 'npm:grammy@^1.48.0';
 import {
   type BotActivityLog,
   type CreateVirtualAccountInput,

@@ -1,6 +1,20 @@
-import type { UserFromGetMe } from 'grammy/types';
+import type { User } from 'grammy/types';
 
-export type VirtualBotProfile = Readonly<UserFromGetMe>;
+/** A bot's `getMe` profile for the emulator's Bot API 10.3 baseline. */
+export interface VirtualBotProfile extends Readonly<User> {
+  readonly is_bot: true;
+  readonly username: string;
+  readonly can_join_groups: boolean;
+  readonly can_read_all_group_messages: boolean;
+  readonly supports_guest_queries?: boolean;
+  readonly supports_inline_queries: boolean;
+  readonly can_connect_to_business: boolean;
+  readonly has_main_web_app: boolean;
+  readonly has_topics_enabled: boolean;
+  readonly allows_users_to_create_topics: boolean;
+  readonly can_manage_bots: boolean;
+  readonly supports_join_request_queries: boolean;
+}
 
 export interface VirtualBot {
   readonly token: string;

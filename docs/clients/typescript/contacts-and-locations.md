@@ -167,7 +167,7 @@ for the details, and [Buttons and menus](buttons-and-menus.md) for reply keyboar
 
 ```ts
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { Keyboard } from 'npm:grammy@^1.46.0';
+import { Keyboard } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('request buttons share the contact and location the bot asks for', async () => {

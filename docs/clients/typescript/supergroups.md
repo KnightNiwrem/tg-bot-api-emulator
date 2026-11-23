@@ -24,7 +24,7 @@ describes both.
 
 ```ts
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import type { ChatMemberUpdated } from 'npm:grammy@^1.48.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot greets the supergroup that adds it', () =>
@@ -201,7 +201,7 @@ handlers with its own token:
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';
-import { Bot } from 'npm:grammy@^1.46.0';
+import { Bot } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot asks the translator bot and posts its answer', () =>
@@ -349,8 +349,8 @@ account in their private chat when posting fails.
 
 ```ts
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import { GrammyError } from 'npm:grammy@^1.48.0';
+import type { ChatMemberUpdated } from 'npm:grammy@^1.48.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a removed bot is kicked and can no longer post to the supergroup', () => {

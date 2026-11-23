@@ -1,5 +1,5 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/types.ts';
 
 import { createInProcessEmulator } from '../clients/typescript/in_process/mod.ts';
 import { createInProcessEmulatorWithHandler } from '../clients/typescript/in_process/in_process_emulator.ts';

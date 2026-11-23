@@ -492,7 +492,7 @@ describes
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';
-import { Keyboard } from 'npm:grammy@^1.46.0';
+import { Keyboard } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account books the dates its Web App chose', async () => {

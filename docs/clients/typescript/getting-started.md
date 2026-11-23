@@ -25,7 +25,7 @@ import is relative to that directory; from anywhere else, point it at the reposi
 `clients/typescript/mod.ts`.
 
 ```ts
-import { Bot } from 'npm:grammy@^1.46.0';
+import { Bot } from 'npm:grammy@^1.48.0';
 import { assertEquals } from 'jsr:@std/assert@^1';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 

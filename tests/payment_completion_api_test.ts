@@ -4,9 +4,9 @@
  * else pays an invoice, and a paid invoice is never checked out again.
  */
 import { assertEquals } from '@std/assert';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import type { Context } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/context.ts';
-import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import type { Context } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/context.ts';
+import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/convenience/webhook.ts';
 
 import type { CheckoutAttemptIn } from '../clients/typescript/types.ts';
 import {

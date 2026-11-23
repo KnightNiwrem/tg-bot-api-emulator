@@ -108,7 +108,7 @@ describes `promoted_by_user_id` and `can_be_edited`.
 
 ```ts
 import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import type { ChatMemberUpdated } from 'npm:grammy@^1.48.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the owner promotes, titles and demotes the bot', () =>
@@ -248,7 +248,7 @@ test asserts before ending the restriction and asking again.
 
 ```ts
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { GrammyError, InputFile } from 'npm:grammy@^1.46.0';
+import { GrammyError, InputFile } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 // A 2×1 GIF image, which the emulator accepts as a photo.

@@ -1,9 +1,9 @@
 import { assertEquals } from '@std/assert';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
 import {
   InlineKeyboard,
   Keyboard,
-} from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
+} from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/convenience/keyboard.ts';
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';

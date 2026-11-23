@@ -304,7 +304,8 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
   if (
     message.kind !== 'private_message' || message.sender !== 'account' ||
     message.chat.conversation.botId !== chatBot.profile.id ||
-    message.viaBot?.botId !== inlineBot.profile.id || message.content.kind !== 'text' ||
+    message.viaBot === undefined || message.viaBot.botId !== inlineBot.profile.id ||
+    message.content.kind !== 'text' ||
     message.content.text !== 'Result 1' || message.inlineKeyboard?.[0]?.[0]?.text !== 'Like'
   ) {
     throw new Error(
@@ -315,7 +316,8 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
     chosenPhoto.message.content.kind !== 'photo' ||
     chosenPhoto.message.content.fileId !== photo.id ||
     chosenPhoto.message.content.caption.text !== 'A cat' ||
-    chosenPhoto.message.viaBot?.inlineMessageId === message.viaBot.inlineMessageId
+    chosenPhoto.message.viaBot === undefined ||
+    chosenPhoto.message.viaBot.inlineMessageId === message.viaBot.inlineMessageId
   ) {
     throw new Error('Expected the photo result to be sent as its own inline message');
   }

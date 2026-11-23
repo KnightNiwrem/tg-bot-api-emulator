@@ -5,8 +5,8 @@ import {
   createBot as createSessionBot,
 } from './support/http_fixtures.ts';
 import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/types.ts';
 import {
   createTestSession,
   type EmulationApi,

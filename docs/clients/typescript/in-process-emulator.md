@@ -17,7 +17,7 @@ This is the [getting-started](getting-started.md) test with the emulator in proc
 `greeting_in_process_test.ts` in `docs/clients/typescript/`, next to this page.
 
 ```ts
-import { Bot } from 'npm:grammy@^1.46.0';
+import { Bot } from 'npm:grammy@^1.48.0';
 import { assertEquals } from 'jsr:@std/assert@^1';
 import { createInProcessEmulator } from '../../../clients/typescript/in_process/mod.ts';
 

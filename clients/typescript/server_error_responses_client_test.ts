@@ -1,7 +1,7 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from '../../tests/support/field_order_assertion.ts';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/core/error.ts';
 import { autoRetry } from '@grammyjs/auto-retry/mod.ts';
 
 import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
