@@ -3,7 +3,7 @@
  * the bot called through the Bot API, and the controls' refusals and a grammY bot's polling.
  */
 import { assertEquals, assertRejects } from '@std/assert';
-import type { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
+import type { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
 
 import { EmulationControlError } from '../../clients/typescript/emulation_client_error.ts';
 import type { EmulationSessionClient } from '../../clients/typescript/emulation_session_client.ts';

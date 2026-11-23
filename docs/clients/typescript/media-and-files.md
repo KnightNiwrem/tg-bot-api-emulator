@@ -25,7 +25,7 @@ Telegram API.
 
 ```ts
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { InputFile } from 'npm:grammy@^1.46.0';
+import { InputFile } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 /** A 2×1 GIF, small enough to spell out and an image the emulator reads dimensions from. */

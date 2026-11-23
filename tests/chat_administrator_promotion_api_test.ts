@@ -1,6 +1,6 @@
 import { assertEquals } from '@std/assert';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/convenience/webhook.ts';
 import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import {
   createSession,

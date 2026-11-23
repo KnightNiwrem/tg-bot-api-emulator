@@ -1,6 +1,6 @@
 import { assertEquals } from '@std/assert';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/types.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';

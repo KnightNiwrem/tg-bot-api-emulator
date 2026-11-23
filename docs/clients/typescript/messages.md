@@ -499,8 +499,8 @@ as the bot directly through the fixture's `bot.api`.
 
 ```ts
 import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import { GrammyError } from 'npm:grammy@^1.48.0';
+import type { ChatMemberUpdated } from 'npm:grammy@^1.48.0/types';
 import { EmulationControlError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 

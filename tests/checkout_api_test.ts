@@ -4,8 +4,8 @@
  * the account abandons an attempt, or a test expires a pending one. Answering creates no payment.
  */
 import { assertEquals } from '@std/assert';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/convenience/webhook.ts';
 
 import type { EmulationSessionClient } from '../clients/typescript/emulation_session_client.ts';
 import type { ActionReceipt } from '../clients/typescript/types.ts';

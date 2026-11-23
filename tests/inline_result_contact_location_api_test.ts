@@ -2,8 +2,8 @@ import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createAccount as createSessionAccount, createBot } from './support/http_fixtures.ts';
 import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/convenience/webhook.ts';
 import {
   createSession,
   createTestSession,

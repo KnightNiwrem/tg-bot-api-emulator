@@ -76,7 +76,7 @@ log as `update_delivered` entries of the supergroup.
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
 import { assertEquals } from 'jsr:@std/assert@^1';
-import type { MessageReactionUpdated, ReactionType } from 'npm:grammy@^1.46.0/types';
+import type { MessageReactionUpdated, ReactionType } from 'npm:grammy@^1.48.0/types';
 
 Deno.test('the bot observes a reaction being changed and removed', () =>
   withBotFixture({

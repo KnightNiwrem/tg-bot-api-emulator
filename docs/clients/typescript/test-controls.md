@@ -26,7 +26,7 @@ that come early, so the bot's wait is its own behavior under test, not the test'
 
 ```ts
 import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
+import { GrammyError } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
@@ -159,7 +159,7 @@ Telegram's retries:
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';
-import { Bot, webhookCallback } from 'npm:grammy@^1.46.0';
+import { Bot, webhookCallback } from 'npm:grammy@^1.48.0';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 import { EMULATOR_URL } from './bot_fixture.ts';
 
@@ -324,7 +324,7 @@ Without a registered resource, the bot's call fails with
 
 ```ts
 import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
+import { GrammyError } from 'npm:grammy@^1.48.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a URL without a registered resource is unreachable', async () => {
@@ -391,7 +391,7 @@ session accepts:
 
 ```ts
 import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { Bot, InputFile } from 'npm:grammy@^1.46.0';
+import { Bot, InputFile } from 'npm:grammy@^1.48.0';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 import { EMULATOR_URL } from './bot_fixture.ts';
 

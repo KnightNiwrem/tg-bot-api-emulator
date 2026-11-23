@@ -1,4 +1,4 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 import { sequentialize } from '@grammyjs/runner/sequentialize.ts';
 

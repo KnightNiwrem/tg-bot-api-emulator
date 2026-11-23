@@ -1,6 +1,6 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
-import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/bot.ts';
+import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/core/error.ts';
+import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.48.0/src/types.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
 import {
